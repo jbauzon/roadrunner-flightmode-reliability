@@ -40,7 +40,7 @@ import yaml
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
+_ROOT = _HERE  # run_sim.py lives at project root
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
@@ -76,6 +76,50 @@ def inject_mock_daq():
     import hardware.daq as daq_module
     daq_module.SimpleDAQController = MockDAQController
     print("[Launcher] MockDAQController injected → no NI-DAQmx hardware needed")
+
+
+def patch_connection_for_sim():
+    """
+    Patch connect_to_vehicle to use udpout instead of udpin.
+
+    In production the test software listens (udpin) and the real vehicle
+    sends to it.  In simulation the sim listens (udpin) and the test
+    software must connect with udpout so both sides can exchange packets
+    over the same port.
+    """
+    import vehicle.connection as conn_mod
+    _original = conn_mod.connect_to_vehicle
+
+    def _sim_connect(ip_address, port, timeout=10.0):
+        import sys, os, ipaddress
+        from pymavlink import mavutil
+
+        ip = str(ipaddress.ip_address(ip_address))
+        script_dir = os.path.dirname(os.path.abspath(conn_mod.__file__))
+        dialect_dir = os.path.join(script_dir, "dialects")
+        if dialect_dir not in sys.path:
+            sys.path.insert(0, dialect_dir)
+
+        # udpout: connect TO the sim's listening port
+        connection_string = f"udpout:{ip}:{port}"
+        print(f"[SIM-PATCH] Connecting with {connection_string}")
+
+        master = mavutil.mavlink_connection(
+            connection_string,
+            dialect="pandion_vehicle_roadrunner",
+            source_system=255,
+            source_component=190,
+        )
+
+        hb = master.wait_heartbeat(timeout=timeout)
+        if not hb:
+            raise Exception(
+                f"Connection timeout after {timeout}s — no heartbeat from {ip}:{port}"
+            )
+        return master
+
+    conn_mod.connect_to_vehicle = _sim_connect
+    print("[Launcher] connect_to_vehicle patched → udpout for sim mode")
 
 
 def pre_populate_uuts(vehicles):
@@ -138,7 +182,7 @@ def launch_gui(uut_config_path):
 def main():
     parser = argparse.ArgumentParser(description="Roadrunner Flight Test Simulator")
     parser.add_argument(
-        '--config', default=os.path.join(_HERE, 'sim_config.yaml'),
+        '--config', default=os.path.join(_ROOT, 'sim', 'sim_config.yaml'),
         help="Path to sim_config.yaml"
     )
     parser.add_argument(
@@ -165,8 +209,9 @@ def main():
 
     print(f"[Launcher] Starting {len(vehicles)} vehicle simulator(s)...")
 
-    # Inject mock DAQ before anything else imports hardware.daq
+    # Inject mock DAQ and patch connection before anything else imports them
     inject_mock_daq()
+    patch_connection_for_sim()
 
     # Start vehicle simulators
     sims = []

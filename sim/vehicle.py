@@ -27,13 +27,25 @@ import threading
 import argparse
 from pymavlink import mavutil
 
-# Add dialect directory
+# Add dialect directory so pymavlink can find the pre-generated .py dialect
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_DIALECT_DIR = os.path.join(_HERE, "..", "vehicle", "dialects")
+_PROJECT_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+_DIALECT_DIR = os.path.join(_PROJECT_ROOT, "vehicle", "dialects")
 if _DIALECT_DIR not in sys.path:
     sys.path.insert(0, _DIALECT_DIR)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
-os.environ.setdefault("MAVLINK_DIALECT", "pandion_vehicle_roadrunner")
+# Pre-import the dialect module and inject it into pymavlink's namespace
+# so mavutil.mavlink_connection(dialect=...) finds it without re-generating from XML
+import importlib
+_dialect = importlib.import_module("pandion_vehicle_roadrunner")
+sys.modules["pymavlink.dialects.v10.pandion_vehicle_roadrunner"] = _dialect
+
+import pymavlink.dialects.v10 as _v10_pkg
+setattr(_v10_pkg, "pandion_vehicle_roadrunner", _dialect)
+
+from pymavlink import mavutil
 
 
 # ── State machine constants ────────────────────────────────────────────────────
@@ -200,7 +212,9 @@ class PandionVehicleSim:
 
     def start(self):
         """Start the simulator (blocking). Call from main thread."""
-        connection_string = f"udpin:{self.bind_ip}:{self.port}"
+        # Sim listens on PORT using udpin. Test software connects with udpout.
+        # run_sim.py patches connect_to_vehicle to use udpout instead of udpin.
+        connection_string = f"udpin:0.0.0.0:{self.port}"
         print(f"[SIM:{self.sysid}] Listening on {connection_string}")
 
         self.conn = mavutil.mavlink_connection(
@@ -388,6 +402,7 @@ class PandionVehicleSim:
 
         if valid:
             with self._lock:
+                old_state = self.actuation_state
                 self.actuation_state = requested
                 if requested == ActuationState.IBIT:
                     # Start IBIT state machine in background
@@ -395,6 +410,7 @@ class PandionVehicleSim:
                         target=self._run_ibit_sequence, daemon=True
                     )
                     ibit_thread.start()
+            print(f"[SIM:{self.sysid}]   → {mode_names.get(requested,'?')} accepted")
         else:
             print(f"[SIM:{self.sysid}]   → REJECTED (invalid transition)")
 

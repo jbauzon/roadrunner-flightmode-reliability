@@ -1,0 +1,25 @@
+vehicles:
+- boot_monitors:
+  - 0
+  - 1
+  - 2
+  - 3
+  ibit_duration_scale: 1.0
+  ibit_pass: true
+  ip: 127.0.0.1
+  port: 9985
+  relay_line: 0
+  serial: RR-SIM-001
+  sysid: 1
+- boot_monitors:
+  - 0
+  - 1
+  - 5
+  ibit_duration_scale: 1.0
+  ibit_pass: false
+  ip: 127.0.0.1
+  mistracking_flags: 192
+  port: 9986
+  relay_line: 1
+  serial: RR-SIM-002
+  sysid: 2
