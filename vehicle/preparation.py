@@ -219,28 +219,29 @@ class UUTPreparation(QObject):
 
             # Step 5: Wait for OPERATE
             self.log_message.emit("\n→ Waiting for OPERATE mode...")
-            operate_timeout = 5.0
+            operate_timeout = 10.0
             operate_start = time.time()
+            in_operate = False
             while time.time() - operate_start < operate_timeout:
                 mode_msg = self._wait_for_message(
                     'PANDION_RR_ACTUATION_SYS_STATUS', timeout=1.0
                 )
                 if mode_msg and mode_msg.actuation_state == 2:
                     self.log_message.emit("  ✓ Vehicle in OPERATE mode")
+                    in_operate = True
                     break
-                time.sleep(0.5)
+                time.sleep(0.2)
 
-            # Step 6: Clear monitors
+            if not in_operate:
+                raise Exception(
+                    f"Vehicle did not enter OPERATE mode within {operate_timeout}s"
+                )
+
+            # Step 6: Clear monitors until none remain (condition-based, not time-based)
             self.log_message.emit("\n→ Clearing monitors before PLAYBACK...")
-            monitor_clear_duration = 5.0
-            monitor_clear_start = time.time()
-            while time.time() - monitor_clear_start < monitor_clear_duration:
-                current_set = self._get_current_set_monitors()
-                if current_set:
-                    self._clear_specific_monitors(current_set)
-                time.sleep(0.5)
+            self._clear_monitors_until_clean(timeout=20.0)
 
-            # Step 7: Enter PLAYBACK — stay here for profile streaming
+            # Step 7: Enter PLAYBACK
             self.log_message.emit("\n→ Requesting PLAYBACK mode...")
             with self.master_lock:
                 self.master.mav.pandion_rr_actuation_request_mode_send(
@@ -261,12 +262,7 @@ class UUTPreparation(QObject):
                 raise Exception("Failed to enter PLAYBACK mode")
 
             # Clear any monitors that appeared during PLAYBACK entry
-            clear_start = time.time()
-            while time.time() - clear_start < 3.0:
-                current_set = self._get_current_set_monitors()
-                if current_set:
-                    self._clear_specific_monitors(current_set)
-                time.sleep(0.5)
+            self._clear_monitors_until_clean(timeout=10.0)
 
             self.log_message.emit("\n✓ Playback preparation complete — ready to stream profile")
             return True, "Playback preparation complete"
@@ -301,7 +297,7 @@ class UUTPreparation(QObject):
 
             time.sleep(1.0)
 
-            # Verify by reading back
+            # Request read-back for verification
             with self.master_lock:
                 self.master.mav.param_request_read_send(
                     self.master.target_system,
@@ -313,9 +309,7 @@ class UUTPreparation(QObject):
             timeout = 5.0
             start = time.time()
             while time.time() - start < timeout:
-                msg = self.master.recv_match(
-                    type='PARAM_VALUE', blocking=False, timeout=0.1
-                )
+                msg = self._wait_for_message('PARAM_VALUE', timeout=0.1)
                 if msg:
                     name = (
                         msg.param_id.decode('utf-8').rstrip('\x00')
@@ -331,7 +325,6 @@ class UUTPreparation(QObject):
                                 f"{param_name} verification failed "
                                 f"(expected {value}, got {actual})"
                             )
-                time.sleep(0.05)
 
             return False, f"{param_name} set sent but no verification response"
 
@@ -1317,21 +1310,19 @@ class UUTPreparation(QObject):
         """Query USE_NEST parameter with caching"""
         if self.use_nest_cache is not None:
             return self.use_nest_cache
-        
+
         try:
-            # Clear receive buffer
+            # Drain any stale PARAM_VALUE messages
             while True:
-                msg = self.master.recv_match(
-                    type='PARAM_VALUE',
-                    blocking=False,
-                    timeout=0.01
-                )
+                with self.master_lock:
+                    msg = self.master.recv_match(
+                        type='PARAM_VALUE', blocking=False, timeout=0.01
+                    )
                 if not msg:
                     break
-            
-            # Request parameter
+
             param_id_bytes = b'USE_NEST' + b'\x00' * (16 - len(b'USE_NEST'))
-            
+
             with self.master_lock:
                 self.master.mav.param_request_read_send(
                     self.master.target_system,
@@ -1339,35 +1330,29 @@ class UUTPreparation(QObject):
                     param_id_bytes,
                     -1
                 )
-            
-            # Wait for response
+
             timeout = 5.0
             start_time = time.time()
-            
+
             while time.time() - start_time < timeout:
-                msg = self.master.recv_match(
-                    type='PARAM_VALUE',
-                    blocking=False,
-                    timeout=0.1
-                )
-                
+                msg = self._wait_for_message('PARAM_VALUE', timeout=0.1)
+
                 if msg:
-                    if isinstance(msg.param_id, bytes):
-                        param_name = msg.param_id.decode('utf-8').rstrip('\x00')
-                    else:
-                        param_name = str(msg.param_id).rstrip('\x00')
-                    
+                    param_name = (
+                        msg.param_id.decode('utf-8').rstrip('\x00')
+                        if isinstance(msg.param_id, bytes)
+                        else str(msg.param_id).rstrip('\x00')
+                    )
+
                     if param_name == 'USE_NEST':
                         value = int(msg.param_value)
                         self.log_message.emit(f"  ✓ Received USE_NEST = {value}")
                         self.use_nest_cache = value
                         return value
-                
-                time.sleep(0.05)
-            
+
             self.log_message.emit("  ⚠ USE_NEST query timeout after 5s")
             return None
-            
+
         except Exception as e:
             self.log_message.emit(f"  ⚠ Error querying USE_NEST: {e}")
             return None
@@ -1406,13 +1391,56 @@ class UUTPreparation(QObject):
         except Exception as e:
             return False, f"Error setting USE_NEST: {str(e)}"
     
+    def _clear_monitors_until_clean(self, timeout=20.0):
+        """
+        Poll and clear SET monitors until none remain or timeout expires.
+
+        Unlike the old fixed-duration loop, this stops as soon as monitors
+        are confirmed clear — avoiding unnecessary wait time when the vehicle
+        is already in a clean state.
+
+        Args:
+            timeout: Maximum seconds to spend clearing (default 20s)
+
+        Returns:
+            bool: True if all monitors clear, False if timeout with monitors remaining
+        """
+        start = time.time()
+        consecutive_clean = 0
+        required_clean_polls = 2  # Require 2 consecutive clean polls to confirm
+
+        while time.time() - start < timeout:
+            current_set = self._get_current_set_monitors()
+
+            if not current_set:
+                consecutive_clean += 1
+                if consecutive_clean >= required_clean_polls:
+                    self.log_message.emit(
+                        f"  ✓ All monitors clear (confirmed {required_clean_polls}x)"
+                    )
+                    return True
+            else:
+                consecutive_clean = 0
+                self._clear_specific_monitors(current_set)
+
+            time.sleep(0.3)
+
+        remaining = self._get_current_set_monitors()
+        if remaining:
+            self.log_message.emit(
+                f"  ⚠ Monitor clear timeout — {len(remaining)} monitors "
+                f"still SET: {remaining}"
+            )
+            return False
+        return True
+
     def _capture_current_state(self, state_obj):
         """Helper to capture the current state into a state object"""
         state_obj.timestamp = time.time()
-        
+
         try:
             state_obj.use_nest = self._query_use_nest()
-            
+
             actuation_msg = self._wait_for_message(
                 'PANDION_RR_ACTUATION_SYS_STATUS',
                 timeout=2.0
@@ -1420,7 +1448,7 @@ class UUTPreparation(QObject):
             state_obj.actuation_mode = (
                 actuation_msg.actuation_state if actuation_msg else -1
             )
-            
+
             pandion_status = self._wait_for_message('PANDION_STATUS', timeout=2.0)
             if pandion_status:
                 flight_regime = pandion_status.flight_regime
@@ -1429,7 +1457,7 @@ class UUTPreparation(QObject):
             else:
                 state_obj.armed = None
                 state_obj.flight_regime = None
-            
+
             monitor_msg = self._wait_for_message(
                 'PANDION_MONITOR_CURRENT_STATUS',
                 timeout=2.0
@@ -1441,25 +1469,29 @@ class UUTPreparation(QObject):
                 state_obj.overridden_monitors = self._extract_monitors_from_msg(
                     monitor_msg.currently_overridden
                 )
-            
+
             state_obj.captured = True
             return True, "State captured"
-            
-        except Exception:
-            return False, "Failed to capture state"
+
+        except Exception as e:
+            return False, f"Failed to capture state: {type(e).__name__}: {e}"
     
     def _wait_for_message(self, msg_type, timeout=5.0):
         """
         Wait for a specific message type.
-        
+
         Thread-safe wrapper around MAVLink recv_match.
-        
+        All MAVLink recv calls MUST go through this method to prevent
+        concurrent access from the telemetry worker thread.
+
         Args:
             msg_type: Message type to wait for
             timeout: Timeout in seconds
-        
+
         Returns:
             Message object or None if timeout
         """
         with self.master_lock:
-            return self.master.recv_match(type=msg_type, blocking=True, timeout=timeout)
+            return self.master.recv_match(
+                type=msg_type, blocking=True, timeout=timeout
+            )

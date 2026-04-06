@@ -237,13 +237,16 @@ def connect_to_vehicle(ip_address, port, timeout=10.0):
         ip = ipaddress.ip_address(ip_address)
         validated_ip = str(ip)  # Normalize
         
-        # Security: Reject loopback and restricted ranges
+        # Security: Reject loopback and multicast only
+        # NOTE: Do NOT reject is_reserved — Python marks RFC-1918 private ranges
+        # (e.g. 172.16-31.x.x used by Roadrunner vehicles) as reserved on some
+        # Python versions, which would incorrectly block valid vehicle IPs.
         if ip.is_loopback:
-            raise ValueError("Loopback addresses (127.x.x.x, ::1) not allowed for vehicle connection")
+            raise ValueError(
+                "Loopback addresses (127.x.x.x, ::1) not allowed for vehicle connection"
+            )
         if ip.is_multicast:
             raise ValueError("Multicast addresses not allowed")
-        if ip.is_reserved:
-            raise ValueError("Reserved IP addresses not allowed")
         
     except ValueError as e:
         raise ValueError(f"Invalid IP address '{ip_address}': {e}")

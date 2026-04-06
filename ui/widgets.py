@@ -126,7 +126,7 @@ class TestConfigWidget(QGroupBox):
         
         # Info label
         info_label = QLabel(
-            "ℹ️ v4.8: Complete CSV logging showing actions TO UUT and telemetry FROM UUT"
+            "v5.0 — IBIT and Flight Profile Playback test modes with descriptive CSV logging"
         )
         info_label.setStyleSheet(
             "color: #1976D2; font-style: italic; font-size: 10pt;"
@@ -691,7 +691,8 @@ class IBITDisplayWidget(QGroupBox):
         layout.addWidget(self.hint_label, 1, 0, 1, 3)
 
         # --- Row 2: mistracking indicator (playback only, hidden in IBIT) ---
-        layout.addWidget(QLabel("Mistracking:"), 2, 0)
+        self._mistracking_title = QLabel("Mistracking:")
+        layout.addWidget(self._mistracking_title, 2, 0)
         self.mistracking_label = QLabel("None")
         self.mistracking_label.setStyleSheet(
             "font-family: monospace; font-size: 10pt; font-weight: bold; "
@@ -699,10 +700,10 @@ class IBITDisplayWidget(QGroupBox):
         )
         layout.addWidget(self.mistracking_label, 2, 1, 1, 2)
         # Hidden by default — shown only in playback mode
+        self._mistracking_title.setVisible(False)
         self.mistracking_label.setVisible(False)
-        layout.itemAtPosition(2, 0).widget().setVisible(False)
         self._mistracking_row_widgets = [
-            layout.itemAtPosition(2, 0).widget(),
+            self._mistracking_title,
             self.mistracking_label
         ]
 
@@ -849,209 +850,170 @@ class ActuatorFeedbackWidget(QGroupBox):
         
         # Header row
         layout.addWidget(QLabel("<b>Actuator</b>"), 0, 0)
-        layout.addWidget(QLabel("<b>Position (°)</b>"), 0, 1)
-        layout.addWidget(QLabel("<b>Current (mA)</b>"), 0, 2)
-        layout.addWidget(QLabel("<b>Temp (°C)</b>"), 0, 3)
+        layout.addWidget(QLabel("<b>Command (°)</b>"), 0, 1)
+        layout.addWidget(QLabel("<b>Feedback (°)</b>"), 0, 2)
+        layout.addWidget(QLabel("<b>Delta (°)</b>"), 0, 3)
+        layout.addWidget(QLabel("<b>Current (mA)</b>"), 0, 4)
+        layout.addWidget(QLabel("<b>Temp (°C)</b>"), 0, 5)
         
         # Left Elevon
         layout.addWidget(QLabel("Left Elevon:"), 1, 0)
-        self.left_elevon_pos_label = QLabel("---")
-        self.left_elevon_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_elevon_pos_label, 1, 1)
-        
-        self.left_elevon_curr_label = QLabel("---")
-        self.left_elevon_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_elevon_curr_label, 1, 2)
-        
-        self.left_elevon_temp_label = QLabel("---")
-        self.left_elevon_temp_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_elevon_temp_label, 1, 3)
-        
+        self.left_elevon_cmd_label    = QLabel("---"); self.left_elevon_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_elevon_cmd_label, 1, 1)
+        self.left_elevon_pos_label    = QLabel("---"); self.left_elevon_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_elevon_pos_label, 1, 2)
+        self.left_elevon_delta_label  = QLabel("---"); self.left_elevon_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_elevon_delta_label, 1, 3)
+        self.left_elevon_curr_label   = QLabel("---"); self.left_elevon_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_elevon_curr_label, 1, 4)
+        self.left_elevon_temp_label   = QLabel("---"); self.left_elevon_temp_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_elevon_temp_label, 1, 5)
+
         # Right Elevon
         layout.addWidget(QLabel("Right Elevon:"), 2, 0)
-        self.right_elevon_pos_label = QLabel("---")
-        self.right_elevon_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_elevon_pos_label, 2, 1)
-        
-        self.right_elevon_curr_label = QLabel("---")
-        self.right_elevon_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_elevon_curr_label, 2, 2)
-        
-        self.right_elevon_temp_label = QLabel("---")
-        self.right_elevon_temp_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_elevon_temp_label, 2, 3)
-        
+        self.right_elevon_cmd_label   = QLabel("---"); self.right_elevon_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_elevon_cmd_label, 2, 1)
+        self.right_elevon_pos_label   = QLabel("---"); self.right_elevon_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_elevon_pos_label, 2, 2)
+        self.right_elevon_delta_label = QLabel("---"); self.right_elevon_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_elevon_delta_label, 2, 3)
+        self.right_elevon_curr_label  = QLabel("---"); self.right_elevon_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_elevon_curr_label, 2, 4)
+        self.right_elevon_temp_label  = QLabel("---"); self.right_elevon_temp_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_elevon_temp_label, 2, 5)
+
         # Dorsal Rudder
         layout.addWidget(QLabel("Dorsal Rudder:"), 3, 0)
-        self.dorsal_rudder_pos_label = QLabel("---")
-        self.dorsal_rudder_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.dorsal_rudder_pos_label, 3, 1)
-        
-        self.dorsal_rudder_curr_label = QLabel("---")
-        self.dorsal_rudder_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.dorsal_rudder_curr_label, 3, 2)
-        
-        layout.addWidget(QLabel("N/A"), 3, 3)
-        
+        self.dorsal_rudder_cmd_label    = QLabel("---"); self.dorsal_rudder_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.dorsal_rudder_cmd_label, 3, 1)
+        self.dorsal_rudder_pos_label    = QLabel("---"); self.dorsal_rudder_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.dorsal_rudder_pos_label, 3, 2)
+        self.dorsal_rudder_delta_label  = QLabel("---"); self.dorsal_rudder_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.dorsal_rudder_delta_label, 3, 3)
+        self.dorsal_rudder_curr_label   = QLabel("---"); self.dorsal_rudder_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.dorsal_rudder_curr_label, 3, 4)
+        layout.addWidget(QLabel("N/A"), 3, 5)
+
         # Ventral Rudder
         layout.addWidget(QLabel("Ventral Rudder:"), 4, 0)
-        self.ventral_rudder_pos_label = QLabel("---")
-        self.ventral_rudder_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.ventral_rudder_pos_label, 4, 1)
-        
-        self.ventral_rudder_curr_label = QLabel("---")
-        self.ventral_rudder_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.ventral_rudder_curr_label, 4, 2)
-        
-        layout.addWidget(QLabel("N/A"), 4, 3)
-        
+        self.ventral_rudder_cmd_label   = QLabel("---"); self.ventral_rudder_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.ventral_rudder_cmd_label, 4, 1)
+        self.ventral_rudder_pos_label   = QLabel("---"); self.ventral_rudder_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.ventral_rudder_pos_label, 4, 2)
+        self.ventral_rudder_delta_label = QLabel("---"); self.ventral_rudder_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.ventral_rudder_delta_label, 4, 3)
+        self.ventral_rudder_curr_label  = QLabel("---"); self.ventral_rudder_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.ventral_rudder_curr_label, 4, 4)
+        layout.addWidget(QLabel("N/A"), 4, 5)
+
         # Left TVC Upper
         layout.addWidget(QLabel("Left TVC Upper:"), 5, 0)
-        self.left_tvc_upper_pos_label = QLabel("---")
-        self.left_tvc_upper_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_tvc_upper_pos_label, 5, 1)
-        
-        self.left_tvc_upper_curr_label = QLabel("---")
-        self.left_tvc_upper_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_tvc_upper_curr_label, 5, 2)
-        
-        layout.addWidget(QLabel("N/A"), 5, 3)
-        
+        self.left_tvc_upper_cmd_label   = QLabel("---"); self.left_tvc_upper_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_upper_cmd_label, 5, 1)
+        self.left_tvc_upper_pos_label   = QLabel("---"); self.left_tvc_upper_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_upper_pos_label, 5, 2)
+        self.left_tvc_upper_delta_label = QLabel("---"); self.left_tvc_upper_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_upper_delta_label, 5, 3)
+        self.left_tvc_upper_curr_label  = QLabel("---"); self.left_tvc_upper_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_upper_curr_label, 5, 4)
+        layout.addWidget(QLabel("N/A"), 5, 5)
+
         # Left TVC Lower
         layout.addWidget(QLabel("Left TVC Lower:"), 6, 0)
-        self.left_tvc_lower_pos_label = QLabel("---")
-        self.left_tvc_lower_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_tvc_lower_pos_label, 6, 1)
-        
-        self.left_tvc_lower_curr_label = QLabel("---")
-        self.left_tvc_lower_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.left_tvc_lower_curr_label, 6, 2)
-        
-        layout.addWidget(QLabel("N/A"), 6, 3)
-        
+        self.left_tvc_lower_cmd_label   = QLabel("---"); self.left_tvc_lower_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_lower_cmd_label, 6, 1)
+        self.left_tvc_lower_pos_label   = QLabel("---"); self.left_tvc_lower_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_lower_pos_label, 6, 2)
+        self.left_tvc_lower_delta_label = QLabel("---"); self.left_tvc_lower_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_lower_delta_label, 6, 3)
+        self.left_tvc_lower_curr_label  = QLabel("---"); self.left_tvc_lower_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.left_tvc_lower_curr_label, 6, 4)
+        layout.addWidget(QLabel("N/A"), 6, 5)
+
         # Right TVC Upper
         layout.addWidget(QLabel("Right TVC Upper:"), 7, 0)
-        self.right_tvc_upper_pos_label = QLabel("---")
-        self.right_tvc_upper_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_tvc_upper_pos_label, 7, 1)
-        
-        self.right_tvc_upper_curr_label = QLabel("---")
-        self.right_tvc_upper_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_tvc_upper_curr_label, 7, 2)
-        
-        layout.addWidget(QLabel("N/A"), 7, 3)
-        
+        self.right_tvc_upper_cmd_label   = QLabel("---"); self.right_tvc_upper_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_upper_cmd_label, 7, 1)
+        self.right_tvc_upper_pos_label   = QLabel("---"); self.right_tvc_upper_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_upper_pos_label, 7, 2)
+        self.right_tvc_upper_delta_label = QLabel("---"); self.right_tvc_upper_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_upper_delta_label, 7, 3)
+        self.right_tvc_upper_curr_label  = QLabel("---"); self.right_tvc_upper_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_upper_curr_label, 7, 4)
+        layout.addWidget(QLabel("N/A"), 7, 5)
+
         # Right TVC Lower
         layout.addWidget(QLabel("Right TVC Lower:"), 8, 0)
-        self.right_tvc_lower_pos_label = QLabel("---")
-        self.right_tvc_lower_pos_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_tvc_lower_pos_label, 8, 1)
-        
-        self.right_tvc_lower_curr_label = QLabel("---")
-        self.right_tvc_lower_curr_label.setStyleSheet("font-family: monospace;")
-        layout.addWidget(self.right_tvc_lower_curr_label, 8, 2)
-        
-        layout.addWidget(QLabel("N/A"), 8, 3)
-        
+        self.right_tvc_lower_cmd_label   = QLabel("---"); self.right_tvc_lower_cmd_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_lower_cmd_label, 8, 1)
+        self.right_tvc_lower_pos_label   = QLabel("---"); self.right_tvc_lower_pos_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_lower_pos_label, 8, 2)
+        self.right_tvc_lower_delta_label = QLabel("---"); self.right_tvc_lower_delta_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_lower_delta_label, 8, 3)
+        self.right_tvc_lower_curr_label  = QLabel("---"); self.right_tvc_lower_curr_label.setStyleSheet("font-family: monospace;"); layout.addWidget(self.right_tvc_lower_curr_label, 8, 4)
+        layout.addWidget(QLabel("N/A"), 8, 5)
+
         # Last update timestamp
         self.last_update_label = QLabel("Last Update: Never")
         self.last_update_label.setStyleSheet("color: #666; font-size: 8pt;")
-        layout.addWidget(self.last_update_label, 9, 0, 1, 4)
-        
+        layout.addWidget(self.last_update_label, 9, 0, 1, 6)
+
         self.setLayout(layout)
-    
+
+    def _delta_style(self, delta_deg):
+        """Color-code delta: green < 0.5°, amber 0.5–1°, red > 1°"""
+        if delta_deg < 0.5:
+            return "font-family: monospace; color: #4CAF50;"
+        elif delta_deg < 1.0:
+            return "font-family: monospace; color: #FF9800;"
+        else:
+            return "font-family: monospace; font-weight: bold; color: #f44336;"
+
     def update_feedback(self, actuator_data):
         """
         Update actuator feedback displays.
-        
+
+        actuator_data may optionally contain command fields
+        (present during playback, absent during IBIT):
+          left_elevon_cmd_cdeg, right_elevon_cmd_cdeg, etc.
+
         Args:
-            actuator_data: Dictionary with actuator feedback data
+            actuator_data: Dictionary with actuator feedback (and optionally command) data
         """
         try:
-            # Positions (centidegrees to degrees)
-            self.left_elevon_pos_label.setText(
-                f"{actuator_data['left_elevon_feedback_cdeg']/100:.1f}"
-            )
-            self.right_elevon_pos_label.setText(
-                f"{actuator_data['right_elevon_feedback_cdeg']/100:.1f}"
-            )
-            self.dorsal_rudder_pos_label.setText(
-                f"{actuator_data['dorsal_rudder_feedback_cdeg']/100:.1f}"
-            )
-            self.ventral_rudder_pos_label.setText(
-                f"{actuator_data['ventral_rudder_feedback_cdeg']/100:.1f}"
-            )
-            self.left_tvc_upper_pos_label.setText(
-                f"{actuator_data['left_tvc_upper_feedback_cdeg']/100:.1f}"
-            )
-            self.left_tvc_lower_pos_label.setText(
-                f"{actuator_data['left_tvc_lower_feedback_cdeg']/100:.1f}"
-            )
-            self.right_tvc_upper_pos_label.setText(
-                f"{actuator_data['right_tvc_upper_feedback_cdeg']/100:.1f}"
-            )
-            self.right_tvc_lower_pos_label.setText(
-                f"{actuator_data['right_tvc_lower_feedback_cdeg']/100:.1f}"
-            )
-            
-            # Currents
-            self.left_elevon_curr_label.setText(
-                f"{actuator_data['left_elevon_current_mA']}"
-            )
-            self.right_elevon_curr_label.setText(
-                f"{actuator_data['right_elevon_current_mA']}"
-            )
-            self.dorsal_rudder_curr_label.setText(
-                f"{actuator_data['dorsal_rudder_current_mA']}"
-            )
-            self.ventral_rudder_curr_label.setText(
-                f"{actuator_data['ventral_rudder_current_mA']}"
-            )
-            self.left_tvc_upper_curr_label.setText(
-                f"{actuator_data['left_tvc_upper_current_mA']}"
-            )
-            self.left_tvc_lower_curr_label.setText(
-                f"{actuator_data['left_tvc_lower_current_mA']}"
-            )
-            self.right_tvc_upper_curr_label.setText(
-                f"{actuator_data['right_tvc_upper_current_mA']}"
-            )
-            self.right_tvc_lower_curr_label.setText(
-                f"{actuator_data['right_tvc_lower_current_mA']}"
-            )
-            
-            # Temperatures
-            self.left_elevon_temp_label.setText(
-                f"{actuator_data['left_elevon_motor_temp_degC']}"
-            )
-            self.right_elevon_temp_label.setText(
-                f"{actuator_data['right_elevon_motor_temp_degC']}"
-            )
-            
-            # Update timestamp
+            surfaces = [
+                ('left_elevon',    'left_elevon_cmd_label',    'left_elevon_pos_label',    'left_elevon_delta_label',    'left_elevon_curr_label',    'left_elevon_temp_label'),
+                ('right_elevon',   'right_elevon_cmd_label',   'right_elevon_pos_label',   'right_elevon_delta_label',   'right_elevon_curr_label',   'right_elevon_temp_label'),
+                ('dorsal_rudder',  'dorsal_rudder_cmd_label',  'dorsal_rudder_pos_label',  'dorsal_rudder_delta_label',  'dorsal_rudder_curr_label',  None),
+                ('ventral_rudder', 'ventral_rudder_cmd_label', 'ventral_rudder_pos_label', 'ventral_rudder_delta_label', 'ventral_rudder_curr_label', None),
+                ('left_tvc_upper', 'left_tvc_upper_cmd_label', 'left_tvc_upper_pos_label', 'left_tvc_upper_delta_label', 'left_tvc_upper_curr_label', None),
+                ('left_tvc_lower', 'left_tvc_lower_cmd_label', 'left_tvc_lower_pos_label', 'left_tvc_lower_delta_label', 'left_tvc_lower_curr_label', None),
+                ('right_tvc_upper','right_tvc_upper_cmd_label','right_tvc_upper_pos_label','right_tvc_upper_delta_label','right_tvc_upper_curr_label',None),
+                ('right_tvc_lower','right_tvc_lower_cmd_label','right_tvc_lower_pos_label','right_tvc_lower_delta_label','right_tvc_lower_curr_label',None),
+            ]
+
+            for name, cmd_attr, fb_attr, delta_attr, curr_attr, temp_attr in surfaces:
+                fb_cdeg = actuator_data.get(f'{name}_feedback_cdeg')
+                cmd_cdeg = actuator_data.get(f'{name}_cmd_cdeg')
+                curr = actuator_data.get(f'{name}_current_mA')
+
+                fb_deg = fb_cdeg / 100.0 if fb_cdeg is not None else None
+                cmd_deg = cmd_cdeg / 100.0 if cmd_cdeg is not None else None
+
+                # Command
+                getattr(self, cmd_attr).setText(
+                    f"{cmd_deg:.1f}" if cmd_deg is not None else "---"
+                )
+                # Feedback
+                getattr(self, fb_attr).setText(
+                    f"{fb_deg:.1f}" if fb_deg is not None else "---"
+                )
+                # Delta
+                delta_label = getattr(self, delta_attr)
+                if cmd_deg is not None and fb_deg is not None:
+                    delta = abs(cmd_deg - fb_deg)
+                    delta_label.setText(f"{delta:.1f}")
+                    delta_label.setStyleSheet(self._delta_style(delta))
+                else:
+                    delta_label.setText("---")
+                    delta_label.setStyleSheet("font-family: monospace;")
+                # Current
+                if curr_attr:
+                    getattr(self, curr_attr).setText(
+                        str(curr) if curr is not None else "---"
+                    )
+                # Temp
+                if temp_attr:
+                    temp = actuator_data.get(f'{name}_motor_temp_degC')
+                    getattr(self, temp_attr).setText(
+                        str(temp) if temp is not None else "---"
+                    )
+
             self.last_update_label.setText(
                 f"Last Update: {datetime.now().strftime('%H:%M:%S')}"
             )
         except Exception:
             pass
-    
+
     def reset(self):
         """Reset to default state"""
-        labels = [
-            self.left_elevon_pos_label, self.right_elevon_pos_label,
-            self.dorsal_rudder_pos_label, self.ventral_rudder_pos_label,
-            self.left_tvc_upper_pos_label, self.left_tvc_lower_pos_label,
-            self.right_tvc_upper_pos_label, self.right_tvc_lower_pos_label,
-            self.left_elevon_curr_label, self.right_elevon_curr_label,
-            self.dorsal_rudder_curr_label, self.ventral_rudder_curr_label,
-            self.left_tvc_upper_curr_label, self.left_tvc_lower_curr_label,
-            self.right_tvc_upper_curr_label, self.right_tvc_lower_curr_label,
-            self.left_elevon_temp_label, self.right_elevon_temp_label
+        all_labels = [
+            attr for attr in dir(self)
+            if attr.endswith(('_cmd_label', '_pos_label', '_delta_label',
+                              '_curr_label', '_temp_label'))
+            and isinstance(getattr(self, attr), QLabel)
         ]
-        
-        for label in labels:
-            label.setText("---")
-        
+        for attr in all_labels:
+            lbl = getattr(self, attr)
+            lbl.setText("---")
+            lbl.setStyleSheet("font-family: monospace;")
         self.last_update_label.setText("Last Update: Never")
 
 
@@ -1115,8 +1077,9 @@ class ProgressWidget(QGroupBox):
         self.current_uut_label = QLabel("---")
         self.current_uut_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
         info_layout.addWidget(self.current_uut_label, 0, 1)
-        
-        info_layout.addWidget(QLabel("Iteration:"), 1, 0)
+
+        self._iteration_title_label = QLabel("Iteration:")
+        info_layout.addWidget(self._iteration_title_label, 1, 0)
         self.iteration_label = QLabel("0")
         self.iteration_label.setStyleSheet("font-weight: bold;")
         info_layout.addWidget(self.iteration_label, 1, 1)
@@ -1148,7 +1111,13 @@ class ProgressWidget(QGroupBox):
     def set_current_uut(self, text):
         """Set current UUT label"""
         self.current_uut_label.setText(text)
-    
+
+    def set_test_mode(self, mode):
+        """Update iteration label title for current mode"""
+        self._iteration_title_label.setText(
+            "Iteration:" if mode == 'ibit' else "Frame:"
+        )
+
     def set_iteration(self, iteration):
         """Set iteration number"""
         self.iteration_label.setText(str(iteration))
@@ -1257,8 +1226,9 @@ class LogWidget(QGroupBox):
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(150)
-        self.log_text.setStyleSheet("font-family: monospace;")
+        self.log_text.setMinimumHeight(200)
+        self.log_text.setMaximumHeight(400)
+        self.log_text.setStyleSheet("font-family: monospace; font-size: 9pt;")
         layout.addWidget(self.log_text)
         
         clear_btn = QPushButton("Clear Log")

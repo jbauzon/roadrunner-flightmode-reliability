@@ -91,6 +91,10 @@ class MultiUUTTestGUI(QMainWindow):
         # Load settings after UI is built
         QTimer.singleShot(100, self.load_settings)
         QTimer.singleShot(500, self.detect_daq_devices)
+        # Apply initial mode to UI (in case saved settings loaded playback mode)
+        QTimer.singleShot(200, lambda: self.on_test_mode_changed(
+            self.test_config_widget.get_test_mode()
+        ))
     
     def init_ui(self):
         """Initialize user interface"""
@@ -364,6 +368,15 @@ class MultiUUTTestGUI(QMainWindow):
                 self,
                 "No Profile Selected",
                 "Please select a flight profile CSV before starting playback mode."
+            )
+            return
+
+        if test_mode == 'playback' and not os.path.isfile(playback_csv):
+            QMessageBox.warning(
+                self,
+                "Profile Not Found",
+                f"The selected CSV file no longer exists:\n{playback_csv}\n\n"
+                "Please select a valid flight profile CSV."
             )
             return
 
@@ -763,8 +776,10 @@ class MultiUUTTestGUI(QMainWindow):
     
     def on_test_mode_changed(self, mode):
         """Update UI elements when test mode radio button changes"""
+        self.test_mode = mode
         self.ibit_display.set_mode(mode)
         self.control_buttons.set_test_mode_label(mode)
+        self.progress_widget.set_test_mode(mode)
         mode_str = "IBIT" if mode == 'ibit' else "Flight Profile Playback"
         self.setWindowTitle(
             f"Multi-UUT Flight Controller Test System v5.0 — {mode_str}"
@@ -796,15 +811,16 @@ class MultiUUTTestGUI(QMainWindow):
     
     def generate_batch_report(self):
         """Generate batch test report"""
+        mode_tag = 'IBIT' if self.test_mode == 'ibit' else 'Playback'
         report_file = os.path.join(
             self.report_directory,
-            f"BatchTest_IBIT_v4.8_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            f"BatchTest_{mode_tag}_v5.0_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         )
-        
+
         report = {
-            'test_type': 'IBIT_v4.8_Descriptive_CSV_Logging',
-            'version': '4.8',
-            'logging_format': 'Descriptive CSV with complete event lifecycle',
+            'test_type': f'{mode_tag}_v5.0',
+            'version': '5.0',
+            'test_mode': self.test_mode,
             'batch_start_time': self.batch_start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
             'batch_end_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'total_duration_seconds': time.time() - self.batch_start_datetime.timestamp(),

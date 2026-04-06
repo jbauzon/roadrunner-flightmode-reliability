@@ -560,18 +560,56 @@ class UUTTestExecutor(QThread):
                 
                 # CRITICAL: IBIT completion detected by mode transition IBIT → OPERATE
                 if self._last_mode == 1 and current_mode == 2:
-                    # Vehicle successfully completed IBIT and transitioned to OPERATE
+                    # Evaluate mistracking flags — actual PASS/FAIL determination
+                    mistracking = getattr(status_msg, 'actuation_ibit_mon_status', 0)
+                    mistracking_names = {
+                        1: 'Upper Rudder',    2: 'Lower Rudder',
+                        4: 'Left TVC Upper',  8: 'Left TVC Lower',
+                        16: 'Right TVC Upper', 32: 'Right TVC Lower',
+                        64: 'Left Elevon',    128: 'Right Elevon',
+                    }
+                    failed_surfaces = [
+                        name for bit, name in mistracking_names.items()
+                        if mistracking & bit
+                    ]
+
                     total_runs = self._ibit_run_count + 1
                     self.log_message.emit(
-                        f"\n✓ IBIT completed successfully after {total_runs} run(s)"
+                        f"\n{'✓' if not failed_surfaces else '✗'} IBIT completed "
+                        f"after {total_runs} run(s) — "
+                        f"Mode: IBIT(1) → OPERATE(2)"
                     )
-                    self.log_message.emit(
-                        f"  Mode transition detected: IBIT(1) → OPERATE(2)"
-                    )
+
+                    if failed_surfaces:
+                        self.log_message.emit(
+                            f"  ✗ IBIT FAIL — mistracking on: "
+                            f"{', '.join(failed_surfaces)} "
+                            f"(flags=0x{mistracking:02X})"
+                        )
+                        if self.telemetry_logger:
+                            self.telemetry_logger.log_test_event(
+                                'IBIT_FAIL',
+                                f'Mistracking detected on: '
+                                f'{", ".join(failed_surfaces)} '
+                                f'(flags=0x{mistracking:02X})'
+                            )
+                        raise Exception(
+                            f"IBIT FAIL — mistracking on: "
+                            f"{', '.join(failed_surfaces)}"
+                        )
+                    else:
+                        self.log_message.emit(
+                            f"  ✓ IBIT PASS — no mistracking flags set"
+                        )
+                        if self.telemetry_logger:
+                            self.telemetry_logger.log_test_event(
+                                'IBIT_PASS',
+                                'IBIT passed — all surfaces tracked correctly'
+                            )
                     self.log_message.emit(f"  Final IBIT substate: {current_substate}")
                     self.log_message.emit("")
                     self.log_message.emit("="*60)
-                    self.log_message.emit("✓ IBIT COMPLETE - Vehicle ready for flight!")
+                    self.log_message.emit("✓ IBIT PASS — Vehicle ready for flight!")
                     self.log_message.emit("="*60)
                     
                     # Mark tracker as complete
@@ -1144,9 +1182,18 @@ class UUTTestExecutor(QThread):
                 pass
     
     def _wait_for_message(self, msg_type, timeout=5.0):
-        """Wait for a specific message type"""
-        return self.master.recv_match(type=msg_type, blocking=True, timeout=timeout)
-    
+        """
+        Wait for a specific message type.
+
+        IMPORTANT: Uses master_lock to prevent concurrent MAVLink access
+        with the background telemetry worker thread.
+        """
+        with self.master_lock:
+            return self.master.recv_match(
+                type=msg_type, blocking=True, timeout=timeout
+            )
+
+
 class IBITFailureDiagnostic:
     """Structured IBIT failure diagnostics"""
     
@@ -1595,11 +1642,12 @@ class PlaybackTestExecutor(QThread):
                 )
 
             # Read feedback (non-blocking — use latest available)
-            fb = self.master.recv_match(
-                type='PANDION_RR_ACTUATION_SYS_STATUS',
-                blocking=False,
-                timeout=0.005
-            )
+            with self.master_lock:
+                fb = self.master.recv_match(
+                    type='PANDION_RR_ACTUATION_SYS_STATUS',
+                    blocking=False,
+                    timeout=0.005
+                )
             if fb:
                 # Accumulate mistracking flags
                 accumulated_flags |= getattr(fb, 'actuation_ibit_mon_status', 0)
@@ -1749,19 +1797,24 @@ class PlaybackTestExecutor(QThread):
         """
         self.log_message.emit("  Disabling relay (power off)...")
         self.daq.set_line(self.uut.relay_line, False)
+        if self.telemetry_logger:
+            self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
         time.sleep(3.0)
 
         self.log_message.emit("  Enabling relay (power on)...")
         ok, msg = self.daq.set_line(self.uut.relay_line, True)
         if not ok:
             raise Exception(f"Relay re-enable failed: {msg}")
+        if self.telemetry_logger:
+            self.telemetry_logger.log_relay_state(self.uut.relay_line, True)
         time.sleep(self.stabilization_delay)
 
         self.log_message.emit("  Waiting for vehicle heartbeat after power cycle...")
         timeout = 30.0
         start = time.time()
         while time.time() - start < timeout:
-            hb = self.master.wait_heartbeat(timeout=2.0)
+            with self.master_lock:
+                hb = self.master.wait_heartbeat(timeout=2.0)
             if hb:
                 self.log_message.emit(
                     f"  ✓ Heartbeat received after "

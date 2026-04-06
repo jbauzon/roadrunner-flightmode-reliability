@@ -17,27 +17,30 @@ from PyQt5.QtCore import QObject, pyqtSignal
 class TelemetryLogger(QObject):
     """
     IBIT-focused telemetry logger with human-readable, descriptive CSV format.
-    
+
     Logs both test control events and vehicle telemetry with context.
+    Supports both IBIT and Flight Profile Playback test modes.
     """
-    
+
     log_message = pyqtSignal(str)
     file_rotated = pyqtSignal(str)
-    
+
     MODE_IBIT_FOCUSED = "ibit_focused"
     MODE_NONE = "none"
-    
+
     def __init__(self, log_directory, uut_serial, test_start_datetime,
-                 logging_mode=MODE_IBIT_FOCUSED, max_file_size_mb=100):
+                 logging_mode=MODE_IBIT_FOCUSED, max_file_size_mb=100,
+                 test_mode='ibit'):
         """
         Initialize telemetry logger.
-        
+
         Args:
             log_directory: Base directory for logs
             uut_serial: UUT serial number
             test_start_datetime: When batch test started (datetime)
             logging_mode: Logging mode (IBIT_FOCUSED or NONE)
             max_file_size_mb: Maximum file size before rotation
+            test_mode: 'ibit' or 'playback' — affects log filename
         """
         super().__init__()
         self.log_directory = log_directory
@@ -45,6 +48,7 @@ class TelemetryLogger(QObject):
         self.test_start_datetime = test_start_datetime
         self.logging_mode = logging_mode
         self.max_file_size = max_file_size_mb * 1024 * 1024
+        self.test_mode = test_mode
         
         self.current_date = None
         self.current_log_path = None
@@ -89,7 +93,7 @@ class TelemetryLogger(QObject):
         
         self.current_file_size = 0
         self.flush_interval = 2.0
-        self.last_flush_time = time.time()
+        self.last_flush_time = datetime.now().timestamp()  # consistent with log_telemetry
         
         # Track current state
         self.current_ibit_phase = "UNKNOWN"
@@ -102,17 +106,23 @@ class TelemetryLogger(QObject):
     def get_log_path_for_date(self, date_obj):
         """
         Generate log file path for a specific date.
-        
+
+        Filename includes test mode (IBIT or Playback) so the two can be
+        distinguished in the logs folder.
+
         Args:
             date_obj: Date object
-        
+
         Returns:
             Full path to log file
         """
         day_num = (date_obj - self.test_start_datetime.date()).days + 1
         day_str = f"day{day_num:02d}"
         date_str = date_obj.strftime('%Y%m%d')
-        filename = f"UUT_{self.uut_serial}_{day_str}_{date_str}_IBIT_Test.csv"
+        mode_tag = "IBIT" if self.test_mode == 'ibit' else "Playback"
+        filename = (
+            f"UUT_{self.uut_serial}_{day_str}_{date_str}_{mode_tag}_Test.csv"
+        )
         return os.path.join(self.log_directory, filename)
     
     def open(self):
@@ -487,7 +497,7 @@ class TelemetryLogger(QObject):
                 
                 self._write_row(row)
             
-            # Periodic flush
+            # Periodic flush — use consistent datetime source
             if now.timestamp() - self.last_flush_time >= self.flush_interval:
                 self.log_file.flush()
                 self.current_file_size = self.log_file.tell()
@@ -510,19 +520,17 @@ class TelemetryLogger(QObject):
     def _count_set_monitors(self, byte_array):
         """
         Count how many monitors are SET.
-        
+
+        Uses bin().count('1') (popcount) — faster and simpler than
+        the nested loop approach.
+
         Args:
             byte_array: Array of bytes representing monitor bits
-        
+
         Returns:
             int: Number of SET monitors
         """
-        count = 0
-        for byte_val in byte_array:
-            for bit in range(8):
-                if byte_val & (1 << bit):
-                    count += 1
-        return count
+        return sum(bin(b).count('1') for b in byte_array)
     
     def close(self):
         """Close log file with proper error handling and logging"""
