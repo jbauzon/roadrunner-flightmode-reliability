@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<mavlink>
+  <!-- See: https://pages.ghe.anduril.au/anduril/xl-operator-docs/telemetry/ADDING_NEW_METRICS.html for rules on adding new telemetry messages -->
+  <!-- Dive LD messages shared across vms, pmc and smc -->
+  <include>common.xml</include>
+  <dialect>106</dialect>
+  <messages>
+  <!-- TODO: Add specific Dive LD messages here instead of including the dive_xl_common.xml -->
+
+    <message id="31000" name="DIVE_LD_NEPTUNE_BATTERY_TELEMETRY">
+      <description>Neptune battery telemetry</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint32_t" name="address">The battery address</field>
+      <field type="uint16_t" name="missed_msg_count">Missed message count</field>
+      <field type="float" name="esm_humidity" units="%">PV humidity</field>
+      <field type="float" name="esm_pressure" units="PSI">PV pressure</field>
+      <field type="float" name="esm_voltage" units="V">Battery voltage</field>
+      <field type="float" name="dc_link_voltage" units="V">DC link voltage</field>
+      <field type="float" name="esm_current" units="A">Battery current</field>
+      <field type="uint32_t" name="esm_faults">Battery faults bitmask</field>
+      <field type="uint32_t" name="esm_failures">Battery failures bitmask</field>
+      <field type="float" name="cell_vmin" units="V">Minimum cell group voltage</field>
+      <field type="float" name="cell_vavg" units="V">Average cell group voltage</field>
+      <field type="float" name="cell_vmax" units="V">Maximum cell group voltage</field>
+      <field type="float" name="cell_vstd" units="V">Standard deviation cell group voltage</field>
+      <field type="float" name="cell_tmin" units="degC">Minimum cell temperature</field>
+      <field type="float" name="cell_tavg" units="degC">Average cell temperature</field>
+      <field type="float" name="cell_tmax" units="degC">Maximum cell temperature</field>
+      <field type="float" name="cell_tstd" units="degC">Standard deviation cell temperature</field>
+      <field type="float" name="esm_temperature" units="degC">PV temperature</field>
+      <field type="uint8_t" name="soc" units="%">State of charge percentage</field>
+      <field type="uint8_t" name="soh" units="%">State of health percentage</field>
+      <field type="float" name="available_current" units="A">Available battery current</field>
+      <field type="float" name="available_power" units="W">Available battery power</field>
+      <field type="float" name="esm_charge_capacity" units="Ah">Battery charge capacity</field>
+      <field type="float" name="esm_charge_used" units="Ah">Battery charge used</field>
+      <field type="uint8_t" name="esm_ssd_status">Battery main contactors state</field>
+      <field type="uint8_t" name="bms_state">Battery state</field>
+      <field type="uint8_t" name="iso_test_active">Battery isolation test ongoing</field>
+      <field type="uint8_t" name="iso_test_finished">Battery isolation test finished</field>
+      <field type="uint8_t" name="sd_card_full">Battery logging SD card full</field>
+      <field type="uint32_t" name="node_id">Battery node ID</field>
+      <field type="uint8_t" name="sw_version">Battery software version</field>
+      <field type="uint32_t" name="application_crc">Battery application crc</field>
+      <field type="uint8_t" name="config_str_cnt">Battery configured string count</field>
+      <field type="uint64_t" name="utc_epoch_time">Battery rtc epoch time</field>
+      <field type="float" name="iso_resistance" units="MOhms">Battery to PV isolation</field>
+      <extensions/>
+      <field type="uint8_t" name="comms_timeout">Boolean flag for whether a comms timeout has been detecteed for this particular battery</field>
+    </message>
+
+    <message id="31001" name="DIVE_LD_NEPTUNE_BATTERY_STRING_TELEMETRY">
+      <description>Neptune battery string telemetry</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint32_t" name="address">The battery address</field>
+      <field type="uint8_t" name="string_number">Battery string number</field>
+      <field type="uint8_t" name="string_state">Battery string state</field>
+      <field type="float" name="string_voltage" units="V">Battery string voltage</field>
+      <field type="float" name="string_current" units="A">Battery string current</field>
+      <field type="float" name="string_charge_capacity" units="Ah">Battery string charge capacity</field>
+      <field type="float" name="string_charge_used" units="Ah">Battery string charge used</field>
+      <field type="float" name="string_iso_resistance" units="MOhms">Battery string to billet isolation</field>
+      <field type="float[18]" name="string_cell_group_voltages" units="V">Battery string cell group voltages</field>
+      <field type="float[6]" name="string_temperatures" units="degC">Battery string cell group voltages</field>
+    </message>
+  </messages>
+</mavlink>

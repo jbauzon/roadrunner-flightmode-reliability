@@ -1,0 +1,1748 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>aifcs.xml</include>
+  <dialect>101</dialect>
+  <!-- Currently utilize 600-series messages for Pandion Common -->
+  <!--   600-649 for downlink                                   -->
+  <!--   650-699 for uplink                                     -->
+  <!-- Currently utilize 121xx-series messages for Pandion Omen -->
+  <!--   12100-12149 for downlink                               -->
+  <!--   12150-12199 for uplink                                 -->
+  <enums>
+    <enum name="MAV_MISSION_TYPE">
+      <entry value="3" name="MAV_MISSION_TYPE_MISSION_LAUNCH">
+        <description>Items are mission commands for launch mission.</description>
+      </entry>
+      <entry value="4" name="MAV_MISSION_TYPE_MISSION_ENROUTE">
+        <description>Items are mission commands for enroute segment of mission.</description>
+      </entry>
+      <entry value="5" name="MAV_MISSION_TYPE_MISSION_RECOVERY">
+         <description>Items are mission commands for recover segment of mission.</description>
+      </entry>
+      <entry value="6" name="MAV_MISSION_TYPE_MISSION_TAXI">
+         <description>Items are mission commands for taxi segment of mission.</description>
+      </entry>
+    </enum>
+    <enum name="MAV_PARAM_TYPE">
+      <entry value="11" name="MAV_PARAM_TYPE_BOOL">
+        <description>boolean</description>
+      </entry>
+
+    </enum>
+    <enum name="MAV_CMD">
+      <entry value="31015" name="MAV_CMD_AIFCS_MISSION_START" hasLocation="false" isDestination="false">
+        <description>Defines mission start and contingency waypoint.</description>
+        <param index="1" label="StartWaypoint">Mission start waypoint</param>
+        <param index="2" label="ContingencyWaypoint">Contingency Level 1 Waypoint</param>
+        <param index="3">Empty</param>
+        <param index="4">Empty</param>
+        <param index="5">Empty</param>
+        <param index="6">Empty</param>
+        <param index="7">Empty</param>
+      </entry>
+      <entry value="31016" name="MAV_CMD_AIFCS_VTOL_TAKEOFF" hasLocation="true" isDestination="true">
+        <description>AIFCS vtol takeoff waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31017" name="MAV_CMD_AIFCS_SET_SPEED" hasLocation="false" isDestination="false">
+        <description>Sets the hold time for the next waypoint.</description>
+        <param index="1" label="GroundSpeed" units="m/s">Ground speed setting. Holds until another MAV_CMD_AIFCS_SET_SPEED is sequenced.</param>
+        <param index="2">Empty</param>
+        <param index="3" label="SpeedType" >Speed type setting. Holds until another MAV_CMD_AIFCS_SET_SPEED is sequenced.</param>
+        <param index="4">Empty</param>
+        <param index="5">Empty</param>
+        <param index="6">Empty</param>
+        <param index="7">Empty</param>
+      </entry>
+      <entry value="31018" name="MAV_CMD_AIFCS_AIR_CUT" hasLocation="true" isDestination="true">
+        <description>AIFCS air cut waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31019" name="MAV_CMD_AIFCS_AIR_THROUGH" hasLocation="true" isDestination="true">
+        <description>AIFCS air cut waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31102" name="MAV_CMD_AIFCS_AIR_FW_LAND" hasLocation="true" isDestination="true">
+        <description>AIFCS air cut waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31020" name="MAV_CMD_AIFCS_AIR_HOVER" hasLocation="true" isDestination="true">
+        <description>AIFCS air hover waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31021" name="MAV_CMD_AIFCS_AIR_ARC" hasLocation="true" isDestination="true">
+        <description>AIFCS air arc waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31022" name="MAV_CMD_AIFCS_AIR_TIME_LOITER" hasLocation="true" isDestination="true">
+        <description>AIFCS air time loiter waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="LoiterRadius" units="m">Loiter Radius</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31037" name="MAV_CMD_AIFCS_AIR_LAP_LOITER" hasLocation="true" isDestination="true">
+        <description>AIFCS air lap loiter waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration">Number of laps</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="LoiterRadius" units="m">Loiter Radius</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude above WGS84</param>
+      </entry>
+      <entry value="31023" name="MAV_CMD_AIFCS_AIR_ACTION_RW2FW_TRANSITION" hasLocation="true" isDestination="true">
+        <description>AIFCS rotary-wing to fixed-wing transition waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31024" name="MAV_CMD_AIFCS_AIR_ACTION_FW2RW_TRANSITION" hasLocation="true" isDestination="true">
+        <description>AIFCS fixed-wing to rotarywing transition waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31025" name="MAV_CMD_AIFCS_AIR_ACTION_ROLL_SYSID" hasLocation="true" isDestination="true">
+        <description>AIFCS roll axis system identification waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31026" name="MAV_CMD_AIFCS_AIR_ACTION_PITCH_SYSID" hasLocation="true" isDestination="true">
+        <description>AIFCS pitch axis system identification waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31027" name="MAV_CMD_AIFCS_AIR_ACTION_YAW_SYSID" hasLocation="true" isDestination="true">
+        <description>AIFCS yaw axis system identification waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31028" name="MAV_CMD_AIFCS_AIR_ACTION_THRUST_SYSID" hasLocation="true" isDestination="true">
+        <description>AIFCS thrust axis system identification waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31029" name="MAV_CMD_AIFCS_AIR_ACTION_HOLD_LEVEL" hasLocation="true" isDestination="true">
+        <description>AIFCS hold level at current flight condition waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31030" name="MAV_CMD_AIFCS_AIR_ACTION_STOP_HOLD_HDG" hasLocation="true" isDestination="true">
+        <description>AIFCS come to a stop and hold current heading waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31031" name="MAV_CMD_AIFCS_AIR_ACTION_STOP_SET_HDG" hasLocation="true" isDestination="true">
+        <description>AIFCS come to a stop and specify heading waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31032" name="MAV_CMD_AIFCS_SET_ROUTE_COMPLETE" hasLocation="false" isDestination="false">
+        <description>AIFCS set flag indicating route completed.</description>
+        <param index="1">Empty</param>
+        <param index="2">Empty</param>
+        <param index="3">Empty</param>
+        <param index="4">Empty</param>
+        <param index="5">Empty</param>
+        <param index="6">Empty</param>
+        <param index="7">Empty</param>
+      </entry>
+      <entry value="31033" name="MAV_CMD_AIFCS_CLEAR_ROUTE_COMPLETE" hasLocation="false" isDestination="false">
+        <description>AIFCS clear flag indicating route completed.</description>
+        <param index="1">Empty</param>
+        <param index="2">Empty</param>
+        <param index="3">Empty</param>
+        <param index="4">Empty</param>
+        <param index="5">Empty</param>
+        <param index="6">Empty</param>
+        <param index="7">Empty</param>
+      </entry>
+      <entry value="31034" name="MAV_CMD_AIFCS_SET_SELECTED_PROFILE" hasLocation="false" isDestination="false">
+        <description>Sets the profile id for the next waypoint.</description>
+        <param index="1" label="ProfileNumber" units="id">Profile id setting. Holds until another MAV_CMD_AIFCS_SET_SELECTED_PROFILE is sequenced.</param>
+        <param index="2">Empty</param>
+        <param index="3">Empty</param>
+        <param index="4">Empty</param>
+        <param index="5">Empty</param>
+        <param index="6">Empty</param>
+        <param index="7">Empty</param>
+      </entry>
+      <entry value="31035" name="MAV_CMD_AIFCS_AIR_ACTION_EXECUTE_SELECTED_PROFILE" hasLocation="true" isDestination="true">
+        <description>AIFCS execute selected profile ID</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31036" name="MAV_CMD_AIFCS_AIR_THROUGH_SEGMENT_TOA" hasLocation="true" isDestination="true">
+        <description>AIFCS through waypoint with segment time-of-arrival</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31038" name="MAV_CMD_AIFCS_AIR_THROUGH_GLOBAL_TOA" hasLocation="true" isDestination="true">
+        <description>AIFCS through waypoint with global time-of-arrival</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31100" name="MAV_CMD_AIFCS_VTOL_LAND" hasLocation="true" isDestination="true">
+        <description>AIFCS vtol land waypoint</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31101" name="MAV_CMD_AIFCS_GROUND_PRECISION" hasLocation="true" isDestination="true">
+        <description>AIFCS ground precision</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+      <entry value="31103" name="MAV_CMD_AIFCS_GROUND" hasLocation="true" isDestination="true">
+        <description>AIFCS ground</description>
+        <param index="1" label="NavMethod" enum="AIFCS_NAV_METHOD">Navigation method</param>
+        <param index="2" label="maneuver_duration" units="s">Maneuver hold time</param>
+        <param index="3" label="NextWaypoint">Next waypoint in mission (0 for automatic)</param>
+        <param index="4" label="Heading" units="deg">Desired heading at waypoint</param>
+        <param index="5" label="Latitude">Latitude</param>
+        <param index="6" label="Longitude">Longitude</param>
+        <param index="7" label="AltitudeWGS84" units="m">Altitude</param>
+      </entry>
+    </enum>
+    <!-- Pandion Common -->
+    <enum name="PANDION_MONITOR_OVERRIDE_CMD">
+      <entry value="0" name="PANDION_MONITOR_OVERRIDE_CANCEL"/>
+      <entry value="1" name="PANDION_MONITOR_OVERRIDE_SET"/>
+      <entry value="2" name="PANDION_MONITOR_OVERRIDE_CLEAR"/>
+    </enum>
+    <enum name="PANDION_FLIGHT_REGIME">
+      <entry value="0" name="PANDION_FLIGHT_REGIME_GROUND_DISARMED"/>
+      <entry value="1" name="PANDION_FLIGHT_REGIME_GROUND_ARMED"/>
+      <entry value="2" name="PANDION_FLIGHT_REGIME_AUTO_TAKEOFF"/>
+      <entry value="3" name="PANDION_FLIGHT_REGIME_HOVER"/>
+      <entry value="4" name="PANDION_FLIGHT_REGIME_FORWARD_TRANSITION"/>
+      <entry value="5" name="PANDION_FLIGHT_REGIME_CRUISE"/>
+      <entry value="6" name="PANDION_FLIGHT_REGIME_IN_AIR_RESTART" />
+      <entry value="7" name="PANDION_FLIGHT_REGIME_BACK_TRANSITION"/>
+      <entry value="8" name="PANDION_FLIGHT_REGIME_EXTERNAL_GUIDANCE"/>
+      <entry value="9" name="PANDION_FLIGHT_REGIME_TAKEOFF_ABORTED"/>
+      <entry value="10" name="PANDION_FLIGHT_REGIME_POWERING_OFF"/>
+      <entry value="11" name="PANDION_FLIGHT_REGIME_CUT_POWER"/>
+      <entry value="12" name="PANDION_FLIGHT_REGIME_TERMINATE"/>
+      <entry value="13" name="PANDION_FLIGHT_REGIME_SCUTTLE"/>
+      <entry value="14" name="PANDION_FLIGHT_REGIME_NULL_ATTITUDE_AND_COLLECTIVE"/>
+      <entry value="15" name="PANDION_FLIGHT_REGIME_NULL_ATTITUDE_FIXED_COLLECTIVE"/>
+      <entry value="16" name="PANDION_FLIGHT_REGIME_LANDNOW_OL"/>
+      <entry value="17" name="PANDION_FLIGHT_REGIME_LANDNOW_CL"/>
+      <entry value="18" name="PANDION_FLIGHT_REGIME_PILOT_OVERRIDE"/>
+      <entry value="19" name="PANDION_FLIGHT_REGIME_EMERGENCY_STOP"/>
+      <entry value="20" name="PANDION_FLIGHT_REGIME_AUTO_RECOVERY"/>
+      <entry value="21" name="PANDION_FLIGHT_REGIME_WAVE_OFF"/>
+      <entry value="22" name="PANDION_FLIGHT_REGIME_TAXI"/>
+      <entry value="255" name="PANDION_FLIGHT_REGIME_INVALID"/>
+    </enum>
+    <enum name="PANDION_STATUS_BITS" bitmask="true">
+      <entry value="1" name="PANDION_STATUS_UMBILICAL_ATTACHED"/>
+      <entry value="2" name="PANDION_STATUS_READY_FOR_LAUNCH"/>
+      <entry value="4" name="PANDION_STATUS_RC_ENABLED"/>
+      <entry value="8" name="PANDION_STATUS_LANDING_GEAR_DEPLOYED"/>
+      <entry value="16" name="PANDION_STATUS_RC_SWITCH_MISMATCH"/>
+      <entry value="32" name="PANDION_STATUS_INTERNAL_INS_ENABLED"/>
+      <entry value="64" name="PANDION_STATUS_INTERNAL_INS_ACTIVE"/>
+      <entry value="128" name="PANDION_STATUS_INTERNAL_INS_USE_FOR_CTRL"/>
+    </enum>
+    <enum name="PANDION_INS_STATUS">
+      <entry value="0" name="PANDION_INS_STATUS_INIT"/>
+      <entry value="1" name="PANDION_INS_STATUS_ERROR"/>
+      <entry value="2" name="PANDION_INS_STATUS_DEGRADED"/>
+      <entry value="3" name="PANDION_INS_STATUS_OK"/>
+      <entry value="255" name="PANDION_INS_STATUS_INVALID"/>
+    </enum>
+    <enum name="PANDION_INS_MODE">
+      <entry value="0" name="PANDION_INS_MODE_NOT_TRACKING"/>
+      <entry value="1" name="PANDION_INS_MODE_ALIGNING"/>
+      <entry value="2" name="PANDION_INS_MODE_TRACKING"/>
+      <entry value="3" name="PANDION_INS_MODE_LOST_GNSS"/>
+      <entry value="255" name="PANDION_INS_MODE_INVALID"/>
+    </enum>
+    <enum name="PANDION_GNSS_FIX">
+      <entry value="0" name="PANDION_GNSS_FIX_NO_FIX"/>
+      <entry value="1" name="PANDION_GNSS_FIX_TIME_ONLY"/>
+      <entry value="2" name="PANDION_GNSS_FIX_2D"/>
+      <entry value="3" name="PANDION_GNSS_FIX_3D"/>
+      <entry value="5" name="PANDION_GNSS_FIX_SBAS"/>
+      <entry value="7" name="PANDION_GNSS_FIX_RTK_FLOAT"/>
+      <entry value="8" name="PANDION_GNSS_FIX_RTK_FIXED"/>
+      <entry value="255" name="PANDION_GNSS_FIX_INVALID"/>
+    </enum>
+    <enum name="PANDION_PROP_STATE">
+      <entry value="0" name="PANDION_PROP_STATE_OFF"/>
+      <entry value="1" name="PANDION_PROP_STATE_START"/>
+      <entry value="2" name="PANDION_PROP_STATE_OPERATE"/>
+      <entry value="3" name="PANDION_PROP_STATE_MANUAL"/>
+      <entry value="4" name="PANDION_PROP_STATE_SHUTDOWN"/>
+      <entry value="5" name="PANDION_PROP_STATE_EMERGENCY_SHUTDOWN"/>
+      <entry value="6" name="PANDION_PROP_STATE_SHUTDOWN_ERROR"/>
+      <entry value="7" name="PANDION_PROP_STATE_IBIT"/>
+      <entry value="8" name="PANDION_PROP_STATE_PRESTART"/>
+      <entry value="255" name="PANDION_PROP_STATE_INVALID"/>
+    </enum>
+    <enum name="PANDION_AUX_INS_GPS_ALERT_BITS" bitmask="true">
+      <entry value="1" name="PANDION_AUX_INS_GPS_ALERT_POS_WARNING"/>
+      <entry value="2" name="PANDION_AUX_INS_GPS_ALERT_POS_ERROR"/>
+      <entry value="4" name="PANDION_AUX_INS_GPS_ALERT_VEL_WARNING"/>
+      <entry value="8" name="PANDION_AUX_INS_GPS_ALERT_VEL_ERROR"/>
+      <entry value="16" name="PANDION_AUX_INS_GPS_ALERT_STATIONARY_VEL_WARNING"/>
+      <entry value="32" name="PANDION_AUX_INS_GPS_ALERT_STATIONARY_VEL_ERROR"/>
+    </enum>
+    <enum name="PANDION_RECOVERY_ROUTE_CMD_ACK_STATUS">
+      <entry value="0" name="PANDION_611_ACCEPT"/>
+      <entry value="1" name="PANDION_611_REJECT_INVALID_FLIGHT_REGIME"/>
+      <entry value="2" name="PANDION_611_REJECT_ALREADY_ON_RECOVERY_ROUTE"/>
+      <entry value="3" name="PANDION_611_REJECT_IN_CLASSIC_MODE"/>
+      <entry value="4" name="PANDION_611_REJECT_UNABLE_TO_RTB"/>
+    </enum>
+    <enum name="PANDION_ABORT_LAUNCH_CMD_ACK_STATUS">
+      <entry value="0" name="PANDION_615_ACCEPT"/>
+      <entry value="1" name="PANDION_615_REJECT_INVALID_FLIGHT_REGIME"/>
+    </enum>
+    <enum name="PANDION_POWER_OFF_CMD_ACK_STATUS">
+      <entry value="0" name="PANDION_616_ACCEPT"/>
+      <entry value="1" name="PANDION_616_REJECT_INVALID_FLIGHT_REGIME"/>
+    </enum>
+    <enum name="PANDION_SCUTTLE_CMD_ACK_STATUS">
+      <entry value="0" name="PANDION_617_ACCEPT"/>
+      <entry value="1" name="PANDION_617_REJECT_INVALID_FLIGHT_REGIME"/>
+      <entry value="2" name="PANDION_617_REJECT_IN_CLASSIC_MODE"/>
+    </enum>
+    <enum name="PANDION_LOG_WRITER_STATE">
+      <entry value="0" name="PANDION_LOG_STATE_NONE"/>
+      <entry value="1" name="PANDION_LOG_STATE_IDLE"/>
+      <entry value="2" name="PANDION_LOG_STATE_RUN"/>
+      <entry value="4" name="PANDION_LOG_STATE_START"/>
+      <entry value="8" name="PANDION_LOG_STATE_STOP"/>
+      <entry value="16" name="PANDION_LOG_STATE_FORMAT"/>
+    </enum>
+    <enum name="PANDION_MA_CONTROL_MODE_TYPE">
+      <entry value="0" name="PANDION_MA_CONTROL_MODE_TYPE_VMS"/>
+      <entry value="1" name="PANDION_MA_CONTROL_MODE_TYPE_MA_MISSION"/>
+      <entry value="2" name="PANDION_MA_CONTROL_MODE_TYPE_MA_HSA"/>
+    </enum>
+    <enum name="PANDION_MA_SPEED_TYPE">
+      <entry value="0" name="PANDION_MA_SPEED_TYPE_GROUNDSPEED"/>
+      <entry value="1" name="PANDION_MA_SPEED_TYPE_AIRSPEED"/>
+    </enum>
+    <enum name="PANDION_MA_HEADING_TYPE">
+      <entry value="0" name="PANDION_MA_HEADING_TYPE_COURSE"/>
+      <entry value="1" name="PANDION_MA_HEADING_TYPE_HEADING"/>
+    </enum>
+    <enum name="PANDION_MA_CONTROL_MODE_REQUEST_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_CONTROL_MODE_REQUEST_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_CONTROL_MODE_REQUEST_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_HSA_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_HSA_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_HSA_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_TAXI_RUNWAY_LOAD_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_TAXI_RUNWAY_LOAD_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_TAXI_RUNWAY_LOAD_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_TAXI_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_TAXI_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_TAXI_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_TAXI_STOP_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_TAXI_STOP_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_TAXI_STOP_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_TAXI_START_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_TAXI_START_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_TAXI_START_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_GROUND_ARMED_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_GROUND_ARMED_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_GROUND_ARMED_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_TAXI_ABORT_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_TAXI_ABORT_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_TAXI_ABORT_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_LAUNCH_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_LAUNCH_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_LAUNCH_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_SEEKER_SYSID_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_SEEKER_SYSID_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_SEEKER_SYSID_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_LAUNCH_ABORT_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_LAUNCH_ABORT_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_LAUNCH_ABORT_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_RECOVERY_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_RECOVERY_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_RECOVERY_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_RECOVERY_ABORT_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_RECOVERY_ABORT_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_RECOVERY_ABORT_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_LOFT_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_LOFT_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_LOFT_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_SLICE_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_SLICE_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_SLICE_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_POPU_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_POPU_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_POPU_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_MA_WIND_UP_TURN_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_MA_WIND_UP_TURN_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_MA_WIND_UP_TURN_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_EXTERNAL_GUIDANCE_REQ">
+      <entry value="0" name="PANDION_EXTERNAL_GUIDANCE_REQ_DISABLE"/>
+      <entry value="1" name="PANDION_EXTERNAL_GUIDANCE_REQ_ENABLE"/>
+    </enum>
+    <enum name="PANDION_EXTERNAL_GUIDANCE_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_EXTERNAL_GUIDANCE_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_EXTERNAL_GUIDANCE_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND_ACK_TYPE_REJECTED"/>
+    </enum>
+    <enum name="PANDION_STANAG_ROUTE_REQ">
+      <entry value="0" name="PANDION_STANAG_ROUTE_REQ_0"/>
+      <entry value="1" name="PANDION_STANAG_ROUTE_REQ_1"/>
+      <entry value="2" name="PANDION_STANAG_ROUTE_REQ_2"/>
+      <entry value="3" name="PANDION_STANAG_ROUTE_REQ_3"/>
+      <entry value="4" name="PANDION_STANAG_ROUTE_REQ_4"/>
+      <entry value="5" name="PANDION_STANAG_ROUTE_REQ_5"/>
+    </enum>
+    <enum name="PANDION_STANAG_ROUTE_COMMAND_ACK_TYPE">
+      <entry value="0" name="PANDION_STANAG_ROUTE_COMMAND_ACK_TYPE_ACCEPTED"/>
+      <entry value="1" name="PANDION_STANAG_ROUTE_ACK_TYPE_REJECTED"/>
+    </enum>
+
+    <!-- Pandion Omen -->
+    <enum name="PANDION_PROP_START_STATES">
+      <entry value="0" name="PANDION_PROP_START_INIT"/>
+      <entry value="1" name="PANDION_PROP_START_ALIGN"/>
+      <entry value="2" name="PANDION_PROP_START_PRIME"/>
+      <entry value="3" name="PANDION_PROP_START_ACCEL"/>
+      <entry value="4" name="PANDION_PROP_START_CRANK_SGEN"/>
+      <entry value="5" name="PANDION_PROP_START_CRANK_ENG"/>
+      <entry value="6" name="PANDION_PROP_START_STABILIZE"/>
+      <entry value="7" name="PANDION_PROP_START_CMD_GND_IDLE"/>
+      <entry value="255" name="PANDION_PROP_START_STATE_INVALID"/>
+    </enum>
+    <enum name="PANDION_PROP_SHUTDOWN_STATES">
+      <entry value="0" name="PANDION_PROP_SHUTDOWN_INIT"/>
+      <entry value="1" name="PANDION_PROP_SHUTDOWN_SPOOL_DOWN_TO_IDLE"/>
+      <entry value="2" name="PANDION_PROP_SHUTDOWN_SPOOL_DOWN_TO_CRANK"/>
+      <entry value="3" name="PANDION_PROP_SHUTDOWN_SPOOL_DOWN_TO_MIN_CMD"/>
+      <entry value="4" name="PANDION_PROP_SHUTDOWN_COMPLETE"/>
+      <entry value="255" name="PANDION_PROP_SHUTDOWN_STATE_INVALID"/>
+    </enum>
+    <enum name="PANDION_ENG_STATE">
+      <entry value="0" name="PANDION_ENG_STATE_OFF"/>
+      <entry value="1" name="PANDION_ENG_STATE_PREHEAT"/>
+      <entry value="2" name="PANDION_ENG_STATE_START"/>
+      <entry value="3" name="PANDION_ENG_STATE_STABILIZE"/>
+      <entry value="4" name="PANDION_ENG_STATE_BIT"/>
+      <entry value="5" name="PANDION_ENG_STATE_RUN"/>
+      <entry value="6" name="PANDION_ENG_STATE_SHUTDOWN"/>
+    </enum>
+    <enum name="PANDION_ENG_SPEED_CONTROL_STATE">
+      <entry value="0" name="PANDION_ENG_SPEED_CONTROL_STATE_IDLE_GOV"/>
+      <entry value="1" name="PANDION_ENG_SPEED_CONTROL_STATE_RUN"/>
+      <entry value="2" name="PANDION_ENG_SPEED_CONTROL_STATE_REV_LIMIT"/>
+      <entry value="3" name="PANDION_ENG_SPEED_CONTROL_STATE_FAULT_LIMIT"/>
+    </enum>
+    <enum name="PANDION_ENG_DERATE_STATE">
+      <entry value="0" name="PANDION_ENG_DERATE_STATE_NONE"/>
+      <entry value="1" name="PANDION_ENG_DERATE_STATE_PEAK_LIMIT"/>
+      <entry value="2" name="PANDION_ENG_DERATE_STATE_CRUISE_LIMIT"/>
+      <entry value="3" name="PANDION_ENG_DERATE_STATE_OVERRIDE"/>
+    </enum>
+    <enum name="PANDION_ENG_ANOMALY_BITS">
+      <entry value="0" name="PANDION_ENG_ANOMALY_OVERSPEED"/>
+      <entry value="1" name="PANDION_ENG_ANOMALY_UNDERSPEED"/>
+      <entry value="2" name="PANDION_ENG_ANOMALY_CHT_HIGH"/>
+      <entry value="3" name="PANDION_ENG_ANOMALY_CHT_LOW"/>
+      <entry value="4" name="PANDION_ENG_ANOMALY_EGT_HIGH"/>
+      <entry value="5" name="PANDION_ENG_ANOMALY_EGT_LOW"/>
+      <entry value="6" name="PANDION_ENG_ANOMALY_FUEL_TEMP_HIGH"/>
+      <entry value="7" name="PANDION_ENG_ANOMALY_FUEL_TEMP_LOW"/>
+    </enum>
+    <enum name="PANDION_ENG_FAULT_BITS">
+      <entry value="0" name="PANDION_ENG_FAULT_CRANKSHAFT_SENSOR_USED"/>
+      <entry value="1" name="PANDION_ENG_FAULT_CRANKSHAFT_SENSOR_1_WIRING_FAULT"/>
+      <entry value="2" name="PANDION_ENG_FAULT_CRANKSHAFT_SENSOR_1_PLAUSIBILITY_FAULT"/>
+      <entry value="3" name="PANDION_ENG_FAULT_CRANKSHAFT_SENSOR_2_WIRING_FAULT"/>
+      <entry value="4" name="PANDION_ENG_FAULT_CRANKSHAFT_SENSOR_2_PLAUSIBILITY_FAULT"/>
+      <entry value="5" name="PANDION_ENG_FAULT_CHT_1_OPEN_CIRCUIT"/>
+      <entry value="6" name="PANDION_ENG_FAULT_CHT_1_SHORT_TO_GND"/>
+      <entry value="7" name="PANDION_ENG_FAULT_CHT_1_PLAUSIBILITY_FAULT"/>
+      <entry value="8" name="PANDION_ENG_FAULT_CHT_2_OPEN_CIRCUIT"/>
+      <entry value="9" name="PANDION_ENG_FAULT_CHT_2_SHORT_TO_GND"/>
+      <entry value="10" name="PANDION_ENG_FAULT_CHT_2_PLAUSIBILITY_FAULT"/>
+      <entry value="11" name="PANDION_ENG_FAULT_EGT_1_OPEN_CIRCUIT"/>
+      <entry value="12" name="PANDION_ENG_FAULT_EGT_1_SHORT_TO_GND"/>
+      <entry value="13" name="PANDION_ENG_FAULT_EGT_1_PLAUSIBILITY_FAULT"/>
+      <entry value="14" name="PANDION_ENG_FAULT_EGT_2_OPEN_CIRCUIT"/>
+      <entry value="15" name="PANDION_ENG_FAULT_EGT_2_SHORT_TO_GND"/>
+      <entry value="16" name="PANDION_ENG_FAULT_EGT_2_PLAUSIBILITY_FAULT"/>
+      <entry value="17" name="PANDION_ENG_FAULT_FUEL_TEMP_OPEN_CIRCUIT"/>
+      <entry value="18" name="PANDION_ENG_FAULT_FUEL_TEMP_SHORT_TO_GND"/>
+      <entry value="19" name="PANDION_ENG_FAULT_FUEL_TEMP_PLAUSIBILITY_FAULT"/>
+      <entry value="20" name="PANDION_ENG_FAULT_INJ_1_OPEN_LOAD"/>
+      <entry value="21" name="PANDION_ENG_FAULT_INJ_1_OVERCURRENT"/>
+      <entry value="22" name="PANDION_ENG_FAULT_INJ_1_OVERTEMP"/>
+      <entry value="23" name="PANDION_ENG_FAULT_INJ_1_SHORT_TO_GND"/>
+      <entry value="24" name="PANDION_ENG_FAULT_INJ_2_OPEN_LOAD"/>
+      <entry value="25" name="PANDION_ENG_FAULT_INJ_2_OVERCURRENT"/>
+      <entry value="26" name="PANDION_ENG_FAULT_INJ_2_OVERTEMP"/>
+      <entry value="27" name="PANDION_ENG_FAULT_INJ_2_SHORT_TO_GND"/>
+      <entry value="28" name="PANDION_ENG_FAULT_BARO_LOW"/>
+      <entry value="29" name="PANDION_ENG_FAULT_BARO_HIGH"/>
+      <entry value="30" name="PANDION_ENG_FAULT_MAP_LOW"/>
+      <entry value="31" name="PANDION_ENG_FAULT_MAP_HIGH"/>
+      <entry value="32" name="PANDION_ENG_FAULT_IAT_LOW"/>
+      <entry value="33" name="PANDION_ENG_FAULT_IAT_HIGH"/>
+      <entry value="34" name="PANDION_ENG_FAULT_TPS_ERROR"/>
+    </enum>
+    <enum name="PANDION_MISSION_MODE">
+      <entry value="0" name="PANDION_MISSION_MODE_MANUAL_LAUNCH_ROUTE_ONLY"/>
+      <entry value="1" name="PANDION_MISSION_MODE_AUTOMATED_ALL_MISSION_SEGMENTS"/>
+      <entry value="255" name="PANDION_MISSION_MODE_INVALID"/>
+    </enum>
+    <enum name="PANDION_MONARCH_STATUS_BITS" bitmask="true">
+      <entry value="1" name="PANDION_MONARCH_STATUS_GNSS_HAS_FIX"/>
+      <entry value="2" name="PANDION_MONARCH_STATUS_ENABLED"/>
+      <entry value="4" name="PANDION_MONARCH_STATUS_ACTIVE"/>
+      <entry value="8" name="PANDION_MONARCH_STATUS_USE_FOR_CONTROL_REQUESTED"/>
+      <entry value="16" name="PANDION_MONARCH_STATUS_USE_FOR_CONTROL_ACTIVE"/>
+      <entry value="32" name="PANDION_MONARCH_STATUS_POSITION_DISAGREE"/>
+      <entry value="64" name="PANDION_MONARCH_STATUS_VELOCITY_DISAGREE"/>
+      <entry value="128" name="PANDION_MONARCH_STATUS_ATTITUDE_DISAGREE"/>
+      <entry value="256" name="PANDION_MONARCH_STATUS_MSB_USE_FOR_CONTROL_REQUESTED"/>
+      <entry value="512" name="PANDION_MONARCH_STATUS_MSB_USE_FOR_CONTROL_ACTIVE"/>
+    </enum>
+    <enum name="PANDION_MONARCH_INS_MODE">
+      <entry value="0" name="PANDION_MONARCH_INS_MODE_INIT"/>
+      <entry value="1" name="PANDION_MONARCH_INS_MODE_COARSE_ALIGNMENT"/>
+      <entry value="2" name="PANDION_MONARCH_INS_MODE_FINE_ALIGNMENT"/>
+      <entry value="3" name="PANDION_MONARCH_INS_MODE_STRAPDOWN_NAVIGATION"/>
+      <entry value="4" name="PANDION_MONARCH_INS_MODE_TERMINATE"/>
+      <entry value="5" name="PANDION_MONARCH_INS_MODE_TRANSFER_ALIGNMENT"/>
+      <entry value="6" name="PANDION_MONARCH_INS_MODE_MANUAL_INITIALIZATION"/>
+    </enum>
+    <enum name="PANDION_MONARCH_ALIGN_MODE">
+      <entry value="0" name="PANDION_MONARCH_ALIGN_MODE_INIT"/>
+      <entry value="1" name="PANDION_MONARCH_ALIGN_MODE_WAIT_ACQUISITION"/>
+      <entry value="2" name="PANDION_MONARCH_ALIGN_MODE_AVERAGING"/>
+      <entry value="3" name="PANDION_MONARCH_ALIGN_MODE_COARSE"/>
+      <entry value="4" name="PANDION_MONARCH_ALIGN_MODE_COMPLETE"/>
+    </enum>
+    <enum name="PANDION_MONARCH_IMU_STATE">
+      <entry value="0" name="PANDION_MONARCH_IMU_STATE_INIT"/>
+      <entry value="1" name="PANDION_MONARCH_IMU_STATE_CONFIG"/>
+      <entry value="2" name="PANDION_MONARCH_IMU_STATE_OPERATE"/>
+      <entry value="3" name="PANDION_MONARCH_IMU_STATE_FAILURE"/>
+    </enum>
+    <enum name="PANDION_GENERIC_STATUS_UPDATE_IDS">
+      <entry value="0" name="PANDION_GENERIC_STATUS_UPDATE_SD_EMMC_PURGE"/>
+    </enum>
+    <enum name="MONARCH_IMU_BIAS_MONITOR_BITS">
+      <entry value="0" name="MONARCH_IMU_BIAS_MONITOR_GYRO_X"/>
+      <entry value="1" name="MONARCH_IMU_BIAS_MONITOR_GYRO_Y"/>
+      <entry value="2" name="MONARCH_IMU_BIAS_MONITOR_GYRO_Z"/>
+      <entry value="3" name="MONARCH_IMU_BIAS_MONITOR_ACCEL_X"/>
+      <entry value="4" name="MONARCH_IMU_BIAS_MONITOR_ACCEL_Y"/>
+      <entry value="5" name="MONARCH_IMU_BIAS_MONITOR_ACCEL_Z"/>
+    </enum>
+    <enum name="PANDION_MONARCH_USE_MODE" bitmask="true">
+      <description>Bitmask to convert the MNRCH_USE_MODE param to a set of sensors that a monarch instance should ingest. IMU accelerometer data will always be ingested.</description>
+      <entry value="1" name="PANDION_MONARCH_USE_MODE_GNSS">
+        <description>Use GNSS sensor data</description>
+      </entry>
+      <entry value="2" name="PANDION_MONARCH_USE_MODE_MAG">
+        <description>Use magnetometer sensor data</description>
+      </entry>
+      <entry value="4" name="PANDION_MONARCH_USE_MODE_BARO">
+        <description>Use barometer sensor data</description>
+      </entry>
+      <entry value="8" name="PANDION_MONARCH_USE_MODE_VBN">
+        <description>Use visual sensor data</description>
+      </entry>
+      <entry value="16" name="PANDION_MONARCH_USE_MODE_AHRS">
+        <description>Use airspeed sensor data</description>
+      </entry>
+      <entry value="32" name="PANDION_MONARCH_USE_MODE_THEIA">
+        <description>Use Theia sensor data</description>
+      </entry>
+      <entry value="64" name="PANDION_MONARCH_USE_MODE_STARLINK">
+        <description>Use Starlink / Starshield sensor data</description>
+      </entry>
+    </enum>
+    <enum name="PANDION_MONARCH_USE_OUT">
+      <description>Monarch output selection mode</description>
+      <entry value="0" name="PANDION_MONARCH_USE_OUT_REF">
+        <description>Use reference output</description>
+      </entry>
+      <entry value="1" name="PANDION_MONARCH_USE_OUT_ALT">
+        <description>Use alternate output</description>
+      </entry>
+    </enum>
+    <enum name="GEOFENCE_OUTER_DATA_RESULT">
+      <entry value="0" name="GEOFENCE_OUTER_DATA_SUCCESS" />
+      <entry value="1" name="GEOFENCE_OUTER_DATA_FAIL_INDEX" />
+      <entry value="2" name="GEOFENCE_OUTER_DATA_FAIL_STATE" />
+      <entry value="3" name="GEOFENCE_OUTER_DATA_FAIL_POLYGON" />
+      <entry value="4" name="GEOFENCE_OUTER_DATA_FAIL_MAX_ALTITUDE" />
+      <entry value="5" name="GEOFENCE_OUTER_DATA_WAYPOING_FAIL_UNKNOWN" />
+    </enum>
+
+  </enums>
+  <messages>
+    <!-- Pandion Common -->
+    <message id="600" name="PANDION_PARAM_VALUE">
+      <description>Emit the value of a onboard parameter. The inclusion of param_count and param_index in the message allows the recipient to keep track of received parameters and allows him to re-request missing parameters after a loss or timeout. The parameter microservice is documented at https://mavlink.io/en/services/parameter.html.
+        Mirrors PARAM_VALUE, but for a 64-bit value.</description>
+      <field type="char[16]" name="param_id">Onboard parameter id, terminated by NULL if the length is less than 16 human-readable chars and WITHOUT null termination (NULL) byte if the length is exactly 16 chars - applications have to provide 16+1 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+      <field type="uint16_t" name="param_count">Total number of onboard parameters</field>
+      <field type="uint16_t" name="param_index">Index of this onboard parameter</field>
+    </message>
+    <message id="601" name="PANDION_PARAM_SET">
+      <description>Set a parameter value (write new value to permanent storage).
+        The receiving component should acknowledge the new parameter value by broadcasting a PARAM_VALUE message (broadcasting ensures that multiple GCS all have an up-to-date list of all parameters). If the sending GCS did not receive a PANDION_PARAM_VALUE within its timeout time, it should re-send the PANDION_PARAM_SET message. The parameter microservice is documented at https://mavlink.io/en/services/parameter.html.
+        PANDION_PARAM_SET may also be called within the context of a transaction (started with MAV_CMD_PARAM_TRANSACTION). Within a transaction the receiving component should respond with PARAM_ACK_TRANSACTION to the setter component (instead of broadcasting PANDION_PARAM_VALUE), and PANDION_PARAM_SET should be re-sent if this is ACK not received.
+        Mirrors PARAM_SET, but for 64-bit value</description>
+      <field type="uint8_t" name="target_system">System ID</field>
+      <field type="uint8_t" name="target_component">Component ID</field>
+      <field type="char[16]" name="param_id">Onboard parameter id, terminated by NULL if the length is less than 16 human-readable chars and WITHOUT null termination (NULL) byte if the length is exactly 16 chars - applications have to provide 16+1 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+    </message>
+    <message id="602" name="PANDION_WCA_MONITOR_STATUS">
+      <description>Contains status relating to Warnings, Cautions, Advisories (WCAs) and monitors.</description>
+      <field type="uint64_t[2]" name="active_wcas">Active WCAs</field>
+      <field type="uint32_t" name="wca_event_timestamp">WCA event timestamp (system time)</field>
+      <field type="uint16_t" name="wca_event_id">WCA set or cleared by this event</field>
+      <field type="uint8_t" name="wca_event_flags">WCA event flags</field>
+      <field type="uint32_t" name="monitor_event_timestamp">Monitor event timestamp (system time)</field>
+      <field type="uint16_t" name="monitor_event_id">Monitor set or cleared by this event</field>
+      <field type="uint8_t" name="monitor_event_flags">Monitor event flags</field>
+    </message>
+    <message id="603" name="PANDION_MONITOR_OVERRIDE_CMD">
+      <description>Sent to control monitor override.</description>
+      <field type="uint8_t" name="override_cmd" enum="PANDION_MONITOR_OVERRIDE_CMD">Override command type</field>
+      <field type="uint16_t" name="monitor_id">Monitor to override/cancel override for</field>
+    </message>
+    <message id="604" name="PANDION_MONITOR_CURRENT_STATUS">
+      <description>Contains the current status of all monitors.</description>
+      <field type="uint8_t[64]" name="currently_set">Currently set monitors</field>
+      <field type="uint8_t[64]" name="currently_setting">Currently setting monitors</field>
+      <field type="uint8_t[64]" name="currently_overridden">Currently overridden monitors</field>
+    </message>
+    <message id="605" name="PANDION_STATUS">
+      <description>Pandion system status.</description>
+      <field type="uint16_t" name="status">Status bitfield</field>
+      <field type="uint8_t" name="flight_regime">Currently set monitors</field>
+      <field type="uint8_t" name="engine1_state">Left engine state</field>
+      <field type="uint8_t" name="engine2_state">Right engine state</field>
+      <field type="uint8_t" name="ins_status">INS status</field>
+      <field type="uint8_t" name="ins_mode">INS mode</field>
+      <field type="uint8_t[2]" name="gnss_fix">GNSS fix type</field>
+      <field type="uint8_t[2]" name="num_satellites">GNSS number of satellites</field>
+      <field type="uint8_t" name="gnss_compass">GNSS compass available</field>
+      <field type="uint8_t" name="mission_operation_mode">Mission mode of operation</field>
+      <field type="uint16_t" name="asset_id">Asset ID</field>
+    </message>
+    <message id="606" name="PANDION_VERSION_INFO">
+      <description>Pandion version information.</description>
+      <field type="uint8_t[20]" name="cm_xml_sha1">Contingency Management XML version SHA1 hash</field>
+      <field type="uint8_t[24]" name="pandion_sw_name_str">Pandion software version name</field>
+      <field type="uint8_t[32]" name="pandion_sw_ver_str">Pandion software version number as a string</field>
+      <field type="int8_t"      name="pandion_is_debug_flag">Pandion is a debug build flag</field>
+    </message>
+    <message id="607" name="PANDION_ACTUATION_SYS_STATUS">
+      <description>Pandion actuation system status.</description>
+      <field type="float" name="left_s1_feedback_normalized">Left S1 Normalized Feedback</field>
+      <field type="float" name="left_s2_feedback_normalized">Left S2 Normalized Feedback</field>
+      <field type="float" name="left_s3_feedback_normalized">Left S3 Normalized Feedback</field>
+      <field type="float" name="left_s4_feedback_normalized">Left S4 Normalized Feedback</field>
+      <field type="float" name="left_s5_feedback_normalized">Left S5 Normalized Feedback</field>
+      <field type="float" name="left_s1_current">Left S1 Current</field>
+      <field type="float" name="left_s2_current">Left S2 Current</field>
+      <field type="float" name="left_s3_current">Left S3 Current</field>
+      <field type="float" name="left_s4_current">Left S4 Current</field>
+      <field type="float" name="left_s5_current">Left S5 Current</field>
+      <field type="float" name="left_vservo_current">Left VServo Current</field>
+      <field type="float" name="left_vsys_current">Left VSys Current</field>
+      <field type="float" name="left_vin_current">Left Vin Current</field>
+      <field type="float" name="left_servo_volts">Left Servo Volts</field>
+      <field type="float" name="left_battery_volts">Left Battery Volts</field>
+      <field type="float" name="right_s1_feedback_normalized">Right S1 Normalized Feedback</field>
+      <field type="float" name="right_s2_feedback_normalized">Right S2 Normalized Feedback</field>
+      <field type="float" name="right_s3_feedback_normalized">Right S3 Normalized Feedback</field>
+      <field type="float" name="right_s4_feedback_normalized">Right S4 Normalized Feedback</field>
+      <field type="float" name="right_s5_feedback_normalized">Right S5 Normalized Feedback</field>
+      <field type="float" name="right_s1_current">Right S1 Current</field>
+      <field type="float" name="right_s2_current">Right S2 Current</field>
+      <field type="float" name="right_s3_current">Right S3 Current</field>
+      <field type="float" name="right_s4_current">Right S4 Current</field>
+      <field type="float" name="right_s5_current">Right S5 Current</field>
+      <field type="float" name="right_vservo_current">Right VServo Current</field>
+      <field type="float" name="right_vsys_current">Right VSys Current</field>
+      <field type="float" name="right_vin_current">Right Vin Current</field>
+      <field type="float" name="right_servo_volts">Right Servo Volts</field>
+      <field type="float" name="right_battery_volts">Right Battery Volts</field>
+    </message>
+    <message id="608" name="PANDION_AUX_INS_GPS">
+      <description>Pandion Auxiliary INS GPS information.</description>
+      <field type="uint8_t" name="aux_ins_gps_alerts">Auxiliary INS/GPS alert flags</field>
+      <field type="float" name="gps_ins_posdiff_m">Position difference between INS output and raw GPS position</field>
+      <field type="float" name="gps_raw_pos_n_m">Raw GPS Position North</field>
+      <field type="float" name="gps_raw_pos_e_m">Raw GPS Position East</field>
+      <field type="float" name="gps_raw_pos_d_m">Raw GPS Position Down</field>
+      <field type="float" name="ins_total_vel_mps">Total velocity from INS</field>
+      <field type="int16_t" name="gps_ins_veldiff_cmps">Velocity difference between INS output and raw GPS position</field>
+      <field type="int16_t" name="gps_raw_vel_n_cmps">Raw GPS velocity North</field>
+      <field type="int16_t" name="gps_raw_vel_e_cmps">Raw GPS velocity East</field>
+      <field type="int16_t" name="gps_raw_vel_d_cmps">Raw GPS velocity Down</field>
+    </message>
+    <message id="609" name="PANDION_GEODETIC_POS_COV_MATRIX">
+      <description>Global Position Covariance Matrix (lat, long, alt, Vn, Ve, Vd).</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (UNIX Epoch time or time since system boot). The receiving end can infer timestamp format (since 1.1.1970 or since system boot) by checking for the magnitude of the number.</field>
+      <field type="float[6]" name="covariance">Diagonal of the 6x6 cross-covariance matrix - states: lat (deg2), lon (deg2), alt (m2), Vn (m2/s2), Ve (m2/s2), Vd (m2/s2).</field>
+    </message>
+    <message id="610" name="PANDION_SEEKER_DATA">
+      <description>Summarized seeker data.</description>
+      <field type="float" name="true_body_frame_az_deg">Body frame azimuth angle (about the z-axis in degrees) to the parameterized target location</field>
+      <field type="float" name="true_body_frame_el_deg">Body frame elevation angle (about the y-axis in degrees) to the parameterized target location</field>
+      <field type="float" name="skr_body_frame_az_deg">Body frame azimuth angle (about the z-axis in degrees) to the centroid of the bounding box as reported by the seeker</field>
+      <field type="float" name="skr_body_frame_el_deg">Body frame elevation angle (about the y-axis in degrees) to the centroid of the track bounding box as reported by the seeker</field>
+      <field type="int64_t" name="tse00_seeker_time_ns">Timestamp for seeker information</field>
+      <field type="float" name="tse00_azimuth_los_body_rad">Seeker measured azimuth angle of target relative to ownship in the body frame</field>
+      <field type="float" name="tse00_elevation_los_body_rad">Seeker measured elevation angle of target relative to ownship in the body frame</field>
+      <field type="float" name="tse00_los_angle_noise_covariance_0_rad2">Line-of-sight angle noise covariance array element 0 from seeker</field>
+      <field type="float" name="tse00_los_angle_noise_covariance_3_rad2">Line-of-sight angle noise covariance array element 3 from seeker</field>
+      <field type="int64_t" name="tse10_tov_ns">Filter output time of validity</field>
+      <field type="float" name="tse10_azimuth_trkr_rad">Estimated azimuth angle of target relative to ownship in Tracker frame</field>
+      <field type="float" name="tse10_elevation_trkr_rad">Estimated elevation angle of target relative to ownship in Tracker frame</field>
+      <field type="uint32_t" name="tse10_seeker_count">Internal initialization counter for number of seeker measurements</field>
+      <field type="int64_t" name="tse10_last_ownship_time_ns">Internal timestamp of last ownship information</field>
+      <field type="int64_t" name="tse10_last_seeker_time_ns">Internal timestamp of last seeker information</field>
+      <field type="uint8_t" name="tse10_valid"> Filter outputs valid</field>
+      <field type="uint8_t" name="tse10_initialized">Internal flag for indicating whether filter has been initialized</field>
+    </message>
+    <message id="619" name="PANDION_ASSET_POSE">
+      <description>Vehicle asset pose message.</description>
+      <field type="uint64_t" name="gps_tov_ns" units="ns">Timestamp (time since gps epoch).</field>
+      <field type="uint8_t" name="validity_flag">Flag indicating whether the data in this message is valid.</field>
+      <field type="int32_t" name="latitude_deg" units="degE7">Latitude</field>
+      <field type="int32_t" name="longitude_deg" units="degE7">Longitude</field>
+      <field type="int32_t" name="altitude_wgs84_mm" units="mm">Altitude (WGS84)</field>
+      <field type="int16_t" name="velocity_n_cmps" units="cm/s">North Velocity</field>
+      <field type="int16_t" name="velocity_e_cmps" units="cm/s">East Velocity</field>
+      <field type="int16_t" name="velocity_d_cmps" units="cm/s">Down Velocity</field>
+      <field type="float" name="q1">Quaternion component 1, w (1 in null-rotation)</field>
+      <field type="float" name="q2">Quaternion component 2, x (0 in null-rotation)</field>
+      <field type="float" name="q3">Quaternion component 3, y (0 in null-rotation)</field>
+      <field type="float" name="q4">Quaternion component 4, z (0 in null-rotation)</field>
+      <field type="float[6]" name="covariance">Diagonal of the 6x6 cross-covariance matrix - states: lat (deg2), lon (deg2), alt (m2), Vn (m2/s2), Ve (m2/s2), Vd (m2/s2).</field>
+      <extensions/>
+      <field type="float[6]" name="orientation_covariance">The upper triangle including the diagonal of the orientation covariance matrix rad2 in row-major order. Index notation: a11 a12 a13 a22 a23 a33</field>
+    </message>
+    <message id="652" name="PANDION_RECOVERY_ROUTE_CMD">
+      <description>Update the active mission to the recovery route</description>
+      <field type="uint16_t" name="reserved_1">Reserved (MAVLink requires at least one field in message)</field>
+    </message>
+    <message id="611" name="PANDION_RECOVERY_ROUTE_CMD_ACK">
+      <description>PANDION_RECOVERY_ROUTE_CMD ack</description>
+      <field type="uint8_t" name="status">See PANDION_RECOVERY_ROUTE_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+
+    <message id="653" name="PANDION_ABORT_LAUNCH_CMD">
+      <description>Command the vehicle to abort launch (only valid during AUTO_TAKEOFF flight regime)</description>
+      <field type="uint16_t" name="reserved_1">Reserved (MAVLink requires at least one field in message)</field>
+    </message>
+    <message id="615" name="PANDION_ABORT_LAUNCH_CMD_ACK">
+      <description>PANDION_ABORT_LAUNCH_CMD ack</description>
+      <field type="uint8_t" name="status">See PANDION_ABORT_LAUNCH_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+
+    <message id="654" name="PANDION_POWER_OFF_CMD">
+      <description>Command the vehicle to power off (only valid during GROUND_DISARMED flight regime)</description>
+      <field type="uint16_t" name="reserved_1">Reserved (MAVLink requires at least one field in message)</field>
+    </message>
+    <message id="616" name="PANDION_POWER_OFF_CMD_ACK">
+      <description>PANDION_POWER_OFF_CMD ack</description>
+      <field type="uint8_t" name="status">See PANDION_POWER_OFF_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+
+    <message id="655" name="PANDION_SCUTTLE_CMD">
+      <description>Command the vehicle to scuttle</description>
+      <field type="uint16_t" name="reserved_1">Reserved (MAVLink requires at least one field in message)</field>
+    </message>
+    <message id="617" name="PANDION_SCUTTLE_CMD_ACK">
+      <description>PANDION_SCUTTLE_CMD ack</description>
+      <field type="uint8_t" name="status">See PANDION_SCUTTLE_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+
+    <message id="612" name="PANDION_FTS_STATUS">
+      <description>Pandion FTS status.</description>
+      <field type="uint8_t" name="fts_state">FTS current state</field>
+      <field type="uint8_t" name="fts_reason">FTS reason</field>
+      <field type="uint16_t" name="fts_latched_fault">FTS latched fault</field>
+      <field type="uint16_t" name="fts_alert">FTS alert</field>
+      <field type="uint16_t" name="fts_fault">FTS fault</field>
+      <field type="uint8_t" name="fts_rssi1">FTS RSSI 1</field>
+      <field type="uint8_t" name="fts_rssi2">FTS RSSI 2</field>
+      <field type="float" name="fts_junction_temp">FTS junction temperature</field>
+      <field type="float" name="fts_vcc_int">FTS VCCINT</field>
+      <field type="float" name="fts_vcc_aux">FTS VCCAUX</field>
+      <field type="float" name="fts_vdd_1v2">FTS VDD 1.2</field>
+      <field type="float" name="fts_vdd_5v0">FTS VDD 1.5</field>
+      <field type="float" name="fts_vin">FTS VIN</field>
+      <field type="float" name="fts_vin1">FTS VIN1</field>
+      <field type="float" name="fts_vin2">FTS VIN2</field>
+    </message>
+
+    <message id="613" name="PANDION_VMS_INFO">
+      <description>Pandion VMS information.</description>
+      <field type="uint8_t[48]" name="config_item_name">VMS config item title</field>
+      <field type="uint8_t[48]" name="actual_version">VMS config item version</field>
+      <field type="uint8_t[100]" name="expected_version">VMS config item expected version</field>
+    </message>
+
+    <message id="614" name="VMS_CONFIG_CRC_DATA">
+      <description>CRC for stable and unstable parameter sets</description>
+      <field type="uint32_t" name="stable_crc">Stable params CRC</field>
+      <field type="uint32_t" name="unstable_crc">Unstable params CRC</field>
+      <field type="uint32_t" name="outer_geofence_crc">Outer geofence CRC</field>
+      <field type="uint32_t" name="inner_geofence_crc">Inner geofence CRC</field>
+    </message>
+
+    <message id="618" name="PANDION_LOG_STATUS">
+      <description>Pandion Log status</description>
+      <field type="uint8_t" name="log_writer_state">Log Writer current state</field>
+      <field type="uint8_t[64]" name="current_log_file">Current log file</field>
+      <field type="uint64_t" name="storage_size_bytes">Size of storage device</field>
+      <field type="uint32_t" name="log_file_bytes_written">Bytes written to log file</field>
+      <field type="uint32_t" name="log_file_max_size_bytes">Max size of log file in bytes</field>
+      <field type="uint8_t" name="failure">Log Writer failure</field>
+      <field type="uint8_t" name="storage_device_failure">Storage device failure</field>
+      <field type="uint8_t" name="filesystem_failure">Filesystem failure</field>
+      <extensions/>
+      <field type="uint32_t" name="log_fifo_high_watermark_kilobytes">High watermark for log FIFO in kilobytes</field>
+      <field type="uint64_t" name="storage_used_bytes">Number of bytes currently in use on the stroage device</field>
+    </message>
+
+    <message id="620" name="PANDION_MA_STATUS">
+      <description>(Rate: 5Hz) The following message is used to describe vehicle information relavent to mission autonomy.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="current_control_mode" enum="PANDION_MA_CONTROL_MODE_TYPE">The currently executing control mode</field>
+      <field type="uint8_t" name="ready_for_ma">If TRUE, then VMS is ready to be commanded into MA control modes</field>
+    </message>
+
+    <message id="621" name="MA_PANDION_CONTROL_MODE_REQUEST">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle enter a particular control mode.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="control_mode_request" enum="PANDION_MA_CONTROL_MODE_TYPE">The requested control mode</field>
+    </message>
+    <message id="622" name="PANDION_MA_CONTROL_MODE_REQUEST_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_CONTROL_MODE_REQUEST to reflect whether than request was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_CONTROL_MODE_REQUEST to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_CONTROL_MODE_REQUEST_ACK_TYPE">See PANDION_MA_CONTROL_MODE_REQUEST_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="623" name="MA_PANDION_HSA_COMMAND">
+      <description>(Rate: 1Hz when in HSA control mode) The following message is sent to request the vehicle achieve a certain heading, speed, and altitude.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="heading_type" enum="PANDION_MA_HEADING_TYPE">(CURRENTLY ONLY COURSE SUPPORTED) See PANDION_MA_HEADING_TYPE, describes whether heading fields are course or heading</field>
+      <field type="float" name="heading_target_deg">Requested Heading, [0, 360 (not inclusive)]</field>
+      <field type="float" name="heading_rate_of_change_dps">(CURRENTLY UNUSED) greater than or equal to 0, 0 = max rate of change</field>
+      <field type="uint8_t" name="speed_type" enum="PANDION_MA_SPEED_TYPE">(CURRENTLY ONLY GROUNDSPEED SUPPORTED) See PANDION_MA_SPEED_TYPE, describes whether speed fields are groundspeed or airspeed</field>
+      <field type="float" name="speed_target_mps">Requested Speed (must be positive)</field>
+      <field type="float" name="speed_rate_of_change_mps2">(CURRENTLY UNUSED) greater than or equal to 0, 0 = max rate of change</field>
+      <field type="float" name="altitude_target_m">Requested Altitude</field>
+      <field type="float" name="altitude_rate_of_change_mps">(CURRENTLY UNUSED) greater than or equal to 0, where 0 = max rate of change </field>
+      <extensions/>
+      <field type="uint8_t" name="hsa_gui_enabled"> Indicates whether the HSA feature is enabled or disabled through the QGC (QGroundControl) widget enabled ( 1 ) </field>
+    </message>
+    <message id="624" name="PANDION_MA_HSA_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_HSA_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_HSA_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_HSA_COMMAND_ACK_TYPE">See PANDION_MA_HSA_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="625" name="PANDION_MA_INERTIAL_STATE">
+      <description>(Rate: 10Hz) The following message is used to describe the current inertial state of the vehicle. The position is in GPS-frame (right-handed, Z-up).</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint32_t" name="time_ms">Timestamp (time since system boot)</field>
+      <field type="double" name="latitude_deg">Latitude</field>
+      <field type="double" name="longitude_deg">Longitude</field>
+      <field type="float" name="altitude_m">WGS84 Altitude</field>
+      <field type="float" name="rel_altitude_m">Altitude above ground</field>
+      <field type="float" name="velocity_x_mps">X Groundspeed (latitude, + = north)</field>
+      <field type="float" name="velocity_y_mps">Y Groundspeed (longitude, + = east)</field>
+      <field type="float" name="velocity_z_mps">Z Groundspeed (altitude, + = down)</field>
+      <field type="uint8_t" name="heading_valid">If TRUE, then heading_deg is valid</field>
+      <field type="float" name="heading_deg">Heading (Yaw), [0, 360 (not inclusive)] [Check heading_valid before using, UINT16_MAX when invalid]</field>
+    </message>
+
+    <message id="626" name="MA_PANDION_RUNWAY_COUNT_REQUEST">
+      <description>(Rate: Aperiodic) The following message is used to request the number of currently loaded/enabled runways.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+
+    <message id="627" name="PANDION_MA_RUNWAY_COUNT_REQUEST_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_RUNWAY_COUNT_REQUEST.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_RUNWAY_COUNT_REQUEST to which his ack corresponds to</field>
+      <field type="uint8_t" name="runway_count">The number of runways currently loaded/enabled</field>
+    </message>
+
+    <message id="628" name="MA_PANDION_RUNWAY_INFO_REQUEST">
+      <description>(Rate: Aperiodic) The following message is used to request the runway information for the runway at the index specified by runway_index.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="runway_index">The index of the runway whose information is being requested (note: 0-indexed)</field>
+    </message>
+
+    <message id="629" name="PANDION_MA_RUNWAY_INFO_REQUEST_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_RUNWAY_INFO_REQUEST.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_RUNWAY_INFO_REQUEST to which this ack corresponds to</field>
+      <field type="uint8_t" name="runway_enabled">If TRUE, then runway is enabled and considered valid</field>
+      <field type="uint8_t" name="runway_id">Runway ID</field>
+      <field type="double" name="runway_start_lat_deg">Runway Start Latitude</field>
+      <field type="double" name="runway_start_lon_deg">Runway Start Longitude</field>
+      <field type="float" name="runway_start_alt_m">Runway Start WGS84 Altitude</field>
+      <field type="double" name="runway_end_lat_deg">Runway End Latitude</field>
+      <field type="double" name="runway_end_lon_deg">Runway End Longitude</field>
+      <field type="float" name="runway_end_alt_m">Runway End WGS84 Altitude</field>
+    </message>
+
+    <message id="630" name="MA_PANDION_TAXI_RUNWAY_LOAD">
+      <description>(Rate: Aperiodic) The following message is sent to set the runway for taxiing to the runway defined by runway_id.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="runway_id">The requested runway for taxiing</field>
+    </message>
+    <message id="631" name="PANDION_MA_TAXI_RUNWAY_LOAD_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_TAXI_RUNWAY_LOAD to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_TAXI_RUNWAY_LOAD to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_TAXI_RUNWAY_LOAD_ACK_TYPE">See PANDION_MA_TAXI_RUNWAY_LOAD_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="632" name="MA_PANDION_TAXI_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle begin taxiing.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="633" name="PANDION_MA_TAXI_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_TAXI_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_TAXI_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_TAXI_COMMAND_ACK_TYPE">See PANDION_MA_TAXI_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="634" name="MA_PANDION_TAXI_ABORT">
+      <description>(Rate: Aperiodic) The following message is sent to abort taxi.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="635" name="PANDION_MA_TAXI_ABORT_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_TAXI_ABORT to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_TAXI_ABORT to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_TAXI_ABORT_ACK_TYPE">See PANDION_MA_TAXI_ABORT_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="636" name="MA_PANDION_LAUNCH_RUNWAY_LOAD">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle generate a launch route relative to the runway defined by runway_id.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="runway_id">The requested runway to generate launch route relative to</field>
+    </message>
+    <message id="637" name="PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_LAUNCH_RUNWAY_LOAD to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_LAUNCH_RUNWAY_LOAD to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK_TYPE">See PANDION_MA_LAUNCH_RUNWAY_LOAD_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="638" name="MA_PANDION_LAUNCH_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to launch vehicle.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="639" name="PANDION_MA_LAUNCH_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_LAUNCH_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_LAUNCH_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_LAUNCH_COMMAND_ACK_TYPE">See PANDION_MA_LAUNCH_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="709" name="MA_PANDION_SEEKER_SYSID_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to seeker sys id vehicle.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="710" name="PANDION_MA_SEEKER_SYSID_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_SEEKER_SYSIS_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_SEEKER_SYSID_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_SEEKER_SYSID_COMMAND_ACK_TYPE">See PANDION_MA_SEEKER_SYSID_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="711" name="MA_PANDION_SEEKER_SYSID_ABORT_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to abort seeker sys id vehicle.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="712" name="PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_SEEKER_SYSIS_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_SEEKER_SYSID_ABORT_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK_TYPE">See PANDION_MA_SEEKER_SYSID_ABORT_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="640" name="MA_PANDION_LAUNCH_ABORT">
+      <description>(Rate: Aperiodic) The following message is sent to abort launch using generated launch route.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="641" name="PANDION_MA_LAUNCH_ABORT_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_LAUNCH_ABORT to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_LAUNCH_ABORT to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_LAUNCH_ABORT_ACK_TYPE">See PANDION_MA_LAUNCH_ABORT_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="642" name="MA_PANDION_RECOVERY_RUNWAY_LOAD">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle generate a recovery route relative to the runway defined by runway_id.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="uint8_t" name="runway_id">The requested runway to generate recovery route relative to</field>
+    </message>
+    <message id="643" name="PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_RECOVERY_RUNWAY_LOAD to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_RECOVERY_RUNWAY_LOAD to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK_TYPE">See PANDION_MA_RECOVERY_RUNWAY_LOAD_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="644" name="MA_PANDION_RECOVERY_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to begin flying generated recovery route.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="645" name="PANDION_MA_RECOVERY_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_RECOVERY_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_RECOVERY_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_RECOVERY_COMMAND_ACK_TYPE">See PANDION_MA_RECOVERY_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="646" name="MA_PANDION_RECOVERY_ABORT">
+      <description>(Rate: Aperiodic) The following message is sent to abort recovery.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="647" name="PANDION_MA_RECOVERY_ABORT_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_RECOVERY_ABORT to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_RECOVERY_ABORT to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_RECOVERY_ABORT_ACK_TYPE">See PANDION_MA_RECOVERY_ABORT_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="648" name="MA_PANDION_LOFT_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to command a loft manuever</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="float" name="desired_pitch_deg">Desired pitch to obtain during the loft manuever</field>
+    </message>
+    <message id="649" name="PANDION_MA_LOFT_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_LOFT_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from PANDION_MA_LOFT_COMMAND_ACK to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_LOFT_COMMAND_ACK_TYPE">See PANDION_MA_LOFT_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="650" name="MA_PANDION_SLICE_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to command a slice manuever</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+      <field type="float" name="desired_heading_delta_deg">Desired heading change for the slice manuever in degrees</field>
+      <field type="float" name="heading_capture_window_deg">Window which indicates that we have captured the desired heading, indicated delta value in the positive and negative direction</field>
+      <field type="float" name="bank_angle_deg">Desired Angle of bank to initiate maneuver</field>
+      <field type="float" name="load_factor_g">Commanded load factor in Gs</field>
+      <field type="float" name="max_altitude_loss_m">Maximum permissible altitude loss in meters before the aircraft will reduce bank</field>
+    </message>
+    <message id="651" name="PANDION_MA_SLICE_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_SLICE_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_SLICE_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_SLICE_COMMAND_ACK_TYPE">See PANDION_MA_SLICE_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="656" name="PANDION_LOG_CONTROL_CMD">
+      <description>Pandion Log Control Command</description>
+      <field type="uint8_t" name="log_control_command">Log Control command</field>
+    </message>
+
+    <message id="657" name="INNER_GEOFENCE_DATA">
+      <description>Inner geofence unstable parameter data</description>
+      <field type="uint8_t" name="num_vertex">Inner geofence number of vertices</field>
+      <field type="uint8_t" name="vertex_idx">Inner geofence vertex number</field>
+      <field type="double" name="vertex_lat">Inner Vertex latitude </field>
+      <field type="double" name="vertex_lon">Inner Vertex longitude </field>
+      <field type="double" name="min_altitude_ft">Inner Geofence Minimum Altitude (WGS84, Feet)</field>
+      <field type="double" name="max_altitude_ft">Inner Geofence Maximum Altitude (WGS84, Feet)</field>
+    </message>
+
+    <message id="658" name="OUTER_GEOFENCE_DATA">
+      <description>Outer geofence unstable parameter data</description>
+      <field type="uint8_t" name="num_vertex">Outer geofence number of vertices</field>
+      <field type="uint8_t" name="vertex_idx">Outer geofence vertex number</field>
+      <field type="double" name="vertex_lat">Outer Vertex latitude </field>
+      <field type="double" name="vertex_lon">Outer Vertex longitude </field>
+      <field type="double" name="max_altitude_ft">Inner Geofence Maximum Altitude (WGS84, Feet)</field>
+    </message>
+
+    <message id="659" name="PANDION_TEXENSE_ADS_DATA">
+      <description>Pandion Texense Air Data System Data.</description>
+      <field type="float" name="ch1_pressure">Channel 1 Pressure (Pa)</field>
+      <field type="float" name="ch2_pressure">Channel 2 Pressure (Pa)</field>
+      <field type="float" name="ch3_pressure">Channel 3 Pressure (Pa)</field>
+      <field type="float" name="ch4_pressure">Channel 4 Pressure (Pa)</field>
+      <field type="float" name="ch5_pressure">Channel 5 Pressure (Pa)</field>
+      <field type="float" name="ch6_pressure">Channel 6 Pressure (Pa)</field>
+      <field type="float" name="ch7_pressure">Channel 7 Pressure (Pa)</field>
+      <field type="float" name="ch8_pressure">Channel 8 Pressure (Pa)</field>
+      <field type="float" name="ias">Air speed (m/s)</field>
+      <field type="float" name="alpha">Angle of Attack (degrees)</field>
+      <field type="float" name="beta">Angle of Sideslip (degrees)</field>
+    </message>
+
+    <message id="660" name="PANDION_SBF_CN0">
+      <description>SBF CN0 data.</description>
+      <field type="float" name="l1ca_gps_cn0">L1CA GPS CN0</field>
+      <field type="float" name="l1p_gps_cn0">L1P GPS CN0</field>
+      <field type="float" name="l2p_gps_cn0">L2P GPS CN0</field>
+      <field type="float" name="l2c_gps_cn0">L2C GPS CN0</field>
+      <field type="float" name="l5_gps_cn0">L5 GPS CN0</field>
+      <field type="float" name="l1c_gps_cn0">L1C GPS CN0</field>
+    </message>
+
+    <message id="661" name="PANDION_WHEEL_SENSE_DATA">
+      <description>Wheel Sense Data.</description>
+      <field type="uint32_t[2]" name="total_counts">Total counts from wheel sensor</field>
+      <field type="float[2]" name="current_rpm">Current rpm from wheel sensor</field>
+    </message>
+
+    <message id="662" name="PANDION_FUEL_FLOW_SENSORS_DATA">
+      <description>Fuel Flow Sensors Data.</description>
+      <field type="uint32_t[1]" name="total_pulse_counts">Total pulse counts from fuel flow sensors</field>
+      <field type="float[1]" name="total_flow_gallons">Total flow gallons from fuel flow sensors</field>
+    </message>
+
+    <message id="663" name="PANDION_EXTERNAL_GUIDANCE_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a PANDION_EXTERNAL_GUIDANCE_REQUEST to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_EXTERNAL_GUIDANCE_COMMAND_ACK_TYPE">See PANDION_EXTERNAL_GUIDANCE_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="664" name="PANDION_RADAR_ALT_DATA">
+      <description>Radar altimeter data.</description>
+       <field type="uint16_t" name="altitude_cm">Altitude above ground in cm</field>
+       <field type="uint16_t" name="snr_db">Signal-to-Noise Ratio for the measurement</field>
+       <extensions/>
+       <field type="uint16_t" name="altitude_min_cm">Min Altitude set for Rad Alt</field>
+       <field type="uint16_t" name="altitude_max_cm">Max Altitude set for Rad Altt</field>
+    </message>
+
+    <message id="665" name="PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to update the location of the external guidance command</description>
+      <field type="int32_t" name="latitude_deg" units="degE7">Latitude</field>
+      <field type="int32_t" name="longitude_deg" units="degE7">Longitude</field>
+      <field type="int32_t" name="altitude_wgs84_mm" units="mm">WGS84 Altitude</field>
+    </message>
+
+    <message id="666" name="PANDION_EXTERNAL_GUDIANCE_LLA_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND_ACK_TYPE">See PANDION_EXTERNAL_GUIDANCE_LLA_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="667" name="PANDION_ANALOG_DATA">
+      <description>Analog data.</description>
+       <field type="float" name="analog_1_volts">Analog signal 1 (0-5V)</field>
+       <field type="float" name="analog_2_volts">Analog signal 2 (0-5V)</field>
+       <field type="float" name="analog_3_volts">Analog signal 3 (0-5V)</field>
+       <field type="float" name="analog_4_volts">Analog signal 4 (0-5V)</field>
+    </message>
+
+    <message id="668" name="PANDION_STANAG_ROUTE_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a PANDION_STANAG_ROUTE_REQUEST to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_STANAG_ROUTE_COMMAND_ACK_TYPE">See PANDION_STANAG_ROUTE_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="669" name="MA_PANDION_GROUND_ARMED_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle to enter ground armed.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="670" name="PANDION_MA_GROUND_ARMED_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_GROUND_ARMED_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_GROUND_ARMED_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_GROUND_ARMED_COMMAND_ACK_TYPE">See PANDION_MA_GROUND_ARMED_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="671" name="MA_PANDION_TAXI_STOP_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle begin taxiing.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="672" name="PANDION_MA_TAXI_STOP_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_TAXI_STOP_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_TAXI_STOP_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_TAXI_STOP_COMMAND_ACK_TYPE">See PANDION_MA_TAXI_STOP_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="673" name="MA_PANDION_TAXI_START_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to request the vehicle begin taxiing.</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="674" name="PANDION_MA_TAXI_START_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_TAXI_STOP_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_TAXI_STOP_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_TAXI_START_COMMAND_ACK_TYPE">See PANDION_MA_TAXI_START_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="675" name="MA_PANDION_POPU_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to command a popu manuever</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="676" name="PANDION_MA_POPU_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_POPU_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from PANDION_MA_POPU_COMMAND_ACK to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_POPU_COMMAND_ACK_TYPE">See PANDION_MA_POPU_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="677" name="MA_PANDION_WIND_UP_TURN_COMMAND">
+      <description>(Rate: Aperiodic) The following message is sent to command a wind up turn manuever</description>
+      <field type="uint8_t" name="counter">Counter that increments from 0 to 255 (value wrapping back to 0)</field>
+    </message>
+    <message id="678" name="PANDION_MA_WIND_UP_TURN_COMMAND_ACK">
+      <description>(Rate: Aperiodic) The following message is sent in response to a MA_PANDION_WIND_UP_TURN_COMMAND to reflect whether that command was accepted or rejected.</description>
+      <field type="uint8_t" name="counter_wrap">Wrap of 'counter' from MA_PANDION_WIND_UP_TURN_COMMAND to which this ack corresponds to</field>
+      <field type="uint8_t" name="accepted_rejected" enum="PANDION_MA_WIND_UP_TURN_COMMAND_ACK_TYPE">See PANDION_MA_WIND_UP_TURN_COMMAND_ACK_TYPE (0 = Accepted, non-0 = Rejected)</field>
+    </message>
+
+    <message id="679" name="PANDION_WCET_STATS">
+      <description>Pandion WCET Stats</description>
+      <field type="char[64]" name="task_name">name of the task"</field>
+      <field type="uint32_t" name="wcet_ns">worse case execution time"</field>
+      <field type="uint32_t" name="wcet_ns_percent">worse case execution time %age"</field>
+      <field type="uint32_t" name="avg_ns">avg execution time"</field>
+      <field type="uint32_t" name="avg_ns_percent">avg execution time %age"</field>
+    </message>
+
+    <message id="700" name="PANDION_MONARCH_STATUS">
+      <description>Pandion Monarch status.</description>
+      <field type="uint32_t" name="status">Monarch status bitfield</field>
+      <field type="uint8_t" name="ins_mode">INS mode</field>
+      <field type="uint8_t" name="align_mode">Alignment mode</field>
+      <field type="uint8_t" name="aiding_config">Monarch aiding configuration, specific to vehicle application</field>
+      <field type="uint8_t" name="gnssd_config">GNSS-Denied configuration, specific to vehicle application - 0 for GNSS-Aided, 1 for GNSS-Denied</field>
+      <field type="uint8_t" name="monarch_imu_state">Monarch IMU state</field>
+      <field type="float[3]" name="pos_err_ned_m">NED Position error</field>
+      <field type="float[3]" name="vel_err_ned_mps">NED Velocity error</field>
+      <field type="float[3]" name="att_err_deg">Attitude error</field>
+      <field type="float" name="gnss_heading_deg">GNSS heading</field>
+      <field type="float" name="time_since_gnss_upd_s">Time since last GNSS update</field>
+      <field type="float" name="time_since_heading_upd_s">Time since last Heading update</field>
+      <field type="float" name="time_since_ecef_upd_s">Time since last ECEF update</field>
+      <field type="float" name="time_since_silvus_upd_s">Time since last Silvus ranging update</field>
+      <field type="float" name="time_since_gnd_lidar_upd_s">Time since last LiDAR update</field>
+      <field type="float" name="time_since_ptam_upd_s">Time since last PTAM update</field>
+      <field type="float[3]" name="var_position_ned_m2">NED position variance</field>
+      <field type="float[3]" name="var_velocity_ned_m2ps2">NED velocity variance</field>
+      <extensions/>
+      <field type="uint8_t" name="ahrs_initialized">AHRS initialized</field>
+      <field type="uint8_t" name="ahrs_tilt_initialized">AHRS tilt initialized</field>
+      <field type="float" name="ahrs_roll_err_deg">AHRS roll error</field>
+      <field type="float" name="ahrs_pitch_err_deg">AHRS pitch error</field>
+      <field type="float" name="ahrs_yaw_err_deg">AHRS yaw error</field>
+      <field type="float" name="wmm_north_nT">WMM North (nanotesla)</field>
+      <field type="float" name="wmm_east_nT">WMM East (nanotesla)</field>
+      <field type="float" name="wmm_down_nT">WMM Down (nanotesla)</field>
+      <field type="uint8_t" name="mag_cal_out_init_flag">Magnetometer Calibration Init Flag</field>
+      <field type="uint8_t" name="mag_cal_out_mag_cal_done">Magnetometer Calibration completed flag</field>
+      <field type="uint8_t" name="mag_cal_out_mag_cal_failed">Magnetometer Calibration failed flag</field>
+      <field type="float[3]" name="mag_cal_out_hard_iron_est">Magnetometer Hard Iron estimate</field>
+      <field type="float[9]" name="mag_cal_out_soft_iron_est">Magnetometer Soft Iron estimate</field>
+      <field type="float[3]" name="mag_data_magnetic_field_vector_gauss">Magnetometer Magnetic Field vector (Gauss)</field>
+      <field type="uint8_t" name="mag_update_work_in_roll_pitch_bound">In Roll Pitch Bound</field>
+      <field type="uint8_t" name="mag_update_work_in_norm_angular_rate_bound">In Norm Angular Rate Bound</field>
+      <field type="uint8_t" name="mag_update_work_in_wmm_total_intensity_bound">In WMM Total Intensity Bound</field>
+      <field type="float" name="baro_out_res_pressure_pa">Baro Pressure Meas Update Residual (pa)</field>
+      <field type="float" name="baro_out_pressure_pa">Baro Pressure Meas Update (pa)</field>
+      <field type="float" name="time_since_baro_upd_s">Time since last Baro update</field>
+      <field type="float" name="ekf_out_std_ads_sf">ADS scale factor standard deviation</field>
+      <field type="float" name="ekf_out_std_wind_ned_mps_0">North wind speed estimate standard deviation</field>
+      <field type="float" name="ads_work_above_min_airspeed_flag">Above minimum airspeed flag</field>
+      <field type="float" name="nav_state_wind_wander_mps_0">Wind estimate (wander) index 0</field>
+      <field type="float" name="nav_state_wind_wander_mps_1">Wind estimate (wander) index 1</field>
+      <field type="float" name="nav_state_wind_wander_mps_2">Wind estimate (wander) index 2</field>
+      <field type="float" name="nav_state_ads_sf">ADS scale factor estimate</field>
+    </message>
+
+    <message id="701" name="PANDION_GENERIC_STATUS_UPDATE">
+      <description>Give generic status updates for long running processes. For example, purging the SD Card. ids 0-0xFFFF are reserved for common. Rest can be used by the vehicle</description>
+      <field type="uint32_t" name="id">Which item this status message is for</field>
+      <field type="char[128]" name="statustext">Text update for the GCS to print</field>
+      <field type="uint8_t" name="done_percent">Percentage completion</field>
+    </message>
+
+    <message id="702" name="PANDION_EXTERNAL_GUIDANCE_REQUEST">
+      <description>Issues an external guidance request to pandion.</description>
+      <field type="uint8_t" name="ext_guidance_req">External guidance request command (0 for disable, 1 for enable)</field>
+    </message>
+
+    <message id="703" name="PANDION_AEROPROBE_DEFIANT_AIR_DATA">
+      <description>Aeroprobe Defiant Micro Air Data System Air Data.</description>
+      <field type="uint8_t" name="data_stale">Data Stale</field>
+      <field type="uint8_t" name="checksum_failed">Checksum Failed</field>
+      <field type="uint8_t" name="hour">Air Data Hour</field>
+      <field type="uint8_t" name="minute">Air Data Minute</field>
+      <field type="uint8_t" name="second">Air Data Second</field>
+      <field type="uint16_t" name="millisecond">Air Data Millisecond</field>
+      <field type="uint8_t" name="month">Air Data Month</field>
+      <field type="uint8_t" name="day">Air Data Day</field>
+      <field type="uint8_t" name="year">Air Data Year</field>
+      <field type="float" name="airspeed_meters_per_sec">Airspeed (m/s)</field>
+      <field type="float" name="indicated_airspeed_meters_per_sec">Indicated Airspeed (m/s)</field>
+      <field type="float" name="angle_of_attack_deg">Angle of Attack (deg)</field>
+      <field type="float" name="angle_of_sideslip_deg">Angle of Sideslip (deg)</field>
+      <field type="int32_t" name="pressure_altitude_meters">Pressure Altitude (m)</field>
+      <field type="float" name="static_pressure_pascals">Static Pressure (Pa)</field>
+      <field type="float" name="total_pressure_pascals">Total Pressre (Pa)</field>
+      <field type="float" name="air_data_external_temp_cels">Air Data External Temp (C)</field>
+      <field type="float" name="air_data_internal_temp_cels">Air Data Internal Temp (C)</field>
+    </message>
+
+    <message id="704" name="PANDION_STANAG_ROUTE_REQUEST">
+      <description>Issues a stanag route request to pandion.</description>
+      <field type="uint8_t" name="stanag_route_num">end a STANAG route (0 for accepted, 1 for denied)</field>
+    </message>
+
+    <message id="705" name="PANDION_MONARCH_NAV_OUT">
+      <description>Pandion Monarch Nav Out Telemetry</description>
+      <field type="int64_t" name="gps_tov_ns">GPS TOV ns</field>
+      <field type="double" name="latitude_rad">Latitude in rad</field>
+      <field type="double" name="longitude_rad">Longitude in rad</field>
+      <field type="float" name="altitude_wgs84_m">Altitude above WGS84 ellipsoid in m</field>
+      <field type="float" name="wander_angle_rad">Wander angle rad</field>
+      <field type="float[3]" name="velocity_ned_mps">Velocity in local NED frame in mps</field>
+      <field type="float[4]" name="quat_attitude_ned2body">Attitude quaternion NED to body</field>
+      <field type="float[3]" name="angular_rate_comp_rps">Compensated body angular rates rad/s</field>
+      <field type="float[3]" name="specific_force_comp_mps2">Compensated body specifici force m/s2</field>
+      <field type="float[3]" name="bias_gyro_rps">Estimated IMU Gyro Biases</field>
+      <field type="float[3]" name="bias_accel_mps2">Estimated IMU Accel Biases</field>
+      <field type="uint8_t" name="bias_imu_monitor_bm">Bitmask for whether IMU bias estimates are set</field>
+    </message>
+
+    <message id="706" name="PANDION_MONARCH_EKF_OUT">
+      <description>Pandion Monarch EKF Out Telemetry</description>
+      <field type="int64_t" name="gps_tov_ns">GPS TOV ns</field>
+      <field type="float" name="var_latitude_rad2">Latitude Variance Radians2</field>
+      <field type="float" name="var_longitude_rad2">Longitude Variance Radians2</field>
+      <field type="float" name="var_altitude_m2">Altitude Variance Meters2</field>
+      <field type="float[3]" name="var_velocity_ned_m2ps2">Velocity Variance m2ps2</field>
+      <field type="float[3]" name="var_del_attitude_body_rad2">Body attitude error variance rad2</field>
+      <field type="float[3]" name="var_bias_gyro_r2ps2">Gyro bias variance rad2/s2</field>
+      <field type="float[3]" name="var_bias_accel_m2ps4">Accelerometer bias variance m2/s4</field>
+    </message>
+
+    <message id="707" name="PANDION_MONARCH_GNSS_OUT">
+      <description>Pandion Monarch GNSS Out Telemetry</description>
+      <field type="int64_t" name="system_tov_ns">System TOV ns</field>
+      <field type="int64_t" name="gps_tov_ns">GPS TOV ns</field>
+      <field type="uint8_t" name="frame_count">Measurement frame count</field>
+      <field type="uint8_t" name="gnss_frame_count">GNSS measurement frame count</field>
+      <field type="uint8_t" name="validity_bm">Bit field indicating the validity of the fields ihis message defined as an enum</field>
+      <field type="uint8_t" name="meas_cmd">Measurement command type for module</field>
+      <field type="uint8_t" name="integrity_check_failed_bm">Bitmask for integrity check failures</field>
+      <field type="float" name="res_latitude_rad">Latitude Residual Radians</field>
+      <field type="float" name="res_longitude_rad">Longitude Residual Radians</field>
+      <field type="float" name="res_altitude_wgs84_m">Altitude Residual Meters</field>
+      <field type="float[3]" name="res_velocity_ned_mps">Velocity Residuals mps</field>
+      <field type="float" name="var_latitude_rad2">Latitude measurement variance in rad2</field>
+      <field type="float" name="var_longitude_rad2">Longitude measurement variance in rad2</field>
+      <field type="float" name="var_altitude_wgs84_m2">Altitude measurement variance in rad2</field>
+      <field type="float[3]" name="var_velocity_ned_m2ps2">NED Velocity measurement variance in m2/s2</field>
+      <field type="uint8_t" name="gnss_meas_monitor">Indication of monitor being set for GNSS measurements</field>
+    </message>
+
+    <message id="708" name="PANDION_MONARCH_HEADING_OUT">
+      <description>Pandion Monarch Heading Out Telemetry</description>
+      <field type="int64_t" name="system_tov_ns">System TOV ns</field>
+      <field type="int64_t" name="gps_tov_ns">GPS TOV ns</field>
+      <field type="uint8_t" name="frame_count">Measurement frame count</field>
+      <field type="uint8_t" name="heading_frame_count">Heading measurement frame count</field>
+      <field type="uint8_t" name="validity_bm">Bit field indicating the validity of the fields ihis message defined as an enum</field>
+      <field type="uint8_t" name="meas_cmd">Measurement command type for module</field>
+      <field type="uint8_t" name="integrity_check_failed_bm">Bitmask for integrity check failures</field>
+      <field type="float" name="res_heading_rad">Residual heading in radians</field>
+      <field type="float" name="var_heading_rad2">Heading variance in rad2</field>
+      <field type="uint8_t" name="heading_meas_monitor">Indication of monitor being set for Heading measurements</field>
+    </message>
+
+    <message id="713" name="PANDION_MONARCH_CONTROL_STATUS">
+      <description>Pandion Monarch Control Status - Reports current USE_OUT and USE_MODE values</description>
+      <field type="uint8_t" name="use_out" enum="PANDION_MONARCH_USE_OUT">Current Monarch output selection mode</field>
+      <field type="uint8_t" name="use_mode" enum="PANDION_MONARCH_USE_MODE">Current Monarch sensor usage mode bitmask</field>
+    </message>
+
+
+    <!-- Pandion Omen -->
+    <message id="12100" name="PANDION_OMEN_ENGINE_STATUS">
+      <description>Pandion omen engine status.</description>
+      <field type="float" name="eng_1_crankshaft_speed_rpm">Engine #1 Crankshaft Speed (RPM)</field>
+      <field type="int16_t" name="eng_1_torque_pct">Engine #1 Torque (%)</field>
+      <field type="int16_t" name="eng_1_fuel_temp_degC">Engine #1 Fuel Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_1_intake_air_temp_degC">Engine #1 Intake Air Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_1_cht_1_degC">Engine #1 CHT #1 (Deg. C)</field>
+      <field type="int16_t" name="eng_1_egt_1_degC">Engine #1 EGT #1 (Deg. C)</field>
+      <field type="uint16_t" name="eng_1_map_mbar">Engine #1 MAP (mbar)</field>
+      <field type="uint16_t" name="eng_1_baro_mbar">Engine #1 Baro (mbar)</field>
+      <field type="int16_t" name="eng_1_fuel_press_mbar">Engine #1 Fuel Press (bar)</field>
+      <field type="uint16_t" name="eng_1_fuel_level_pct">Engine #1 Fuel Level (%)</field>
+      <field type="int8_t" name="eng_1_sgen_motor_curr_amps">Engine #1 Starter Generator Motor Current</field>
+      <field type="int8_t" name="eng_1_sgen_volts">Engine #1 Starter Generator Voltage</field>
+      <field type="uint8_t" name="eng_1_eng_state">Engine #1 Eng State</field>
+      <field type="uint8_t" name="eng_1_speed_control_state">Engine #1 Speed Control State</field>
+      <field type="uint8_t" name="eng_1_derate_state">Engine #1 Derate State</field>
+      <field type="uint8_t" name="eng_1_start_substate">Engine #1 Start Substate</field>
+      <field type="uint8_t" name="eng_1_shutdown_substate">Engine #1 Start Substate</field>
+
+      <field type="float" name="eng_2_crankshaft_speed_rpm">Engine #2 Crankshaft Speed (RPM)</field>
+      <field type="int16_t" name="eng_2_torque_pct">Engine #2 Torque (%)</field>
+      <field type="int16_t" name="eng_2_fuel_temp_degC">Engine #2 Fuel Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_2_intake_air_temp_degC">Engine #2 Intake Air Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_2_cht_1_degC">Engine #2 CHT #1 (Deg. C)</field>
+      <field type="int16_t" name="eng_2_egt_1_degC">Engine #2 EGT #1 (Deg. C)</field>
+      <field type="uint16_t" name="eng_2_map_mbar">Engine #2 MAP (mbar)</field>
+      <field type="uint16_t" name="eng_2_baro_mbar">Engine #2 Baro (mbar)</field>
+      <field type="int16_t" name="eng_2_fuel_press_mbar">Engine #2 Fuel Press (bar)</field>
+      <field type="uint16_t" name="eng_2_fuel_level_pct">Engine #2 Fuel Level (%)</field>
+      <field type="int8_t" name="eng_2_sgen_motor_curr_amps">Engine #2 Starter Generator Motor Current</field>
+      <field type="int8_t" name="eng_2_sgen_volts">Engine #2 Starter Generator Voltage</field>
+      <field type="uint8_t" name="eng_2_eng_state">Engine #2 Eng State</field>
+      <field type="uint8_t" name="eng_2_speed_control_state">Engine #2 Speed Control State</field>
+      <field type="uint8_t" name="eng_2_derate_state">Engine #2 Derate State</field>
+      <field type="uint8_t" name="eng_2_start_substate">Engine #2 Start Substate</field>
+      <field type="uint8_t" name="eng_2_shutdown_substate">Engine #2 Start Substate</field>
+    </message>
+    <message id="12101" name="PANDION_OMEN_POWER_SYSTEM_DATA">
+      <description>Pandion Omen power system data.</description>
+      <field type="uint16_t" name="fpcu_source_voltage_dV">Fuselage PCU Source Voltage (decivolt)</field>
+      <field type="uint16_t" name="fpcu_source_current_dA">Fuselage PCU Source Current (deciamp)</field>
+      <field type="uint16_t" name="fpcu_28v_bus_voltage_mV">Fuselage PCU 28v Bus Voltage</field>
+      <field type="uint16_t" name="fpcu_28v_bus_current_mA">Fuselage PCU 28v Bus Current</field>
+      <field type="uint16_t" name="fpcu_12v_bus_voltage_mV">Fuselage PCU 12v Bus Voltage</field>
+      <field type="uint16_t" name="fpcu_12v_bus_current_mA">Fuselage PCU 12v Bus Current</field>
+      <field type="uint16_t" name="fpcu_5v_bus_voltage_mV">Fuselage PCU 5v Bus Voltage</field>
+      <field type="uint16_t" name="fpcu_5v_bus_current_mA">Fuselage PCU 5v Bus Current</field>
+
+      <field type="uint16_t" name="npcu_1_source_voltage_dV">Nacelle PCU #1 Source Voltage (decivolt)</field>
+      <field type="uint16_t" name="npcu_1_source_current_dA">Nacelle PCU #1 Source Current (deciamp)</field>
+      <field type="uint16_t" name="npcu_1_28v_bus_voltage_mV">Nacelle PCU #1 28v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_1_28v_bus_current_mA">Nacelle PCU #1 28v Bus Current</field>
+      <field type="uint16_t" name="npcu_1_12v_bus_voltage_mV">Nacelle PCU #1 12v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_1_12v_bus_current_mA">Nacelle PCU #1 12v Bus Current</field>
+      <field type="uint16_t" name="npcu_1_5v_bus_voltage_mV">Nacelle PCU #1 5v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_1_5v_bus_current_mA">Nacelle PCU #1 5v Bus Current</field>
+      <field type="int8_t" name="npcu_1_hotspot_temp_1_degC">Nacelle PCU #1 Hotspot Temp 1</field>
+      <field type="int8_t" name="npcu_1_hotspot_temp_2_degC">Nacelle PCU #1 Hotspot Temp 2</field>
+
+      <field type="uint16_t" name="npcu_2_source_voltage_dV">Nacelle PCU #2 Source Voltage (decivolt)</field>
+      <field type="uint16_t" name="npcu_2_source_current_dA">Nacelle PCU #2 Source Current (deciamp)</field>
+      <field type="uint16_t" name="npcu_2_28v_bus_voltage_mV">Nacelle PCU #2 28v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_2_28v_bus_current_mA">Nacelle PCU #2 28v Bus Current</field>
+      <field type="uint16_t" name="npcu_2_12v_bus_voltage_mV">Nacelle PCU #2 12v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_2_12v_bus_current_mA">Nacelle PCU #2 12v Bus Current</field>
+      <field type="uint16_t" name="npcu_2_5v_bus_voltage_mV">Nacelle PCU #2 5v Bus Voltage</field>
+      <field type="uint16_t" name="npcu_2_5v_bus_current_mA">Nacelle PCU #2 5v Bus Current</field>
+      <field type="int8_t" name="npcu_2_hotspot_temp_1_degC">Nacelle PCU #2 Hotspot Temp 1</field>
+      <field type="int8_t" name="npcu_2_hotspot_temp_2_degC">Nacelle PCU #2 Hotspot Temp 2</field>
+    </message>
+    <message id="12150" name="PANDION_OMEN_ENGINE_CONTROL">
+      <description>Pandion omen engine control.</description>
+      <field type="uint8_t" name="eng_1_state_command">Engine #1 State Command</field>
+      <field type="uint8_t" name="eng_2_state_command">Engine #2 State Command</field>
+      <field type="uint32_t" name="eng_1_rpm_command">Engine #1 RPM Command</field>
+      <field type="uint32_t" name="eng_2_rpm_command">Engine #2 RPM Command</field>
+    </message>
+    <message id="12408" name="AIR_DATA_SENSOR_STATUS">
+      <description>Air Data Sensor Information.</description>
+      <field type="double" name="mach_number">Speed of vehicle relative to the air mass</field>
+      <field type="double" name="true_air_speed_mps">True Air Speed (TAS) derived from Mach number</field>
+      <field type="double" name="pressure_altitude_m">Barometric altitude based on static pressure</field>
+      <field type="double" name="temperature_local_degk">Free airstream temperature</field>
+      <field type="double" name="static_pressure_pa">Free airstream static pressure</field>
+      <field type="double" name="dynamic_pressure_pa">Free airstream dynamic pressure</field>
+      <field type="double" name="total_pressure_pa">Free airstream total pressure</field>
+      <field type="double" name="press_diff_psi">Pressure from differential sensor in PSI</field>
+      <field type="double" name="press_abs_psi">Pressure from absolute sensor in PSI</field>
+      <field type="int8_t" name="temp_diff_C">Temperature from differential sensor in degC</field>
+      <field type="int8_t" name="temp_abs_C">Temperature from absolute sensor in degC</field>
+      <field type="uint32_t" name="msg_timestamp">Cycle count</field>
+    </message>
+    <message id="12409" name="SW_UPLOAD_STATUS">
+      <description>Software Download Progress Information.</description>
+      <field type="uint8_t" name="state">Current state of software upload state machine</field>
+      <field type="uint8_t" name="percentage">Percentage of count_completed/count_total</field>
+      <field type="uint32_t" name="count_completed">Number of units completed</field>
+      <field type="uint32_t" name="count_total">Total units that need to be completed</field>
+    </message>
+    <message id="12410" name="PANDION_HSA_CONTROL">
+      <description>Pandion HSA control.</description>
+      <field type="uint32_t" name="heading_deg">Heading State Command</field>
+      <field type="uint32_t" name="speed_kts">Speed State Command</field>
+      <field type="uint32_t" name="altitude_ft">Altitude State Command</field>
+      <field type="uint32_t" name="heading_rate_limit_dps">Heading Rate Of Change</field>
+      <field type="uint32_t" name="acceleration_limit_fpss">Speed Rate Of Change</field>
+      <field type="uint32_t" name="climb_rate_limit">Altitude Rate Of Change</field>
+      <field type="uint8_t" name="hsa_enabled">HSA State ON/OFF Command</field>
+    </message>
+    <message id="12411" name="PANDION_WAYPOINT_OFFSET_CONTROL">
+      <description>Pandion Waypoint control.</description>
+      <field type="double" name="vertical_offset_ft">Vertial Offset Command</field>
+      <field type="double" name="lateral_offset_ft">lateral Offset Command</field>
+      <field type="double" name="speed_offset_kts">Speed Offset Command</field>
+    </message>
+
+
+    <!-- Uplink/Command Messages: 12240-12299 -->
+    <message id="12240" name="PANDION_COMPANION_HEARTBEAT">
+      <description>Pandion heartbeat signal</description>
+      <field type="uint8_t" name="frame_count">Incrementing frame counter</field>
+      <field type="uint16_t" name="asset_id">Asset ID</field>
+    </message>
+    <message id="12241" name="PANDION_C2_HEARTBEAT">
+      <description>Pandion command and control signal</description>
+      <field type="uint8_t" name="frame_count">Incrementing frame counter</field>
+    </message>
+    <message id="12242" name="PANDION_SEEKER_REPORT_TRACK_OBSERVATION">
+      <description>Input to the Pandion-internal TSE from an external seeker</description>
+      <field type="float" name="body_frame_az">Body frame azimuth angle (about the z-axis in degrees) to the centroid of the bounding box</field>
+      <field type="float" name="body_frame_el">Body frame elevation angle (about the y-axis in degrees) to the centroid of the track bounding box</field>
+      <field type="uint64_t" name="gps_tov_nsec" units="ns">Timestamp (GPS). Integer nanoseconds since 1980-01-06T00:00:00Z</field>
+      <field type="uint64_t" name="track_id">UUID associated with each track, sending a new trackId will reset the estimator</field>
+      <extensions/>
+      <field type="float[4]" name="los_angle_noise_covariance_rad2">Line-of-sight angle noise covariance array elements from seeker</field>
+      <field type="float" name="range">Range estimate in meters to the track</field>
+      <field type="float" name="range_variance">Variance of range estimate in meters2</field>
+      <field type="uint8_t" name="range_valid">Flag indicating whether the range data in this message is valid.</field>
+    </message>
+    <message id="12250" name="PANDION_TSE">
+      <description>Pandion Target State Estimate</description>
+      <field type="uint64_t" name="tse_tov_nsec">Timestamp (GPS). Integer nanoseconds since 1980-01-01T00:00:00Z</field>
+      <field type="uint32_t" name="message_number">The sequential message number, 0-indexed</field> <!-- uint32 should be big enough: assuming 100hz, this would let us send sequence counts for over 10,000 hours -->
+      <field type="uint16_t" name="track_id">Track ID</field>
+      <field type="uint8_t" name="cv_lock">Computer vision has lock</field>
+      <field type="double" name="tgtPos_ecef_x_m">Target position component 0, x</field>
+      <field type="double" name="tgtPos_ecef_y_m">Target position component 1, y</field>
+      <field type="double" name="tgtPos_ecef_z_m">Target position component 2, z</field>
+      <field type="double" name="tgtVel_ecef_x_mps">Target velocity component 0, x</field>
+      <field type="double" name="tgtVel_ecef_y_mps">Target velocity component 1, y</field>
+      <field type="double" name="tgtVel_ecef_z_mps">Target velocity component 2, z</field>
+      <field type="float" name="tgtPos_ecef_x_unc_m">Target position uncertainty component 0, x</field>
+      <field type="float" name="tgtPos_ecef_y_unc_m">Target position uncertainty component 1, y</field>
+      <field type="float" name="tgtPos_ecef_z_unc_m">Target position uncertainty component 2, z</field>
+      <field type="float" name="tgtVel_ecef_x_unc_mps">Target velocity uncertainty component 0, x</field>
+      <field type="float" name="tgtVel_ecef_y_unc_mps">Target velocity uncertainty component 1, y</field>
+      <field type="float" name="tgtVel_ecef_z_unc_mps">Target velocity uncertainty component 2, z</field>
+      <field type="uint8_t" name="source1_fom">Figure of merit for source 1, 0 if not valid</field>
+      <field type="uint8_t" name="source2_fom">Figure of merit for source 2, 0 if not valid</field>
+      <field type="float" name="source1_dt_sec">Source 1 time since last measurement</field>
+      <field type="float" name="source2_dt_sec">Source 2 time since last measurement</field>
+    </message>
+    <message id="12251" name="PANDION_EXTGUID_STATUS">
+      <description>Control Status from Vehicle</description>
+      <field type="uint8_t" name="use_ma_target">Use Mission Autonomy provided target LLA</field>
+      <field type="uint8_t" name="extguid_request_c2">External guidance has been requested by C2</field>
+      <field type="uint8_t" name="extguid_request_ma">External guidance has been requested by mission autonomy</field>
+      <field type="uint8_t" name="extguid_request_wp_auto_engage">External guidance has been requested by waypoint criteria in mission</field>
+      <field type="uint8_t" name="wp_auto_engage_enable">Flag indicating when automatic engagement by waypoint criteria is enabled</field>
+      <field type="double" name="target_lat_deg">Target latitude in deg</field>
+      <field type="double" name="target_lon_deg">Target longitude in deg</field>
+      <field type="float" name="target_alt_wgs84_m">Target altitude in m</field>
+    </message>
+    <message id="12252" name="OUTER_GEOFENCE_DATA_ACK">
+      <description>Acknowledgment of DIVE_XL_APPEND_WAYPOINT message</description>
+      <field type="uint16_t" name="result" enum="GEOFENCE_OUTER_DATA_RESULT">Result of geofence data
+        update</field>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot)</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in
+        Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="num_vertex">Outer geofence number of vertices</field>
+      <field type="uint8_t" name="vertex_idx">Outer geofence vertex number</field>
+      <field type="double" name="vertex_lat">Outer Vertex latitude </field>
+      <field type="double" name="vertex_lon">Outer Vertex longitude </field>
+      <field type="double" name="max_altitude_ft">Inner Geofence Maximum Altitude (WGS84, Feet)</field>
+    </message>
+    <message id="12253" name="PANDION_VBN_POSE_ESTIMATE">
+      <description>VBN (Visual-Based Navigation) camera pose estimate frame</description>
+      
+      <field type="uint64_t" name="gps_tov_ns" units="ns">Time of validity nanoseconds since GPS epoch</field>
+      <field type="uint8_t" name="sensor_id">If multiple sensors are used, which is producing this measurement</field>
+      <field type="uint32_t" name="msg_id">from 0, incrementing until wrapped</field>
+
+      <!-- Estimate -->
+      <field type="double" name="latitude_deg" units="deg">sensor latitude in degrees</field>
+      <field type="double" name="longitude_deg" units="deg">sensor longitude in degrees</field>
+      <field type="double" name="altitude_wgs84_m" units="m">sensor altitude WGS84 in meters</field>
+      <field type="float[6]" name="cov_position_m2" units="m^2">Position covariance (upper triangle: xx, xy, xz, yy, yz, zz) in sensor FRD frame</field>
+
+      <field type="float" name="orientation_local2sensor_w">w element: attitude quaternion of the sensor (local NED to sensor FRD)</field>
+      <field type="float" name="orientation_local2sensor_x">x element: attitude quaternion of the sensor (local NED to sensor FRD)</field>
+      <field type="float" name="orientation_local2sensor_y">y element: attitude quaternion of the sensor (local NED to sensor FRD)</field>
+      <field type="float" name="orientation_local2sensor_z">z element: attitude quaternion of the sensor (local NED to sensor FRD)</field>
+      <field type="float[6]" name="orientation_cov_rad2" units="rad^2">estimate attitude covariance (upper triangle: xx, xy, xz, yy, yz, zz)</field>
+
+      <field type="float" name="confidence">confidence score from VBN software bounded [0, 1]</field>
+
+      <!-- Extrinsics (IMU to sensor transform) -->
+      <field type="double" name="translation_imu2sensor_x_m" units="m">x (forward) translation in meters of the nav point (imu) to sensor in FRD frame</field>
+      <field type="double" name="translation_imu2sensor_y_m" units="m">y (right) translation in meters of the nav point (imu) to sensor in FRD frame</field>
+      <field type="double" name="translation_imu2sensor_z_m" units="m">z (down) translation in meters of the nav point (imu) to sensor in FRD frame</field>
+      <field type="float[6]" name="extrinsic_translation_cov" units="m^2">Extrinsic translation covariance (upper triangle: xx, xy, xz, yy, yz, zz)</field>
+      <field type="float" name="rotation_imu2sensor_w">w element: rotation from the nav point (imu) FRD to sensor FRD</field>
+      <field type="float" name="rotation_imu2sensor_x">x element: rotation from the nav point (imu) FRD to sensor FRD</field>
+      <field type="float" name="rotation_imu2sensor_y">y element: rotation from the nav point (imu) FRD to sensor FRD</field>
+      <field type="float" name="rotation_imu2sensor_z">z element: rotation from the nav point (imu) FRD to sensor FRD</field>
+      <field type="float[6]" name="extrinsic_rotation_cov" units="rad^2">Extrinsic attitude covariance (upper triangle: xx, xy, xz, yy, yz, zz)</field>
+    </message>
+    <message id="12254" name="PANDION_VBN_BODY_POSE_ESTIMATE">
+      <description>VBN (Visual-Based Navigation) body pose estimate frame</description>
+      
+      <field type="uint64_t" name="gps_tov_ns" units="ns">Time of validity nanoseconds since GPS epoch</field>
+      <field type="uint8_t" name="sensor_id">If multiple sensors are used, which is producing this measurement</field>
+      <field type="uint32_t" name="msg_id">from 0, incrementing until wrapped</field>
+
+      <!-- Estimate -->
+      <field type="double" name="position_body_ecef_x_m" units="m">body position ecef x component</field>
+      <field type="double" name="position_body_ecef_y_m" units="m">body position ecef y component</field>
+      <field type="double" name="position_body_ecef_z_m" units="m">body position ecef z component</field>
+      <field type="float[6]" name="position_cov_body_ecef_m2" units="m^2">Position covariance (upper triangle: xx, xy, xz, yy, yz, zz) in ECEF frame</field>
+
+      <field type="float" name="attitude_body_ecef_w">w element: rotation from ECEF frame to body FRD frame, w</field>
+      <field type="float" name="attitude_body_ecef_x">x element: rotation from ECEF frame to body FRD frame, x</field>
+      <field type="float" name="attitude_body_ecef_y">y element: rotation from ECEF frame to body FRD frame, y</field>
+      <field type="float" name="attitude_body_ecef_z">z element: rotation from ECEF frame to body FRD frame, z</field>
+      <field type="float[6]" name="attitude_cov_body_rad2" units="rad^2">estimate attitude covariance (upper triangle: xx, xy, xz, yy, yz, zz)</field>
+
+      <field type="float" name="confidence">confidence score from VBN software bounded [0, 1]</field>
+
+    </message>
+  </messages>
+</mavlink>

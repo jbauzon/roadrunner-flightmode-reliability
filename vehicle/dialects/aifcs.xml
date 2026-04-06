@@ -1,0 +1,272 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>ardupilotmega.xml</include>
+  <dialect>3</dialect>
+  <!-- Currently utilize 500-series messages for AIFCS -->
+  <enums>
+    <enum name="AIFCS_NAV_METHOD">
+      <description>Possible AIFCS navigation methods</description>
+      <entry value="0" name="AIFCS_NAV_METHOD_L1">
+        <description>L1 navigation</description>
+      </entry>
+      <entry value="1" name="AIFCS_NAV_METHOD_FLYTO">
+        <description>FlyTo navigation</description>
+      </entry>
+      <entry value="10" name="AIFCS_NAV_METHOD_L1_VRAMP">
+        <description>L1 navigation with altitude ramped from-to</description>
+      </entry>
+    </enum>
+    <enum name="AIFCS_MODE_BITS" bitmask="true">
+      <entry value="1" name="FLIGHT_CONTROL_SYSTEM_ARMED"/>
+      <entry value="2" name="ATTCMD_ACTIVE"/>
+      <entry value="4" name="ATTCMD_REQUESTED"/>
+      <entry value="8" name="VELCMD_ACTIVE"/>
+      <entry value="16" name="VELCMD_REQUESTED"/>
+      <entry value="32" name="MANUALCMD_ACTIVE"/>
+      <entry value="64" name="MANUALCMD_REQUESTED"/>
+      <entry value="128" name="COLLCMD_ACTIVE"/>
+      <entry value="256" name="HDOTCMD_ACTIVE"/>
+      <entry value="512" name="GND_TEST_ACTIVE"/>
+      <entry value="1024" name="ON_GND_IDENTIFIED"/>
+      <entry value="2048" name="CONTINGENCY_MGMT_ACTIVE"/>
+      <entry value="4096" name="ROLL_WASHOUT_ACTIVE"/>
+      <entry value="8192" name="PITCH_WASHOUT_ACTIVE"/>
+      <entry value="16384" name="YAW_WASHOUT_ACTIVE"/>
+      <entry value="32768" name="MISSION_MODE_REQUESTED"/>
+      <entry value="65536" name="MISSION_MODE_ACTIVE"/>
+      <entry value="131072" name="EXTERNAL_GUIDANCE_REQUESTED"/>
+      <entry value="262144" name="EXTERNAL_VELOCITY_GUIDANCE_ACTIVE"/>
+      <entry value="524288" name="EXTERNAL_ATTITUDE_GUIDANCE_ACTIVE"/>
+      <entry value="1048576" name="EXTERNAL_DETOUR_GUIDANCE_ACTIVE"/>
+      <entry value="2097152" name="EXTERNAL_GUIDANCE_EXIT_ACTIVE"/>
+      <entry value="4194304" name="EXTERNAL_GUIDANCE_COMPLETED"/>
+      <entry value="8388608" name="EXTERNAL_GUIDANCE_GROUND_TARGET"/>
+      <entry value="16777216" name="CONTINGENCY_ROUTE_ACTIVE"/>
+    </enum>
+    <enum name="AIFCS_HEALTH_BITS" bitmask="true">
+      <entry value="1" name="RC_SIGNAL_LOST_RAW"/>
+      <entry value="2" name="RC_SIGNAL_LOST_FILT"/>
+    </enum>
+    <enum name="AIFCS_SYSID_SGEN_STATE">
+      <entry value="0" name="SGEN_DISARMED"/>
+      <entry value="1" name="SGEN_ENABLED"/>
+      <entry value="2" name="SGEN_ACTIVE"/>
+      <entry value="3" name="SGEN_COMPLETE"/>
+      <!-- end value for indicating invalid state -->
+      <entry value="4" name="SGEN_INVALID"/>
+    </enum>
+    <enum name="AIFCS_CONTINGENCY_MGMT_ACTION">
+      <entry value="0" name="CM_ACT_NONE"/>
+      <entry value="1" name="CM_ACT_NOACTION"/>
+      <entry value="5" name="CM_ACT_OL_ALLZERO"/>
+      <entry value="10" name="CM_ACT_OL_ATTANDZERO"/>
+      <entry value="20" name="CM_ACT_OL_LANDNOW"/>
+      <entry value="25" name="CM_ACT_CL_LANDNOW"/>
+      <entry value="30" name="CM_ACT_CL_VTOL_LANDATCLZ"/>
+      <entry value="40" name="CM_ACT_CL_VTOL_LANDATLAUNCH"/>
+      <entry value="50" name="CM_ACT_CL_ROUTE_CONTINGENCY"/>
+      <entry value="60" name="CM_ACT_CL_ENGINE_OUT_GLIDE"/>
+      <entry value="61" name="CM_ACT_CL_ENGINE_OUT_LANDING"/>
+      <entry value="70" name="CM_ACT_CL_COMMAND_MSA"/>
+      <!-- end value for indicating invalid state -->
+      <entry value="255" name="CM_ACT_INVALID"/>
+    </enum>
+    <enum name="AIFCS_CONTINGENCY_MGMT_ROUTE">
+      <entry value="0" name="CM_ROUTE_NONE"/>
+      <entry value="1" name="CM_ROUTE_CL1"/>
+      <entry value="2" name="CM_ROUTE_CL2"/>
+      <entry value="3" name="CM_ROUTE_CL3"/>
+      <!-- end value for indicating invalid state -->
+      <entry value="255" name="CM_ROUTE_INVALID"/>
+    </enum>
+    <enum name="AIFCS_AUTOMATED_ACTION_STATE">
+      <entry value="0" name="AIFCS_AUTO_ACTION_INACTIVE"/>
+      <entry value="1" name="AIFCS_AUTO_ACTION_INACTIVE_BUT_ENABLED"/>
+      <entry value="2" name="AIFCS_AUTO_ACTION_ACTIVE"/>
+      <entry value="3" name="AIFCS_AUTO_ACTION_COMPLETE"/>
+      <!-- end value for indicating invalid state -->
+      <entry value="250" name="AIFCS_AUTO_ACTION_INVALID"/>
+    </enum>
+    <enum name="AIFCS_WAYPOINT_TYPE">
+      <entry value="0" name="AIFCS_WAYPOINT_TYPE_GROUND"/>
+      <entry value="10" name="AIFCS_WAYPOINT_TYPE_GROUND_PRECISION"/>
+      <entry value="100" name="AIFCS_WAYPOINT_TYPE_AIR_THROUGH"/>
+      <entry value="101" name="AIFCS_WAYPOINT_TYPE_AIR_CUT"/>
+      <entry value="102" name="AIFCS_WAYPOINT_TYPE_AIR_HOVER"/>
+      <entry value="103" name="AIFCS_WAYPOINT_TYPE_AIR_VTOL_LAND"/>
+      <entry value="104" name="AIFCS_WAYPOINT_TYPE_AIR_VTOL_TAKEOFF"/>
+      <entry value="105" name="AIFCS_WAYPOINT_TYPE_AIR_TIME_LOITER"/>
+      <entry value="106" name="AIFCS_WAYPOINT_TYPE_AIR_LAP_LOITER"/>
+      <entry value="107" name="AIFCS_WAYPOINT_TYPE_AIR_ARC"/>
+      <entry value="150" name="AIFCS_WAYPOINT_TYPE_AIR_THROUGH_SEGMENT_TOA"/>
+      <entry value="151" name="AIFCS_WAYPOINT_TYPE_AIR_THROUGH_GLOBAL_TOA"/>
+      <entry value="200" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_RW2FW_TRANSITION"/>
+      <entry value="201" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_FW2RW_TRANSITION"/>
+      <entry value="202" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_ROLL_SYSID"/>
+      <entry value="203" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_PITCH_SYSID"/>
+      <entry value="204" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_YAW_SYSID"/>
+      <entry value="205" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_THRUST_SYSID"/>
+      <entry value="206" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_HOLD_LEVEL"/>
+      <entry value="207" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_STOP_HOLD_HDG"/>
+      <entry value="208" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_STOP_SET_HDG"/>
+      <entry value="211" name="AIFCS_WAYPOINT_TYPE_AIR_ACTION_EXECUTE_SELECTED_PROFILE"/>
+      <entry value="255" name="AIFCS_WAYPOINT_TYPE_INVALID"/>
+    </enum>
+    <enum name="AIFCS_WAYPOINT_NAV_METHOD">
+      <entry value="0" name="AIFCS_WAYPOINT_NAV_METHOD_L1"/>
+      <entry value="1" name="AIFCS_WAYPOINT_NAV_METHOD_FLYTO"/>
+      <entry value="10" name="AIFCS_WAYPOINT_NAV_METHOD_L1_VRAMP"/>
+    </enum>
+    <enum name="AIFCS_HOVER_CAPTURE_STATE">
+      <entry value="0" name="AIFCS_HOVER_CAPTURE_IDLE"/>
+      <entry value="1" name="AIFCS_HOVER_CAPTURE_ENROUTE"/>
+      <entry value="2" name="AIFCS_HOVER_CAPTURE_DECEL"/>
+      <entry value="3" name="AIFCS_HOVER_CAPTURE_POS_ACQUIRE"/>
+      <entry value="4" name="AIFCS_HOVER_CAPTURE_POS_HOLD"/>
+      <entry value="5" name="AIFCS_HOVER_CAPTURE_FINISHED"/>
+      <entry value="6" name="AIFCS_HOVER_CAPTURE_VTOL_LAND_DESCEND"/>
+      <entry value="7" name="AIFCS_HOVER_CAPTURE_VTOL_LAND_ONGROUND"/>
+      <entry value="8" name="AIFCS_HOVER_CAPTURE_VTOL_TAKEOFF_ONGROUND"/>
+      <entry value="9" name="AIFCS_HOVER_CAPTURE_VTOL_TAKEOFF_CLIMB"/>
+      <entry value="10" name="AIFCS_HOVER_CAPTURE_VTOL_TAKEOFF_ABORT"/>
+      <entry value="11" name="AIFCS_HOVER_CAPTURE_STOP_HOLD_HDG"/>
+      <entry value="12" name="AIFCS_HOVER_CAPTURE_STOP_SET_HDG"/>
+    </enum>
+    <enum name="AIFCS_CONTROL_AXIS_TELEM">
+      <entry value="0" name="AIFCS_CONTROL_AXIS_TELEM_ALT_ROLL"/>
+      <entry value="1" name="AIFCS_CONTROL_AXIS_TELEM_ALT_PITCH"/>
+      <entry value="2" name="AIFCS_CONTROL_AXIS_TELEM_ALT_YAW"/>
+      <entry value="3" name="AIFCS_CONTROL_AXIS_TELEM_THRUST"/>
+      <entry value="4" name="AIFCS_CONTROL_AXIS_TELEM_CTRL_ROLL"/>
+      <entry value="5" name="AIFCS_CONTROL_AXIS_TELEM_CTRL_PITCH"/>
+      <entry value="6" name="AIFCS_CONTROL_AXIS_TELEM_CTRL_YAW"/>
+      <entry value="7" name="AIFCS_CONTROL_AXIS_TELEM_CTRL_FLAP"/>
+      <entry value="8" name="AIFCS_CONTROL_AXIS_TELEM_ROTORSPEED"/>
+      <entry value="9" name="AIFCS_CONTROL_AXIS_TELEM_BRAKES"/>
+      <entry value="10" name="AIFCS_CONTROL_AXIS_TELEM_NUM_TYPES"/>
+    </enum>
+    <enum name="AIFCS_CONTROL_STATUS_BITS" bitmask="true">
+      <entry value="1" name="AIFCS_CONTROL_STATUS_THRUST_CMD_LIMITED"/>
+      <entry value="2" name="AIFCS_CONTROL_STATUS_ROLL_SWASH_CMD_LIMITED"/>
+      <entry value="4" name="AIFCS_CONTROL_STATUS_ROLL_AERO_CMD_LIMITED"/>
+      <entry value="8" name="AIFCS_CONTROL_STATUS_PITCH_SWASH_CMD_LIMITED"/>
+      <entry value="16" name="AIFCS_CONTROL_STATUS_PITCH_AERO_CMD_LIMITED"/>
+      <entry value="32" name="AIFCS_CONTROL_STATUS_YAW_SWASH_CMD_LIMITED"/>
+      <entry value="64" name="AIFCS_CONTROL_STATUS_YAW_AERO_CMD_LIMITED"/>
+    </enum>
+    <enum name="AIFCS_ATTITUDE_DISPLAY_ROTATION_OFFSET">
+      <entry value="0" name="AIFCS_ATTITUDE_DISPLAY_ROTATION_OFFSET_NONE"/>
+      <entry value="1" name="AIFCS_ATTITUDE_DISPLAY_ROTATION_OFFSET_RW2FW"/>
+    </enum>
+    <enum name="AIFCS_MISSION_SEGMENT_STATUS_BITS" bitmask="true">
+      <entry value="1" name="AIFCS_MISSION_SEGMENT_STATUS_IS_LAUNCH_SEGMENT"/>
+      <entry value="2" name="AIFCS_MISSION_SEGMENT_STATUS_IS_ENROUTE_SEGMENT"/>
+      <entry value="4" name="AIFCS_MISSION_SEGMENT_STATUS_IS_RECOVERY_SEGMENT"/>
+      <entry value="6" name="AIFCS_MISSION_SEGMENT_STATUS_IS_TAXI_SEGMENT"/>
+      <entry value="8" name="AIFCS_MISSION_SEGMENT_STATUS_ROUTE_COMPLETED"/>
+      <entry value="16" name="AIFCS_MISSION_SEGMENT_STATUS_SCUTTLE_IN_PROGRESS"/>
+      <entry value="32" name="AIFCS_MISSION_SEGMENT_STATUS_RECOVERY_ROUTE_REQUEST_IN_PROGRESS"/>
+      <entry value="64" name="AIFCS_MISSION_SEGMENT_STATUS_RECOVERY_ROUTE_REQUEST_LATCHED"/>
+    </enum>
+  </enums>
+  <messages>
+    <message id="500" name="AIFCS_STATUS">
+      <description>AIFCS status telemetry information</description>
+      <field type="uint32_t" name="mode">AIFCS mode status bitfield</field>
+      <field type="uint16_t" name="health">AIFCS health bitfield</field>
+      <field type="uint8_t" name="sysIdState">AIFCS system ID signal generation state</field>
+      <field type="uint8_t" name="contingencyAction">Contingency action taken</field>
+      <field type="int16_t" name="rollCmd_mrad">AIFCS roll setpoint</field>
+      <field type="int16_t" name="pitchCmd_mrad">AIFCS pitch setpoint</field>
+      <field type="int16_t" name="yawCmd_mrad">AIFCS yaw setpoint</field>
+      <field type="uint32_t" name="rotorspeedCmd_mrpm">AIFCS rotorspeed setpoint</field>
+      <field type="uint8_t" name="rwMode_0to1_percent">AIFCS rotary wing mode scaling</field>
+      <field type="uint8_t" name="fwMode_0to1_percent">AIFCS fixed wing mode scaling</field>
+      <field type="int16_t" name="velocityLonCmd_cmps">AIFCS longitudinal velocity setpoint</field>
+      <field type="int16_t" name="velocityLatCmd_cmps">AIFCS lateral velocity setpoint</field>
+      <field type="int16_t" name="velocityVertCmd_cmps">AIFCS climb rate setpoint</field>
+      <field type="uint16_t" name="ctrlDemandUnmet">AIFCS bitfield indicating control demand unmet</field>
+      <extensions/>
+      <field type="uint8_t" name="laf_enabled_bool">LAF Active</field> 
+      <field type="uint8_t" name="laf_active_bool">LAF Soft Floor engaged</field>
+      <field type="float" name="pitch_vel_ctrl_ms">Pitch-Vel Ctrl</field>
+      <field type="uint8_t" name="contingency_route">Contingency route taken</field>
+    </message>
+    <message id="501" name="AIFCS_ATTITUDE_CONTROLS">
+      <description>AIFCS attitude control information</description>
+      <field type="float[3]" name="bodyAttitudeErr_rad">Attitude loop body angle errors in body frame</field>
+    </message>
+    <message id="502" name="AIFCS_AUTOMATED_ACTION">
+      <description>AIFCS automated profile information</description>
+      <field type="uint8_t" name="automatedActionState">Automated action state</field>
+      <field type="uint8_t" name="profileNumber">Automated profile number</field>
+      <field type="float" name="remainingTime_sec">Automated profile remaining time</field>
+    </message>
+    <message id="503" name="AIFCS_TEST_EVENT_INFO">
+      <description>AIFCS test event information</description>
+      <field type="uint16_t" name="testEventId">Test event identifier</field>
+    </message>
+    <message id="504" name="AIFCS_MISSION">
+      <description>AIFCS mission information</description>
+      <field type="uint64_t" name="routeID">Route ID, crc32 of waypoint list or reserved ID</field>
+      <field type="uint8_t" name="segmentStatus">Status about current mission segment</field>
+      <field type="uint8_t" name="fromWaypointNum">From waypoint number</field>
+      <field type="uint8_t" name="toWaypointNum">To waypoint number</field>
+      <field type="uint8_t" name="nextWaypointNum">Next waypoint number</field>
+      <field type="uint8_t" name="toWaypointType">To waypoint type</field>
+      <field type="uint8_t" name="toWaypointNavMethod">To waypoint nav method</field>
+      <field type="uint8_t" name="hoverCaptureState">Hover capture state machine state</field>
+      <field type="float" name="toWaypointSpeed_fps">To waypoint speed in ft/s</field>
+      <field type="float" name="toWaypointAltitudeHae_ft">To waypoint altitude (hae) in ft</field>
+      <field type="float" name="toWaypointDistRemaining_ft">To waypoint distance remaining in ft</field>
+      <field type="float" name="longitudinalSpeedCmd_fps">Current longitudinal speed command in ft/s</field>
+      <field type="float" name="headingCmd_deg">Current heading command in deg</field>
+      <field type="float" name="estimatedAltitudeHae_ft">Current estimated altitude (hae) in ft</field>
+      <field type="float" name="estimatedGroundSpeed_fps">Current estimated longitudinal velocity in ft/s</field>
+      <field type="float" name="estimatedHeading_deg">Current estimated heading in deg</field>
+      <field type="float" name="maneuverTimeRemaining_sec">Maneuver hold time remaining at current waypoint in sec</field>
+      <field type="float" name="crossTrackErr_ft">Crosstrack error in ft</field>
+      <field type="float" name="numLoiterLaps">Number of loiter laps</field>
+      <field type="float" name="TOAAlongTrackErr_m" units="m">TOA along-track error in m</field>
+      <field type="uint8_t" name="TOAGlobalActive_bool">Global active bool</field>
+      <field type="float" name="TOASegmentTime_s" units="s">TOA segment time in s</field>
+      <field type="uint8_t" name="TOAActive_bool">TOA active bool</field>
+      <field type="uint8_t" name="TOACommanded_bool">TOA commanded bool</field>
+      <field type="uint8_t" name="TOAFeasibility_bool">TOA feasibility bool</field>
+      <field type="float" name="TOATgoEst_s" units="s">TOA estimated tgo time in s</field>
+      <field type="float" name="TOAVelProf_mps" units="m/s">TOA velocity profile in m/s</field>
+      <field type="float" name="TOATimeOnSeg_s" units="s">TOA time on segment in s</field>
+
+    </message>
+    <message id="505" name="AIFCS_CONTROL_CMD">
+      <description>AIFCS normalized control commands</description>
+      <field type="uint16_t" name="controlStatus">Control status bitfield</field>
+      <field type="int16_t[10]" name="controls">Normalized control commands</field>
+    </message>
+    <message id="506" name="AIFCS_ATTITUDE">
+      <description>The attitude in the aeronautical frame (right-handed, Z-down, X-front, Y-right).</description>
+      <field type="float" name="q1">Quaternion component 1, w (1 in null-rotation)</field>
+      <field type="float" name="q2">Quaternion component 2, x (0 in null-rotation)</field>
+      <field type="float" name="q3">Quaternion component 3, y (0 in null-rotation)</field>
+      <field type="float" name="q4">Quaternion component 4, z (0 in null-rotation)</field>
+      <field type="float" name="rollspeed" units="rad/s">Roll angular speed</field>
+      <field type="float" name="pitchspeed" units="rad/s">Pitch angular speed</field>
+      <field type="float" name="yawspeed" units="rad/s">Yaw angular speed</field>
+      <field type="uint8_t" name="frameoffset">Rotation offset code to use for attitude displays</field>
+    </message>
+    <message id="507" name="AIFCS_PRONAV">
+      <description>Proportional navigation information.</description>
+      <field type="uint64_t" name="ownshipCurrentTime_ns">Current timestamp of ownship state</field>
+      <field type="uint64_t" name="trackTOV_ns">Time of validity of current track</field>
+      <field type="float" name="relPosN_ft">Relative position North</field>
+      <field type="float" name="relPosE_ft">Relative position East</field>
+      <field type="float" name="relPosD_ft">Relative position Down</field>
+      <field type="float" name="range_ft">Range relative to target</field>
+      <field type="float" name="rangeDot_fps">Range rate relative to target</field>
+      <field type="float" name="zem_ft">Zero effort miss</field>
+      <field type="float" name="tgo_sec">Time to go from target</field>
+      <field type="uint8_t" name="status">0 inactive, 1 active</field>
+      <field type="uint8_t" name="targetEstimateValid">If 1, target state estimate is valid</field>
+    </message>
+  </messages>
+</mavlink>

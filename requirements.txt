@@ -1,0 +1,21 @@
+# Core MAVLink Communication
+pymavlink>=2.4.0
+
+# PyQt5 for GUI
+PyQt5>=5.15.0
+
+# NI-DAQmx Python bindings (optional - for DAQ hardware control)
+nidaqmx>=0.6.0
+
+# Standard library dependencies (included with Python, listed for documentation)
+# - datetime
+# - time
+# - json
+# - os
+# - csv
+# - shutil
+# - platform
+# - subprocess
+# - threading
+# - collections
+# - sys

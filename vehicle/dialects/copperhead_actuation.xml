@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<mavlink>
+  <dialect>111</dialect>
+  <messages>
+    <message id="13300" name="MARITIME_ACTUATOR_FINS_DEMO_RUN">
+      <description>Run a fins demo</description>
+      <field type="uint8_t" name="fin_idx">Fin Index</field>
+      <field type="uint8_t" name="enable">Boolean enable signal</field>
+      <field type="uint8_t" name="home">home at the start</field>
+      <field type="uint32_t" name="velocity">Velocity in rpm</field>
+      <field type="float" name="start_angle">start angle of a demo cycle</field>
+      <field type="float" name="end_angle">end angle of a demo cycle</field>
+      <field type="uint32_t" name="cycle_count">cycle count</field>
+    </message>
+    <message id="13301" name="MARITIME_ACTUATOR_FINS_DEMO_TELEMETRY_REQUEST">
+      <description>Run a fins demo</description>
+      <field type="uint8_t" name="fin_idx">Fin Index</field>
+    </message>
+    <message id="13302" name="MARITIME_ACTUATOR_FINS_DEMO_TELEMETRY">
+      <description>Run a fins demo</description>
+      <field type="uint8_t" name="fin_idx">Fin Index</field>
+      <field type="uint8_t" name="enabled">boolean enabled flag</field>
+      <field type="uint8_t" name="home_state">boolean homed flag</field>
+      <field type="uint32_t" name="cycle_count">cycle count</field>
+    </message>
+  </messages>
+</mavlink>

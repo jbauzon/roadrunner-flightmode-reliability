@@ -1,0 +1,566 @@
+"""
+Telemetry Logger - Descriptive CSV logging for IBIT tests
+
+This module provides human-readable CSV logging with complete test lifecycle:
+- Actions done TO the vehicle (commands, relay changes)
+- Telemetry FROM the vehicle (actuator feedback, status)
+- Complete event descriptions
+- Daily log rotation
+"""
+import os
+import csv
+import time
+from datetime import datetime
+from PyQt5.QtCore import QObject, pyqtSignal
+
+
+class TelemetryLogger(QObject):
+    """
+    IBIT-focused telemetry logger with human-readable, descriptive CSV format.
+    
+    Logs both test control events and vehicle telemetry with context.
+    """
+    
+    log_message = pyqtSignal(str)
+    file_rotated = pyqtSignal(str)
+    
+    MODE_IBIT_FOCUSED = "ibit_focused"
+    MODE_NONE = "none"
+    
+    def __init__(self, log_directory, uut_serial, test_start_datetime,
+                 logging_mode=MODE_IBIT_FOCUSED, max_file_size_mb=100):
+        """
+        Initialize telemetry logger.
+        
+        Args:
+            log_directory: Base directory for logs
+            uut_serial: UUT serial number
+            test_start_datetime: When batch test started (datetime)
+            logging_mode: Logging mode (IBIT_FOCUSED or NONE)
+            max_file_size_mb: Maximum file size before rotation
+        """
+        super().__init__()
+        self.log_directory = log_directory
+        self.uut_serial = uut_serial
+        self.test_start_datetime = test_start_datetime
+        self.logging_mode = logging_mode
+        self.max_file_size = max_file_size_mb * 1024 * 1024
+        
+        self.current_date = None
+        self.current_log_path = None
+        self.log_file = None
+        self.csv_writer = None
+        
+        # Descriptive column names with units
+        self.ibit_columns = [
+            'Date',
+            'Time',
+            'Timestamp_Seconds',
+            'Event_Category',
+            'Event_Type',
+            'Event_Description',
+            'Relay_Status',
+            'IBIT_Phase',
+            'Vehicle_Armed',
+            'Flight_Regime',
+            'Actuation_Mode',
+            'IBIT_Substate_Number',
+            'Left_Elevon_Position_deg',
+            'Right_Elevon_Position_deg',
+            'Dorsal_Rudder_Position_deg',
+            'Ventral_Rudder_Position_deg',
+            'Left_TVC_Upper_Position_deg',
+            'Left_TVC_Lower_Position_deg',
+            'Right_TVC_Upper_Position_deg',
+            'Right_TVC_Lower_Position_deg',
+            'Left_Elevon_Current_mA',
+            'Right_Elevon_Current_mA',
+            'Dorsal_Rudder_Current_mA',
+            'Ventral_Rudder_Current_mA',
+            'Left_TVC_Upper_Current_mA',
+            'Left_TVC_Lower_Current_mA',
+            'Right_TVC_Upper_Current_mA',
+            'Right_TVC_Lower_Current_mA',
+            'Left_Elevon_Temp_C',
+            'Right_Elevon_Temp_C',
+            'Monitors_Active_Count',
+            'Monitors_Overridden_Count',
+        ]
+        
+        self.current_file_size = 0
+        self.flush_interval = 2.0
+        self.last_flush_time = time.time()
+        
+        # Track current state
+        self.current_ibit_phase = "UNKNOWN"
+        self.current_relay_state = "UNKNOWN"
+        self.current_armed_state = "UNKNOWN"
+        self.current_flight_regime = "UNKNOWN"
+        self.current_actuation_mode = "UNKNOWN"
+        self.iteration_number = 0
+    
+    def get_log_path_for_date(self, date_obj):
+        """
+        Generate log file path for a specific date.
+        
+        Args:
+            date_obj: Date object
+        
+        Returns:
+            Full path to log file
+        """
+        day_num = (date_obj - self.test_start_datetime.date()).days + 1
+        day_str = f"day{day_num:02d}"
+        date_str = date_obj.strftime('%Y%m%d')
+        filename = f"UUT_{self.uut_serial}_{day_str}_{date_str}_IBIT_Test.csv"
+        return os.path.join(self.log_directory, filename)
+    
+    def open(self):
+        """
+        Open log file for current date.
+        
+        Creates new file or appends to existing.
+        Writes header for new files.
+        
+        Returns:
+            bool: Success
+        """
+        try:
+            if self.logging_mode == self.MODE_NONE:
+                return True
+            
+            current_date = datetime.now().date()
+            
+            # Check if we need to rotate to new day
+            if self.current_date != current_date:
+                if self.log_file:
+                    self.log_file.flush()
+                    self.log_file.close()
+                    self.log_message.emit(
+                        f"📁 Closed log file: {os.path.basename(self.current_log_path)}"
+                    )
+                
+                self.current_date = current_date
+                self.current_log_path = self.get_log_path_for_date(current_date)
+                
+                file_exists = os.path.exists(self.current_log_path)
+                
+                self.log_file = open(
+                    self.current_log_path,
+                    'a',
+                    newline='',
+                    encoding='utf-8'
+                )
+                self.csv_writer = csv.writer(self.log_file)
+                
+                # Write header only for new files
+                if not file_exists:
+                    self.csv_writer.writerow(self.ibit_columns)
+                    self.log_message.emit(f"📁 Created descriptive IBIT test log")
+                else:
+                    self.log_message.emit(f"📁 Appending to IBIT test log")
+                
+                self.current_file_size = self.log_file.tell()
+            
+            return True
+            
+        except Exception as e:
+            self.log_message.emit(f"Error opening log file: {e}")
+            return False
+    
+    def log_test_event(self, event_type, description):
+        """
+        Log a test lifecycle event.
+        
+        Args:
+            event_type: Type of event (e.g., 'ITERATION_START', 'ARM_REQUEST')
+            description: Human-readable description
+        """
+        if self.logging_mode == self.MODE_NONE or not self.log_file:
+            return
+        
+        try:
+            now = datetime.now()
+            timestamp = now.timestamp()
+            
+            row = {col: '' for col in self.ibit_columns}
+            row['Date'] = now.strftime('%Y-%m-%d')
+            row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+            row['Timestamp_Seconds'] = f"{timestamp:.3f}"
+            row['Event_Category'] = 'TEST_CONTROL'
+            row['Event_Type'] = event_type
+            row['Event_Description'] = description
+            row['Relay_Status'] = self.current_relay_state
+            row['IBIT_Phase'] = self.current_ibit_phase
+            row['Vehicle_Armed'] = self.current_armed_state
+            row['Flight_Regime'] = self.current_flight_regime
+            row['Actuation_Mode'] = self.current_actuation_mode
+            
+            self._write_row(row)
+            
+        except Exception as e:
+            self.log_message.emit(f"Error logging test event: {e}")
+    
+    def log_relay_state(self, relay_line, state):
+        """
+        Log relay state change.
+        
+        Args:
+            relay_line: Relay line number
+            state: True (ON) or False (OFF)
+        """
+        if self.logging_mode == self.MODE_NONE or not self.log_file:
+            return
+        
+        try:
+            self.current_relay_state = "ON" if state else "OFF"
+            now = datetime.now()
+            
+            description = f"Power relay #{relay_line} turned {self.current_relay_state}"
+            if state:
+                description += " - Vehicle powered ON, starting test"
+            else:
+                description += " - Vehicle powered OFF, test complete"
+            
+            row = {col: '' for col in self.ibit_columns}
+            row['Date'] = now.strftime('%Y-%m-%d')
+            row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+            row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
+            row['Event_Category'] = 'TEST_CONTROL'
+            row['Event_Type'] = f'RELAY_{"ON" if state else "OFF"}'
+            row['Event_Description'] = description
+            row['Relay_Status'] = self.current_relay_state
+            row['IBIT_Phase'] = self.current_ibit_phase
+            row['Vehicle_Armed'] = self.current_armed_state
+            row['Flight_Regime'] = self.current_flight_regime
+            row['Actuation_Mode'] = self.current_actuation_mode
+            
+            self._write_row(row)
+            
+        except Exception as e:
+            self.log_message.emit(f"Error logging relay state: {e}")
+    
+    def set_iteration_number(self, iteration):
+        """Set current iteration number"""
+        self.iteration_number = iteration
+    
+    def update_ibit_phase(self, substate):
+        """
+        Update current IBIT phase.
+        
+        Args:
+            substate: IBIT substate number (0-5)
+        """
+        phase_map = {
+            0: "BEGIN (Initializing)",
+            1: "WAIT_FOR_SETTLE (Waiting for stabilization)",
+            2: "ELEVONS (Testing wing controls)",
+            3: "RUDDERS (Testing tail controls)",
+            4: "TVC (Testing engine gimbals)",
+            5: "COMPLETE (All tests passed)"
+        }
+        
+        old_phase = self.current_ibit_phase
+        self.current_ibit_phase = phase_map.get(substate, f"UNKNOWN_STATE_{substate}")
+        
+        # Log phase transition
+        if old_phase != self.current_ibit_phase and old_phase != "UNKNOWN":
+            self.log_test_event(
+                'PHASE_TRANSITION',
+                f"IBIT phase changed: {old_phase.split('(')[0].strip()} → "
+                f"{self.current_ibit_phase.split('(')[0].strip()}"
+            )
+    
+    def update_armed_state(self, armed, flight_regime):
+        """
+        Update armed state and flight regime.
+        
+        Args:
+            armed: True if vehicle is armed
+            flight_regime: Flight regime number
+        """
+        regime_names = {
+            0: "GROUND_DISARMED", 1: "GROUND_ARMED", 2: "AUTO_TAKEOFF",
+            3: "HOVER", 4: "FORWARD_TRANSITION", 5: "CRUISE",
+            6: "IN_AIR_RESTART", 7: "BACK_TRANSITION", 8: "EXTERNAL_GUIDANCE",
+            9: "TAKEOFF_ABORTED", 10: "POWERING_OFF", 11: "CUT_POWER",
+            12: "TERMINATE", 13: "SCUTTLE", 14: "NULL_ATTITUDE_AND_COLLECTIVE",
+            15: "NULL_ATTITUDE_FIXED_COLLECTIVE", 16: "LANDNOW_OL", 17: "LANDNOW_CL",
+            18: "PILOT_OVERRIDE", 19: "EMERGENCY_STOP", 20: "AUTO_RECOVERY",
+            21: "WAVE_OFF", 22: "TAXI", 255: "INVALID"
+        }
+        
+        old_armed_state = self.current_armed_state
+        self.current_armed_state = 'YES (ARMED!)' if armed else 'NO (Safe)'
+        self.current_flight_regime = (
+            f"{flight_regime} ({regime_names.get(flight_regime, 'UNKNOWN')})"
+        )
+        
+        # Log if armed state changed
+        if old_armed_state != self.current_armed_state and old_armed_state != "UNKNOWN":
+            self.log_test_event(
+                'ARMED_STATE_CHANGE',
+                f"Vehicle {'ARMED - motors can spin!' if armed else 'DISARMED - safe state'} "
+                f"(Flight Regime: {self.current_flight_regime})"
+            )
+    
+    def log_telemetry(self, msg):
+        """
+        Log telemetry with descriptive context.
+        
+        Args:
+            msg: MAVLink message object
+        """
+        if self.logging_mode == self.MODE_NONE or not self.log_file:
+            return
+        
+        try:
+            # Check for date change
+            current_date = datetime.now().date()
+            if self.current_date != current_date:
+                self.open()
+            
+            msg_type = msg.get_type()
+            now = datetime.now()
+            
+            # Log actuation status
+            if msg_type == 'PANDION_RR_ACTUATION_SYS_STATUS':
+                row = {col: '' for col in self.ibit_columns}
+                row['Date'] = now.strftime('%Y-%m-%d')
+                row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+                row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
+                row['Event_Category'] = 'VEHICLE_DATA'
+                row['Event_Type'] = 'ACTUATOR_FEEDBACK'
+                
+                # Update phase tracking
+                if hasattr(msg, 'actuation_ibit_substate'):
+                    substate = msg.actuation_ibit_substate
+                    self.update_ibit_phase(substate)
+                    row['IBIT_Substate_Number'] = substate
+                
+                row['IBIT_Phase'] = self.current_ibit_phase
+                row['Relay_Status'] = self.current_relay_state
+                
+                # Actuation mode
+                mode_names = {
+                    0: "OFF (Disabled)",
+                    1: "IBIT (Self-test)",
+                    2: "OPERATE (Flight-ready)"
+                }
+                mode = msg.actuation_state
+                self.current_actuation_mode = mode_names.get(mode, f"UNKNOWN_{mode}")
+                row['Actuation_Mode'] = self.current_actuation_mode
+                
+                row['Vehicle_Armed'] = self.current_armed_state
+                row['Flight_Regime'] = self.current_flight_regime
+                
+                # Actuator positions (centidegrees to degrees)
+                row['Left_Elevon_Position_deg'] = (
+                    f"{getattr(msg, 'left_elevon_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Right_Elevon_Position_deg'] = (
+                    f"{getattr(msg, 'right_elevon_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Dorsal_Rudder_Position_deg'] = (
+                    f"{getattr(msg, 'dorsal_rudder_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Ventral_Rudder_Position_deg'] = (
+                    f"{getattr(msg, 'ventral_rudder_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Left_TVC_Upper_Position_deg'] = (
+                    f"{getattr(msg, 'left_tvc_upper_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Left_TVC_Lower_Position_deg'] = (
+                    f"{getattr(msg, 'left_tvc_lower_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Right_TVC_Upper_Position_deg'] = (
+                    f"{getattr(msg, 'right_tvc_upper_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                row['Right_TVC_Lower_Position_deg'] = (
+                    f"{getattr(msg, 'right_tvc_lower_feedback_cdeg', -5500) / 100.0:.2f}"
+                )
+                
+                # Currents
+                row['Left_Elevon_Current_mA'] = getattr(msg, 'left_elevon_current_mA', '')
+                row['Right_Elevon_Current_mA'] = getattr(msg, 'right_elevon_current_mA', '')
+                row['Dorsal_Rudder_Current_mA'] = getattr(msg, 'dorsal_rudder_current_mA', '')
+                row['Ventral_Rudder_Current_mA'] = getattr(msg, 'ventral_rudder_current_mA', '')
+                row['Left_TVC_Upper_Current_mA'] = getattr(msg, 'left_tvc_upper_current_mA', '')
+                row['Left_TVC_Lower_Current_mA'] = getattr(msg, 'left_tvc_lower_current_mA', '')
+                row['Right_TVC_Upper_Current_mA'] = getattr(msg, 'right_tvc_upper_current_mA', '')
+                row['Right_TVC_Lower_Current_mA'] = getattr(msg, 'right_tvc_lower_current_mA', '')
+                
+                # Temperatures
+                row['Left_Elevon_Temp_C'] = getattr(msg, 'left_elevon_motor_temp_degC', '')
+                row['Right_Elevon_Temp_C'] = getattr(msg, 'right_elevon_motor_temp_degC', '')
+                
+                # Description
+                phase_short = self.current_ibit_phase.split('(')[0].strip()
+                row['Event_Description'] = (
+                    f"Actuator feedback during {phase_short} phase "
+                    f"(iteration {self.iteration_number})"
+                )
+                
+                self._write_row(row)
+            
+            # Log PANDION_STATUS for armed status and flight regime
+            elif msg_type == 'PANDION_STATUS':
+                flight_regime = msg.flight_regime
+                armed = (flight_regime >= 1 and flight_regime != 255)
+                
+                # Update internal state
+                old_armed = self.current_armed_state
+                self.update_armed_state(armed, flight_regime)
+                
+                # Only log if state changed
+                if old_armed != self.current_armed_state and old_armed != "UNKNOWN":
+                    row = {col: '' for col in self.ibit_columns}
+                    row['Date'] = now.strftime('%Y-%m-%d')
+                    row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+                    row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
+                    row['Event_Category'] = 'SYSTEM_STATUS'
+                    row['Event_Type'] = 'ARMED_STATE_CHANGE'
+                    row['Vehicle_Armed'] = self.current_armed_state
+                    row['Flight_Regime'] = self.current_flight_regime
+                    row['Relay_Status'] = self.current_relay_state
+                    row['IBIT_Phase'] = self.current_ibit_phase
+                    row['Actuation_Mode'] = self.current_actuation_mode
+                    row['Event_Description'] = (
+                        f"Vehicle {'ARMED - motors can spin!' if armed else 'DISARMED - safe state'} "
+                        f"(Flight Regime: {self.current_flight_regime})"
+                    )
+                    
+                    self._write_row(row)
+            
+            # Log monitor status
+            elif msg_type == 'PANDION_MONITOR_CURRENT_STATUS':
+                monitors_set = self._count_set_monitors(msg.currently_set)
+                monitors_overridden = self._count_set_monitors(msg.currently_overridden)
+                
+                row = {col: '' for col in self.ibit_columns}
+                row['Date'] = now.strftime('%Y-%m-%d')
+                row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+                row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
+                row['Event_Category'] = 'SYSTEM_STATUS'
+                row['Event_Type'] = 'SAFETY_MONITORS'
+                row['Monitors_Active_Count'] = monitors_set
+                row['Monitors_Overridden_Count'] = monitors_overridden
+                row['Relay_Status'] = self.current_relay_state
+                row['IBIT_Phase'] = self.current_ibit_phase
+                row['Vehicle_Armed'] = self.current_armed_state
+                row['Flight_Regime'] = self.current_flight_regime
+                row['Actuation_Mode'] = self.current_actuation_mode
+                
+                if monitors_set > 0:
+                    row['Event_Description'] = (
+                        f"⚠️ {monitors_set} safety warning(s) active, "
+                        f"{monitors_overridden} overridden"
+                    )
+                else:
+                    row['Event_Description'] = (
+                        f"✓ All safety checks passing "
+                        f"({monitors_overridden} monitors overridden for testing)"
+                    )
+                
+                self._write_row(row)
+            
+            # Log status text messages
+            elif msg_type == 'STATUSTEXT':
+                row = {col: '' for col in self.ibit_columns}
+                row['Date'] = now.strftime('%Y-%m-%d')
+                row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
+                row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
+                row['Event_Category'] = 'SYSTEM_STATUS'
+                row['Event_Type'] = 'STATUS_MESSAGE'
+                row['Relay_Status'] = self.current_relay_state
+                row['IBIT_Phase'] = self.current_ibit_phase
+                row['Vehicle_Armed'] = self.current_armed_state
+                row['Flight_Regime'] = self.current_flight_regime
+                row['Actuation_Mode'] = self.current_actuation_mode
+                
+                severity_names = {
+                    0: "EMERGENCY", 1: "ALERT", 2: "CRITICAL", 3: "ERROR",
+                    4: "WARNING", 5: "NOTICE", 6: "INFO", 7: "DEBUG"
+                }
+                severity = severity_names.get(msg.severity, f"SEV{msg.severity}")
+                row['Event_Description'] = f"[{severity}] {msg.text}"
+                
+                self._write_row(row)
+            
+            # Periodic flush
+            if now.timestamp() - self.last_flush_time >= self.flush_interval:
+                self.log_file.flush()
+                self.current_file_size = self.log_file.tell()
+                self.last_flush_time = now.timestamp()
+        
+        except Exception as e:
+            self.log_message.emit(f"Error logging telemetry: {e}")
+    
+    def _write_row(self, row_dict):
+        """
+        Write a row to CSV.
+        
+        Args:
+            row_dict: Dictionary mapping column names to values
+        """
+        row = [row_dict.get(col, '') for col in self.ibit_columns]
+        self.csv_writer.writerow(row)
+        self.current_file_size = self.log_file.tell()
+    
+    def _count_set_monitors(self, byte_array):
+        """
+        Count how many monitors are SET.
+        
+        Args:
+            byte_array: Array of bytes representing monitor bits
+        
+        Returns:
+            int: Number of SET monitors
+        """
+        count = 0
+        for byte_val in byte_array:
+            for bit in range(8):
+                if byte_val & (1 << bit):
+                    count += 1
+        return count
+    
+    def close(self):
+        """Close log file with proper error handling and logging"""
+        if self.log_file:
+            errors = []
+            
+            # Step 1: Flush any pending writes
+            try:
+                self.log_file.flush()
+            except Exception as e:
+                error_msg = f"Failed to flush log file: {type(e).__name__}: {str(e)}"
+                errors.append(error_msg)
+                # Log to stderr since we can't log to the file
+                import sys
+                print(f"ERROR: {error_msg}", file=sys.stderr)
+            
+            # Step 2: Close the file handle
+            try:
+                self.log_file.close()
+            except Exception as e:
+                error_msg = f"Failed to close log file: {type(e).__name__}: {str(e)}"
+                errors.append(error_msg)
+                import sys
+                print(f"ERROR: {error_msg}", file=sys.stderr)
+            finally:
+                # Always clear reference even if close failed
+                self.log_file = None
+                self.csv_writer = None
+            
+            if errors:
+                # Emit signal if possible
+                try:
+                    self.log_message.emit(
+                        f"⚠ Log close completed with errors: {'; '.join(errors)}"
+                    )
+                except:
+                    pass
+    
+    def get_current_log_path(self):
+        """Get path to current log file"""
+        return self.current_log_path

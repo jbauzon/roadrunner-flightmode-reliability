@@ -1,0 +1,257 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>minimal.xml</include>
+  <include>maritime_common.xml</include>
+  <!-- Safenav specific messages -->
+  <dialect>105</dialect>
+  <enums>
+    <!-- This message will be deprecated in a future release, use SAFENAV_COLLISION_STATUS -->
+    <enum name="SAFENAV_SUBSURFACE_COLLISION">
+      <entry value="0" name="SAFENAV_SUBSURFACE_COLLISION_INVALID"/>
+      <entry value="10" name="SAFENAV_SUBSURFACE_COLLISION_ALL_CLEAR"/>
+      <entry value="20" name="SAFENAV_SUBSURFACE_COLLISION_ROUTE_OVERRIDE"/>
+      <entry value="30" name="SAFENAV_SUBSURFACE_COLLISION_LOITER"/>
+      <entry value="40" name="SAFENAV_SUBSURFACE_COLLISION_CRASHBACK"/>
+    </enum>
+    <!-- This message will be deprecated in a future release, use SAFENAV_COLLISION_STATUS -->
+    <enum name="SAFENAV_SURFACING_COLLISION">
+      <entry value="0" name="SAFENAV_SURFACING_COLLISION_INVALID"/>
+      <entry value="10" name="SAFENAV_SURFACING_COLLISION_ALL_CLEAR"/>
+      <entry value="20" name="SAFENAV_SURFACING_COLLISION_ROUTE_OVERRIDE"/>
+      <entry value="30" name="SAFENAV_SURFACING_COLLISION_LOITER"/>
+      <entry value="40" name="SAFENAV_SURFACING_COLLISION_CRASHBACK"/>
+    </enum>
+    <enum name="SAFENAV_CV_TRACK_STATUS">
+      <entry value="0" name="SAFENAV_CV_TRACK_STATUS_INVALID"/>
+      <entry value="10" name="SAFENAV_CV_TRACK_STATUS_INACTIVE"/>
+      <entry value="20" name="SAFENAV_CV_TRACK_STATUS_TENTATIVE"/>
+      <entry value="30" name="SAFENAV_CV_TRACK_STATUS_ACTIVE"/>
+      <entry value="40" name="SAFENAV_CV_TRACK_STATUS_LOST"/>
+    </enum>
+    <enum name="SAFENAV_TRACK_STATUS">
+      <entry value="0" name="SAFENAV_TRACK_STATUS_UNSPECIFIED"/>
+      <entry value="1" name="SAFENAV_TRACK_STATUS_IMMATURE"/>
+      <entry value="2" name="SAFENAV_TRACK_STATUS_MATURE"/>
+      <entry value="3" name="SAFENAV_TRACK_STATUS_VERIFIED"/>
+      <entry value="4" name="SAFENAV_TRACK_STATUS_EXPIRED"/>
+    </enum>
+    <enum name="TRACK_OBJECT_CLASS">
+      <entry value="0" name="OBJECT_CLASS_UNKNOWN"/>
+      <entry value="1" name="OBJECT_CLASS_PERSON"/>
+      <entry value="2" name="OBJECT_CLASS_CAR"/>
+      <entry value="3" name="OBJECT_CLASS_ANIMAL"/>
+      <entry value="4" name="OBJECT_CLASS_AIR_VEHICLE"/>
+      <entry value="5" name="OBJECT_CLASS_BICYCLE"/>
+      <entry value="6" name="OBJECT_CLASS_WATER_VEHICLE"/>
+      <entry value="7" name="OBJECT_CLASS_UNKNOWN_VEHICLE"/>
+      <entry value="8" name="OBJECT_CLASS_MISSILE"/>
+      <entry value="9" name="OBJECT_CLASS_UNKNOWN_AIR_VEHICLE"/>
+      <entry value="10" name="OBJECT_CLASS_BIRD"/>
+      <entry value="11" name="OBJECT_CLASS_BACKGROUND"/>
+      <entry value="12" name="OBJECT_CLASS_UNCLASSIFIED"/>
+      <entry value="13" name="OBJECT_CLASS_TRANSPORT"/>
+      <entry value="14" name="OBJECT_CLASS_MILITARY_ARMOR"/>
+      <entry value="15" name="OBJECT_CLASS_MILITARY_MISC"/>
+      <entry value="16" name="OBJECT_CLASS_CONTAINER"/>
+      <entry value="17" name="OBJECT_CLASS_OBSTRUCTION"/>
+      <entry value="18" name="OBJECT_CLASS_MISSILE_VEHICLE"/>
+      <entry value="100" name="OBJECT_CLASS_IMAGE_LOCATION_ONLY"/>
+      <entry value="101" name="OBJECT_CLASS_MANUAL"/>
+    </enum>
+    <enum name="SAFENAV_COLLISION_STATUS">
+      <entry value="0" name="SAFENAV_COLLISION_STATUS_INVALID"/>
+      <entry value="10" name="SAFENAV_COLLISION_STATUS_ALL_CLEAR"/>
+      <entry value="20" name="SAFENAV_COLLISION_STATUS_ROUTE_OVERRIDE"/>
+      <entry value="30" name="SAFENAV_COLLISION_STATUS_LOITER"/>
+      <entry value="40" name="SAFENAV_COLLISION_STATUS_CRASHBACK"/>
+    </enum>
+  </enums>
+  <messages>
+    <!-- This message will be deprecated in a future release, use SAFENAV_HEARTBEAT_V2 -->
+    <message id="7000" name="SAFENAV_HEARTBEAT">
+      <description>Safenav system status</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="message_counter">Message counter to detect missed messages</field>
+      <field type="uint8_t" name="midwater_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav midwater avoidance function health</field>
+      <field type="uint8_t" name="antiground_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav anti-ground function health</field>
+      <field type="uint8_t" name="surfacing_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav safe-surfacing function health</field>
+      <field type="uint8_t" name="subsurface_collision" enum="SAFENAV_SUBSURFACE_COLLISION">Safenav subsurface collision status</field>
+      <field type="uint8_t" name="surfacing_collision" enum="SAFENAV_SURFACING_COLLISION">Safenav safe-surfacing collision status</field>
+      <field type="float" name="nearest_obstacle_dist" units='m'>Distance from ownship to nearest obstacle in metres</field>
+      <field type="float" name="loiter_clearance_left" units='m'>Distance from left-hand loiter position to nearest obstacle in metres</field>
+      <field type="float" name="loiter_clearance_right" units='m'>Distance from right-hand loiter position to nearest obstacle in metres</field>
+      <field type="uint64_t" name="nominal_route_id" units="index">Unique identifier for nominal route (0: None/invalid)</field>
+      <field type="uint64_t" name="safenav_route_id" units="index">Unique identifier for safenav override route (0: None/invalid)</field>
+      <field type="int16_t" name="reentry_index" units="index">The waypoint index to re-enter the nominal route after performing a safenav override</field>
+      <field type="uint8_t" name="waypoint_count" units="count">Number of valid waypoints in the safe trajectory route, 0 for no/invalid route</field>
+      <field type="float" name="speed" units='m/s'>Speed to traverse the safe trajectory at</field>
+      <field type="uint8_t" name="speed_type" enum="MARITIME_SPEED_TYPE">Speed type to use for all waypoints</field>
+      <field type="uint8_t" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Vertical position type of all waypoints</field>
+      <field type="uint8_t" name="vertical_rate_type" enum="MARITIME_VERTICAL_RATE_TYPE">Vertical rate type for vertical position change to next waypoint</field>
+      <field type="uint8_t[8]" name="waypoint_type" enum="MARITIME_WAYPOINT_TYPE">Types of waypoint</field>
+      <field type="int32_t[8]" name="latitude" units="degE-7">Latitudes of safe trajectory waypoints in 1e-7 degrees</field>
+      <field type="int32_t[8]" name="longitude" units="degE-7">Longitudes of safe trajectory waypoints in 1e-7 degrees</field>
+      <field type="float[8]" name="vertical_pos" units="m">Vertical positions of safe trajectory waypoint</field>
+      <field type="float[8]" name="vertical_rate" units="m/s">Vertical rates for vertical position change to next waypoint</field>
+      <field type="float[8]" name="turn_radius" units="m">Turn radii for each waypoint</field>
+    </message>
+    <message id="7010" name="SAFENAV_HEARTBEAT_V2">
+      <description>Safenav system status</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="message_counter">Message counter to detect missed messages</field>
+      <field type="uint8_t" name="midwater_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav midwater avoidance function health</field>
+      <field type="uint8_t" name="antiground_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav anti-ground function health</field>
+      <field type="uint8_t" name="surfacing_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav safe-surfacing function health</field>
+      <field type="uint8_t" name="surface_health" enum="MARITIME_DEVICE_HEALTH_STATE">Safenav surface watchkeeping function health</field>
+      <field type="uint8_t" name="collision_status" enum="SAFENAV_COLLISION_STATUS">Safenav collision status</field>
+      <field type="float" name="nearest_obstacle_dist" units='m'>Distance from ownship to nearest obstacle in metres</field>
+      <field type="float" name="loiter_clearance_left" units='m'>Distance from left-hand loiter position to nearest obstacle in metres</field>
+      <field type="float" name="loiter_clearance_right" units='m'>Distance from right-hand loiter position to nearest obstacle in metres</field>
+      <field type="uint64_t" name="nominal_route_id" units="index">Unique identifier for nominal route (0: None/invalid)</field>
+      <field type="uint8_t" name="waypoint_count" units="count">Number of valid waypoints in the safe trajectory route, 0 for no/invalid route</field>
+      <field type="uint64_t" name="safenav_route_id" units="index">Unique identifier for safenav override route (0: None/invalid)</field>
+      <field type="int16_t" name="reentry_index" units="index">The waypoint index to re-enter the nominal route after performing a safenav override</field>
+      <field type="float" name="speed" units='m/s'>Speed to traverse the safe trajectory at</field>
+      <field type="uint8_t" name="speed_type" enum="MARITIME_SPEED_TYPE">Speed type to use for all waypoints</field>
+      <field type="uint8_t" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Vertical position type of all waypoints</field>
+      <field type="uint8_t" name="vertical_rate_type" enum="MARITIME_VERTICAL_RATE_TYPE">Vertical rate type for vertical position change to next waypoint</field>
+      <field type="uint8_t[8]" name="waypoint_type" enum="MARITIME_WAYPOINT_TYPE">Types of waypoint</field>
+      <field type="int32_t[8]" name="latitude" units="degE-7">Latitudes of safe trajectory waypoints in 1e-7 degrees</field>
+      <field type="int32_t[8]" name="longitude" units="degE-7">Longitudes of safe trajectory waypoints in 1e-7 degrees</field>
+      <field type="float[8]" name="vertical_pos" units="m">Vertical positions of safe trajectory waypoint</field>
+      <field type="float[8]" name="vertical_rate" units="m/s">Vertical rates for vertical position change to next waypoint</field>
+      <field type="float[8]" name="turn_radius" units="m">Turn radii for each waypoint</field>
+    </message>
+    <!-- This message is deprecated, use SAFENAV_NOMINAL_WAYPOINT_SEGMENT_V2 -->
+    <message id="7100" name="SAFENAV_NOMINAL_WAYPOINT_SEGMENT">
+      <description>Nominal waypoint segment (segment if safenav override did not exist) (to, next, next next, ...)</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint64_t" name="nominal_route_id">Unique identifier for nominal route (0: None/invalid)</field>
+      <field type="uint8_t" name="waypoint_count" units="count">Number of segment waypoints</field>
+      <field type="int16_t[6]" name="waypoint_index" units="index">Indices of waypoints in this segment</field>
+      <field type="uint8_t[6]" name="waypoint_type" enum="MARITIME_WAYPOINT_TYPE">Type of waypoint</field>
+      <field type="int32_t[6]" name="latitude" units="degE-7">Latitude of waypoint in 1e-7 degrees</field>
+      <field type="int32_t[6]" name="longitude" units="degE-7">Longitude of waypoint in 1e-7 degrees</field>
+      <field type="float[6]" name="vertical_pos" units="m">Vertical position of waypoint</field>
+      <field type="uint8_t[6]" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Vertical position type of waypoint</field>
+      <field type="float[6]" name="vertical_rate" units="m/s">Vertical rate for vertical position change to next waypoint</field>
+      <field type="uint8_t[6]" name="vertical_rate_type" enum="MARITIME_VERTICAL_RATE_TYPE">Vertical rate type for vertical position change to next waypoint</field>
+      <field type="float[6]" name="speed" units="m/s">Speed to maintain until next waypoint</field>
+      <field type="uint8_t[6]" name="speed_type" enum="MARITIME_SPEED_TYPE">Speed type to use until next waypoint</field>
+      <field type="float[6]" name="turn_radius" units="m">Turn radius for waypoint</field>
+      <field type="float[6]" name="hold_time" units="s">Hold time at waypoint</field>
+    </message>
+    <!-- Nominal waypoint message starting at the FROM waypoint (from, to, next, next next, ...) -->
+    <message id="7101" name="SAFENAV_NOMINAL_WAYPOINT_SEGMENT_V2">
+      <description>Nominal waypoint segment (segment if safenav override did not exist) (from, to, next, next next, ...)</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint64_t" name="nominal_route_id">Unique identifier for nominal route as per the TO waypoint (0: None/invalid)</field>
+      <field type="uint8_t" name="waypoint_count" units="count">Number of segment waypoints (including the FROM waypoint)</field>
+      <field type="int16_t[6]" name="waypoint_index" units="index">Indices of waypoints in this segment</field>
+      <field type="uint8_t[6]" name="waypoint_type" enum="MARITIME_WAYPOINT_TYPE">Type of waypoint</field>
+      <field type="int32_t[6]" name="latitude" units="degE-7">Latitude of waypoint in 1e-7 degrees</field>
+      <field type="int32_t[6]" name="longitude" units="degE-7">Longitude of waypoint in 1e-7 degrees</field>
+      <field type="float[6]" name="vertical_pos" units="m">Vertical position of waypoint</field>
+      <field type="uint8_t[6]" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Vertical position type of waypoint</field>
+      <field type="float[6]" name="vertical_rate" units="m/s">Vertical rate for vertical position change to next waypoint</field>
+      <field type="uint8_t[6]" name="vertical_rate_type" enum="MARITIME_VERTICAL_RATE_TYPE">Vertical rate type for vertical position change to next waypoint</field>
+      <field type="float[6]" name="speed" units="m/s">Speed to maintain until next waypoint</field>
+      <field type="uint8_t[6]" name="speed_type" enum="MARITIME_SPEED_TYPE">Speed type to use until next waypoint</field>
+      <field type="float[6]" name="turn_radius" units="m">Turn radius for waypoint</field>
+      <field type="float[6]" name="hold_time" units="s">Hold time at waypoint</field>
+      <extensions/>
+      <field type="uint8_t" name="subsurface_authority_state" enum="MARITIME_SAFENAV_AUTHORITY">State of safenav subsurface authority</field>
+      <field type="uint8_t" name="surface_authority_state" enum="MARITIME_SAFENAV_SURFACE_AUTHORITY">State of safenav surface authority</field>
+      <field type="float" name="surface_safe_depth" units="m">Depth at below which the vehicle is considered outside of the danger zone and safe from surface vessel collisions</field>
+      <field type="float" name="surface_threshold_depth" units="m">Depth at which the vehicle is considered on the surface</field>
+      <field type="float" name="terrain_buffer" units="m">Safety buffer for avoiding terrain</field>
+      <field type="float" name="terrain_hard_deck" units="m">Distance from seafloor in which the vehicle is considered in collision with terrain</field>
+      <field type="uint8_t" name="current_operating_zone" enum="MARITIME_SAFENAV_OPERATING_ZONE">Current safenav zone in which the vehicle is operating</field>
+      <field type="uint8_t[6]" name="waypoint_attributes" enum="MARITIME_WAYPOINT_ATTRIBUTES_V2" display="bitmask">Waypoint attributes</field>
+    </message>
+    <message id="7200" name="SAFENAV_PASSIVE_ACOUSTIC_OBSERVATION">
+      <description>Observations from the passive acoustic array (hydrophones)</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="int32_t" name="latitude" units="degE-7">Latitude of vehicle in 1e-7 degrees</field>
+      <field type="int32_t" name="longitude" units="degE-7">Longitude of vehicle in 1e-7 degrees</field>
+      <field type="float" name="vertical_pos" units="m">Vertical position of vehicle</field>
+      <field type="uint8_t" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Vertical position type of waypoint</field>
+      <field type="float" name="q_w">Vehicle orientation (FLUtoENU) quaternion w (1 in null-rotation)</field>
+      <field type="float" name="q_x">Vehicle orientation (FLUtoENU) quaternion x (0 in null-rotation)</field>
+      <field type="float" name="q_y">Vehicle orientation (FLUtoENU) quaternion y (0 in null-rotation)</field>
+      <field type="float" name="q_z">Vehicle orientation (FLUtoENU) quaternion z (0 in null-rotation)</field>
+      <field type="uint8_t" name="observation_count" units="count">The number of observations in this message</field>
+      <field type="float[4]" name="azimuth" units="rad">mean azimuth angle to target, CCW from forward in FLU</field>
+      <field type="float[4]" name="azimuthStdDev" units="rad">azimuth angle standard deviation</field>
+      <field type="float[4]" name="elevation" units="rad">elevation angle in radians</field>
+      <field type="float[4]" name="elevationStdDev" units="rad">elevation angle standard deviation</field>
+      <field type="float[4]" name="minFrequency" units="Hz">Minimum detection frequency</field>
+      <field type="float[4]" name="maxFrequency" units="Hz">Maximum detection frequency</field>
+    </message>
+    <message id="7300" name="SAFENAV_CV_TRACK_FRAME">
+      <description>CV Tracks From the Camera Setup</description>
+      <field type="uint64_t" name="capture_time" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="sensor_id" units="count">camera UID.</field>
+      <field type="uint16_t" name="image_width" units="count">Image width in pixels.</field>
+      <field type="uint16_t" name="image_height" units="count">Image height in pixels.</field>
+      <field type="float" name="horizontal_fov_deg" units="deg">horizontal fov in deg for this camera.</field>
+      <field type="float" name="vertical_fov_deg" units="deg">vertical fov in deg for this camera.</field>
+      <field type="int32_t" name="latitude" units="degE-7">Latitude of vehicle in 1e-7 degrees</field>
+      <field type="int32_t" name="longitude" units="degE-7">Longitude of vehicle in 1e-7 degrees</field>
+      <field type="float" name="vertical_pos" units="m">Vertical position of vehicle</field>
+      <field type="float" name="q_w">Vehicle orientation (FLUtoENU) quaternion w (1 in null-rotation)</field>
+      <field type="float" name="q_x">Vehicle orientation (FLUtoENU) quaternion x (0 in null-rotation)</field>
+      <field type="float" name="q_y">Vehicle orientation (FLUtoENU) quaternion y (0 in null-rotation)</field>
+      <field type="float" name="q_z">Vehicle orientation (FLUtoENU) quaternion z (0 in null-rotation)</field>
+      <field type="uint64_t" name="track_id" units="count">Id of the track.</field>
+      <field type="uint8_t" name="track_status" enum="SAFENAV_CV_TRACK_STATUS">What is the status of this CVTrack</field>
+      <field type="float" name="bounding_box_left">Bounding box in image relative coords, range [0,1] </field>
+      <field type="float" name="bounding_box_top">Bounding box in image relative coords, range [0,1] </field>
+      <field type="float" name="bounding_box_right">Bounding box in image relative coords, range [0,1] </field>
+      <field type="float" name="bounding_box_bottom">Bounding box in image relative coords, range [0,1] </field>
+      <field type="float" name="bounding_box_rotation_ccw_deg">Bounding box rotation ccw deg</field>
+      <field type="uint8_t" name="score" units="scoreE-2">Score of the track divided to fit into an int</field>
+      <extensions/>
+      <field type="uint8_t" name="vertical_pos_type" enum="MARITIME_VERTICAL_POS_TYPE">Meaning of altitude, e.g. WGS84, EGM96.</field>
+    </message>
+    <!--The estimated location and velocity of a tracked object -->
+    <message id="7400" name="SAFENAV_TRACK_STATE">
+      <description>The estimated location and velocity of a tracked object</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="track_status" enum="SAFENAV_TRACK_STATUS">Status of track, describing if mature/verified/expired/etc.</field>
+      <field type="uint8_t" name="object_class" enum="TRACK_OBJECT_CLASS">Assigned class of object being tracked</field>
+      <field type="uint64_t" name="track_id2" units="index">ID of track</field>
+      <field type="int32_t" name="pos_lat" units="degE-7">Latitude of track object in 1e-7 degrees</field>
+      <field type="int32_t" name="pos_lon" units="degE-7">Longitude of track object in 1e-7 degrees</field>
+      <field type="float" name="pos_alt" units="m">Vertical position of track object</field>
+      <field type="uint8_t" name="pos_alt_type" enum="MARITIME_VERTICAL_POS_TYPE">Meaning of altitude, e.g. WGS84, EGM96.</field>
+      <field type="int32_t" name="origin_lat" units="degE-7">Latitude of origin in 1e-7 degrees</field>
+      <field type="int32_t" name="origin_lon" units="degE-7">Longitude of origin in 1e-7 degrees</field>
+      <field type="float" name="origin_alt" units="m">Vertical position of origin</field>
+      <field type="uint8_t" name="origin_alt_type" enum="MARITIME_VERTICAL_POS_TYPE">Meaning of altitude, e.g. WGS84, EGM96.</field>
+      <field type="float" name="pos_e" units="m">East component of East-North-Up (ENU) position</field>
+      <field type="float" name="pos_n" units="m">North component of East-North-Up (ENU) position</field>
+      <field type="float" name="pos_u" units="m">Up component of East-North-Up (ENU) position</field>
+      <field type="float" name="vel_e" units="m">East component of East-North-Up (ENU) velocity</field>
+      <field type="float" name="vel_n" units="m">North component of East-North-Up (ENU) velocity</field>
+      <field type="float" name="vel_u" units="m">Up component of East-North-Up (ENU) velocity</field>
+      <field type="float" name="pos_enu_cov_mxx" units="m">Covariance matrix position xx in upper-right triangle for ENU position</field>
+      <field type="float" name="pos_enu_cov_mxy" units="m">Covariance matrix position xy in upper-right triangle for ENU position</field>
+      <field type="float" name="pos_enu_cov_mxz" units="m">Covariance matrix position xz in upper-right triangle for ENU position</field>
+      <field type="float" name="pos_enu_cov_myy" units="m">Covariance matrix position yy in upper-right triangle for ENU position</field>
+      <field type="float" name="pos_enu_cov_myz" units="m">Covariance matrix position yz in upper-right triangle for ENU position</field>
+      <field type="float" name="pos_enu_cov_mzz" units="m">Covariance matrix position zz in upper-right triangle for ENU position</field>
+      <field type="float" name="vel_enu_cov_mxx" units="m">Covariance matrix position xx in upper-right triangle for ENU velocity</field>
+      <field type="float" name="vel_enu_cov_mxy" units="m">Covariance matrix position xy in upper-right triangle for ENU velocity</field>
+      <field type="float" name="vel_enu_cov_mxz" units="m">Covariance matrix position xz in upper-right triangle for ENU velocity</field>
+      <field type="float" name="vel_enu_cov_myy" units="m">Covariance matrix position yy in upper-right triangle for ENU velocity</field>
+      <field type="float" name="vel_enu_cov_myz" units="m">Covariance matrix position yz in upper-right triangle for ENU velocity</field>
+      <field type="float" name="vel_enu_cov_mzz" units="m">Covariance matrix position zz in upper-right triangle for ENU velocity</field>
+    </message>
+  </messages>
+</mavlink>

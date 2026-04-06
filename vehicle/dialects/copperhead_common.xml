@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>maritime_common.xml</include>
+  <dialect>111</dialect>
+  <enums>
+    <enum name="CH_DEVICE_ID">
+      <entry value="0" name="CH_DEVICE_ID_FLS"/>
+      <entry value="1" name="CH_DEVICE_ID_SPRINTNAV"/>
+      <entry value="2" name="CH_DEVICE_ID_FIN_PORT_UPPER"/>
+      <entry value="3" name="CH_DEVICE_ID_FIN_PORT_LOWER"/>
+      <entry value="4" name="CH_DEVICE_ID_FIN_STBD_LOWER"/>
+      <entry value="5" name="CH_DEVICE_ID_FIN_STBD_UPPER"/>
+      <entry value="6" name="CH_DEVICE_ID_SVS"/>
+      <entry value="7" name="CH_DEVICE_ID_ACOMMS"/>
+      <entry value="8" name="CH_DEVICE_ID_THRUSTER"/>
+      <entry value="9" name="CH_DEVICE_ID_DCB"/>
+      <entry value="10" name="CH_DEVICE_ID_CSAC"/>
+      <entry value="11" name="CH_DEVICE_ID_GNSS"/>
+      <entry value="12" name="CH_DEVICE_ID_IRIDIUM"/>
+      <entry value="13" name="CH_DEVICE_ID_ETH_ROUTER"/>
+    </enum>
+    <enum name="CH_DCDC_ID">
+      <entry value="0" name="CH_DCDC_ID_SYSTEM_24V"/>
+      <entry value="1" name="CH_DCDC_ID_PAYLOAD_24V"/>
+      <entry value="2" name="CH_DCDC_ID_FINS_24V"/>
+      <entry value="3" name="CH_DCDC_ID_PAYLOAD_48V"/>
+    </enum>
+    <enum name="CH_CONTACTOR_ID">
+      <entry value="0" name="CH_CONTACTOR_ID_THRUSTER"/>
+    </enum>
+  </enums>
+  <messages>
+    <!-- Device power report -->
+    <message id="40000" name="CH_REPORT_DEVICE_POWER_STATE">
+      <description>Report power state of a device</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="char[32]" name="device_name">Name of the device to set power state</field>
+      <field type="uint8_t" name="device_idx" enum="CH_DEVICE_ID">Index of the device, used for command</field>
+      <field type="uint8_t" name="requested_power_state" enum="MARITIME_POWER_STATE">Requested power state</field>
+      <field type="uint8_t" name="current_power_state" enum="MARITIME_POWER_STATE">Current power state</field>
+      <extensions/>
+      <field type="float" name="voltage" units="V">Measured voltage</field>
+      <field type="float" name="current" units="A">Measured current</field>
+      <field type="float" name="power" units="W">Measured power</field>
+    </message>
+    <!-- DCDC power report -->
+    <message id="40001" name="CH_REPORT_DCDC_POWER_STATE">
+      <description>Report power state of a dcdc supply</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="char[32]" name="dcdc_name">Name of the contactor to set power state</field>
+      <field type="uint8_t" name="dcdc_idx" enum="CH_DCDC_ID">Index to dcdc array, used for command</field>
+      <field type="uint8_t" name="requested_power_state" enum="MARITIME_POWER_STATE">Requested dcdc state</field>
+      <field type="uint8_t" name="current_power_state" enum="MARITIME_POWER_STATE">Current dcdc state</field>
+    </message>
+    <!-- Contactor power report -->
+    <message id="40002" name="CH_REPORT_CONTACTOR_POWER_STATE">
+      <description>Report power state of a contactor</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="char[32]" name="contactor_name">Name of the device to set power state</field>
+      <field type="uint8_t" name="contactor_idx" enum="CH_CONTACTOR_ID">Index to contactor array, used for command</field>
+      <field type="uint8_t" name="requested_power_state" enum="MARITIME_POWER_STATE">Requested contactor state</field>
+      <field type="uint8_t" name="current_power_state" enum="MARITIME_POWER_STATE">Current contactor state</field>
+      <extensions/>
+      <field type="float" name="voltage" units="V">Measured voltage</field>
+      <field type="float" name="current" units="A">Measured current</field>
+    </message>
+  </messages>
+</mavlink> 

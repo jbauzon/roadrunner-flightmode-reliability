@@ -1,0 +1,171 @@
+<?xml version="1.0"?>
+<mavlink>
+  <!-- See: https://pages.ghe.anduril.au/anduril/xl-operator-docs/telemetry/ADDING_NEW_METRICS.html for rules on adding new telemetry messages -->
+  <!-- Dive XL messages shared across vms, pmc and smc -->
+  <include>common.xml</include>
+  <dialect>106</dialect>
+  <enums>
+    <enum name="DIVE_XL_LOG_LEVEL">
+      <entry value="0" name="DIVE_XL_LOG_LEVEL_DISABLED"/>
+      <entry value="1" name="DIVE_XL_LOG_LEVEL_WARNING"/>
+      <entry value="2" name="DIVE_XL_LOG_LEVEL_CAUTION"/>
+      <entry value="3" name="DIVE_XL_LOG_LEVEL_ADVISORY"/>
+      <entry value="4" name="DIVE_XL_LOG_LEVEL_MONITOR"/>
+      <entry value="5" name="DIVE_XL_LOG_LEVEL_FATAL"/>
+      <entry value="6" name="DIVE_XL_LOG_LEVEL_ERROR"/>
+      <entry value="7" name="DIVE_XL_LOG_LEVEL_PROBLEM"/>
+      <entry value="8" name="DIVE_XL_LOG_LEVEL_INFO"/>
+      <entry value="9" name="DIVE_XL_LOG_LEVEL_DEBUG"/>
+      <entry value="10" name="DIVE_XL_LOG_LEVEL_TRACE"/>
+    </enum>
+    <enum name="DIVE_XL_LOG_LEVEL_OVERRIDE_RESULT">
+      <entry value="0" name="DIVE_XL_LOG_LEVEL_OVERRIDE_RESULT_INVALID"/>
+      <entry value="1" name="DIVE_XL_LOG_LEVEL_OVERRIDE_RESULT_SUCCESS"/>
+      <entry value="2" name="DIVE_XL_LOG_LEVEL_OVERRIDE_RESULT_FAIL"/>
+    </enum>
+    <!-- Bootstrap Battery system state enums      11 Oct 2024 this enum has been deprecated -->
+    <enum name="DIVE_XL_BOOTSTRAP_BATTERY_STATE">
+      <entry value="1" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_PRESENT"/>
+      <entry value="2" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_CHARGING"/>
+      <entry value="4" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_DISCHARGING"/>
+      <entry value="8" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_FAULT"/>
+      <entry value="16" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_FULLY_CHARGED"/>
+      <entry value="32" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_FULLY_DISCHARGED"/>
+      <entry value="64" name="DIVE_XL_BOOTSTRAP_BATTERY_STATE_CONDITIONING"/>
+    </enum>
+    <!-- HPF PDU safety relay loop state bitmask -->
+    <enum name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE" bitmask="true">
+      <entry value="1" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_BA"/>
+      <entry value="2" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_BF"/>
+      <entry value="4" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_L1A"/>
+      <entry value="8" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_L2A"/>
+      <entry value="16" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_L1F"/>
+      <entry value="32" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_L2F"/>
+      <entry value="64" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE_PL"/>
+    </enum>
+    <!-- HPF PDU safety relay contactor state bitmask -->
+    <enum name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE" bitmask="true">
+      <entry value="4" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE_L1A"/>
+      <entry value="8" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE_L2A"/>
+      <entry value="16" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE_L1F"/>
+      <entry value="32" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE_L2F"/>
+      <entry value="64" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE_PL"/>
+    </enum>
+  </enums>
+  <messages>
+      <!-- Request for the temporary module log level override -->
+    <message id="16000" name="DIVE_XL_LOG_LEVEL_OVERRIDE">
+      <description>Override log level for the module for a given time period</description>
+      <field type="uint16_t" name="request_id">Request identifier (copied to response)</field>
+      <field type="char[32]" name="module_id">Module ID where we want to control the log level. NULL terminated</field>
+      <field type="uint8_t" name="log_level" enum="DIVE_XL_LOG_LEVEL">Log level we want to switch to</field>
+      <field type="double" name="time_period_seconds">Duration of the override in seconds</field>
+    </message>
+    <!-- Acknowledgement for a request for log level override -->
+    <message id="16001" name="DIVE_XL_LOG_LEVEL_OVERRIDE_ACK">
+      <description>Acknowledgment of PMC_MODULE_LOG_LEVEL_OVERRIDE message</description>
+      <field type="uint16_t" name="in_response_to_request_id">the `request_id` field of the request that this ACK is in response to</field>
+      <field type="uint16_t" name="result" enum="DIVE_XL_LOG_LEVEL_OVERRIDE_RESULT">Result of event</field>
+    </message>
+    <!-- Moved from the dive_xl.xml to share with pmc and pmc. Keeping names and id's to make it a no-op change for the vms and the ingestion pipeline. -->
+    <!-- Based on the pandion_common PANDION_PARAM_VALUE and PANDION_PARAM_SET extending the param_id to 51 bytes to match Dive-XL param Id max length -->
+    <message id="13395" name="DIVE_XL_PARAM_VALUE">
+      <description>Emit the value of a onboard parameter. The inclusion of param_count and param_index in the message allows the recipient to keep track of received parameters and allows him to re-request missing parameters after a loss or timeout. The parameter microservice is documented at https://mavlink.io/en/services/parameter.html.
+        Mirrors PARAM_VALUE, but for a 64-bit value.</description>
+      <field type="char[51]" name="param_id">Onboard parameter id, terminated by NULL - applications have to provide 51 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+      <field type="uint16_t" name="param_count">Total number of onboard parameters</field>
+      <field type="uint16_t" name="param_index">Index of this onboard parameter</field>
+    </message>
+    <message id="13396" name="DIVE_XL_PARAM_SET">
+      <description>Set a parameter value (write new value to permanent storage).
+        The receiving component should acknowledge the new parameter value by broadcasting a PARAM_VALUE message (broadcasting ensures that multiple GCS all have an up-to-date list of all parameters). If the sending GCS did not receive a PANDION_PARAM_VALUE within its timeout time, it should re-send the PANDION_PARAM_SET message. The parameter microservice is documented at https://mavlink.io/en/services/parameter.html.
+        PANDION_PARAM_SET may also be called within the context of a transaction (started with MAV_CMD_PARAM_TRANSACTION). Within a transaction the receiving component should respond with PARAM_ACK_TRANSACTION to the setter component (instead of broadcasting PANDION_PARAM_VALUE), and PANDION_PARAM_SET should be re-sent if this is ACK not received.
+        Mirrors PARAM_SET, but for 64-bit value</description>
+      <field type="uint8_t" name="target_system">System ID</field>
+      <field type="uint8_t" name="target_component">Component ID</field>
+      <field type="char[51]" name="param_id">Onboard parameter id, terminated by NULL - applications have to provide 51 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+    </message>
+    <message id="13397" name="DIVE_XL_DEVICE_VERSION">
+      <description>Version identifier for a device</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="char[32]" name="device">Name of device</field>
+      <field type="char[16]" name="version">Version identifier for this device</field>
+    </message>
+    <!-- Navigation data -->
+    <message id="13339" name="DIVE_XL_NAV_POSE">
+      <description></description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="int32_t" name="lat" units="degE7">Latitude, expressed</field>
+      <field type="int32_t" name="lon" units="degE7">Longitude, expressed</field>
+      <field type="int32_t" name="relative_alt" units="mm">Altitude above ground</field>
+      <field type="int32_t" name="pressure_depth" units="mm">Depth below sea level</field>
+      <field type="int16_t" name="vx" units="cm/s">Ground X Speed (Latitude, positive north)</field>
+      <field type="int16_t" name="vy" units="cm/s">Ground Y Speed (Longitude, positive east)</field>
+      <field type="int16_t" name="vz" units="cm/s">Ground Z Speed (Depth, positive down)</field>
+      <field type="uint16_t" name="hdg" units="cdeg">Vehicle heading (yaw angle), 0.0..359.99 degrees. If unknown, set to: UINT16_MAX</field>
+      <field type="uint8_t" name="valid_status">The validity status flag of the pose data (valid: 1, not valid: 0)</field>
+      <extensions/>
+      <field type="int32_t" name="roll" units="cdeg">Roll</field>
+      <field type="int32_t" name="pitch" units="cdeg">Pitch</field>
+      <field type="int16_t" name="vel_body_fwd" units="cm/s">Body frame velocity forward</field>
+      <field type="int16_t" name="vel_body_stbd" units="cm/s">Body frame velocity starboard</field>
+      <field type="int16_t" name="vel_body_down" units="cm/s">Body frame velocity down</field>
+      <field type="int16_t" name="waterspeed" units="cm/s">Waterspeed</field>
+      <field type="int32_t" name="alpha" units="cdeg">Angle of attack</field>
+      <field type="int32_t" name="beta" units="cdeg">Angle of sideslip</field>
+      <field type="int32_t" name="egm96_alt" units="mm">Altitude in EGM96 reference (negative is deeper)</field>
+      <field type="int32_t" name="wgs84_alt" units="mm">Altitude in WGS84 reference (negative is deeper)</field>
+      <field type="int16_t" name="acc_body_fwd" units="mm/s/s">Linear acceleration in body forward</field>
+      <field type="int16_t" name="acc_body_stbd" units="mm/s/s">Linear acceleration in body starboard</field>
+      <field type="int16_t" name="acc_body_down" units="mm/s/s">Linear acceleration in body down</field>
+      <field type="int16_t" name="ang_vel_body_fwd" units="cdeg/s">Angular velocity in body forward</field>
+      <field type="int16_t" name="ang_vel_body_stbd" units="cdeg/s">Angular velocity in body starboard</field>
+      <field type="int16_t" name="ang_vel_body_down" units="cdeg/s">Angular velocity in body down</field>
+      <field type="float" name="pos_major" units="m">Horizontal position 1σ error ellipse: Semi-major axis</field>
+      <field type="float" name="pos_minor" units="m">Horizontal position 1σ error ellipse: Semi-minor axis</field>
+      <field type="float" name="dir_p_major" units="deg">Horizontal position 1σ error ellipse: Direction of semi-major axis</field>
+      <field type="float" name="std_relative_alt" units="m">1σ altitude above ground error</field>
+      <field type="float" name="std_pressure_depth" units="m">1σ pressure depth error</field>
+      <field type="float" name="std_roll" units="deg">1σ roll error</field>
+      <field type="float" name="std_pitch" units="deg">1σ pitch error</field>
+      <field type="float" name="std_heading" units="deg">1σ heading error</field>
+      <field type="float" name="std_egm96_alt" units="mm">1σ EGM96 altitude error</field>
+      <field type="float" name="std_wgs84_alt" units="mm">1σ WGS84 altitude error</field>
+      <field type="float" name="vel_major" units="m/s">Horizontal velocity 1σ error ellipse: Semi-major axis</field>
+      <field type="float" name="vel_minor" units="m/s">Horizontal velocity 1σ error ellipse: Semi-minor axis</field>
+      <field type="float" name="dir_v_major" units="deg">Horizontal velocity 1σ error ellipse: Direction of semi-major axis</field>
+      <field type="float" name="std_vel_down" units="m/s">1σ down velocity error</field>
+      <field type="uint64_t" name="continuous_since" units="ms">The nav pose has been continuous since this timestamp (ms since Epoch)</field>
+      <field type="uint64_t" name="pose_timestamp_utc" units="ms">Timestamp in Coordinated Universal Time (ms since Epoch) representing the time the pose data is valid for.</field>
+    </message>
+    <!-- 11 Oct 2024 this msg has been deprecated, replaced with MARITIME_BOOTSTRAP_BATTERY_STATUS_TELEMETRY -->
+    <message id="13371" name="DIVE_XL_BOOTSTRAP_BATTERY_STATUS">
+      <description>A detailed report of the bootstrap battery state</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint16_t" name="voltage" units="mV">The battery voltage</field>
+      <field type="int16_t"  name="current" units="mA">The battery current</field>
+      <field type="int16_t"  name="avg_current" units="mA">The battery average current</field>
+      <field type="uint16_t" name="remaining_capacity" units="mAh">The battery remaining capacity</field>
+      <field type="uint16_t" name="full_capacity" units="mAh">The battery full capacity</field>
+      <field type="uint16_t" name="time_to_full" units="seconds">Time until the battery is full (charging)</field>
+      <field type="uint16_t" name="time_to_empty" units="seconds">Time until the battery is empty (discharging)</field>
+      <field type="uint8_t"  name="state_of_charge" units="0.1%">The battery charge state</field>
+      <field type="uint8_t"  name="num_cells" units="">Number of cells in the battery, max 8 cells</field>
+      <field type="uint16_t[8]" name="cell_voltage" units="mV">Individual cell voltages</field>
+      <field type="uint16_t" name="balancing" display="bitmask">One bit per cell to indicate it is being balanced</field>
+      <field type="uint16_t" name="temperature" units="0.1 degree C">The battery temperature</field>
+      <field type="uint16_t" name="status" enum="DIVE_XL_BOOTSTRAP_BATTERY_STATE">The battery state</field>
+    </message>
+    <message id="13372" name="DIVE_XL_HPF_PDU_SAFETY_RELAY_STATUS">
+      <description>A detailed report of the HPF PDU safety relay state</description>
+      <field type="uint64_t" name="timestamp_utc" units="ms">Timestamp that event occurred in Coordinated Universal Time (ms since Epoch)</field>
+      <field type="uint8_t" name="loop_state" enum="DIVE_XL_HPF_PDU_SAFETY_RELAY_LOOP_STATE" display="bitmask">Bitmap indicating each relay loop state</field>
+      <field type="uint8_t" name="contactor_state" enum="DIVE_XL_HPF_PDU_SAFETY_RELAY_CONTACTOR_STATE" display="bitmask">Bitmap indicating each relay contactor state</field>
+    </message>
+  </messages>
+</mavlink>

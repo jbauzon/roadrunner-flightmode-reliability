@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>ardupilotmega.xml</include>
+  <dialect>3</dialect>
+  <messages>
+    <message id="12001" name="TECS">
+      <description>Total Energy Control System</description>
+      <field name="sp" type="float" units="m/s">Current estimated true airspeed</field>
+      <field name="spdem" type="float" units="m/s">Target true airspeed</field>
+      <field name="h" type="float" units="m">Height estimate</field>
+      <field name="hdem" type="float" units="m">Target height</field>
+    </message>
+    <message id="12002" name="PIDP">
+      <description>Pitch PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12003" name="PIDR">
+      <description>Roll PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12004" name="PIDY">
+      <description>Yaw PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12005" name="RPQP">
+      <description>Quad Pitch PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12006" name="RPQR">
+      <description>Quad Roll PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12007" name="RPQY">
+      <description>Quad Yaw PID</description>
+      <field name="Tar" type="float" units="rad">target value</field>
+      <field name="Act" type="float" units="rad">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float" units="rad">Limit</field>
+    </message>
+    <message id="12008" name="RPQA">
+      <description>Quad Acceleration PID</description>
+      <field name="Tar" type="float">target value</field>
+      <field name="Act" type="float">actual value</field>
+      <field name="I" type="float">I term</field>
+      <field name="Limit" type="float">Limit</field>
+    </message>
+    <message id="12009" name="QTUN">
+      <description>Quad Tuning</description>
+      <field name="DAlt" type="float" units="m">Desired altitude</field>
+      <field name="DCrt" type="float" units="m/s">Desired climb rate</field>
+    </message>
+    <message id="12010" name="ATT">
+      <description>Attitude control</description>
+      <field name="DesPitch" type="float" units="rad">Desired pitch</field>
+      <field name="DesYaw" type="float" units="rad">Desired yaw</field>
+      <field name="DesRoll" type="float" units="rad">Desired roll</field>
+    </message>
+    <message id="12011" name="AETR">
+      <description>Pre-mixer control surface outputs</description>
+      <field name="Rudd" type="float">Rudder</field>
+      <field name="Ail" type="float">Aileron</field>
+      <field name="Elev" type="float">Elevator</field>
+    </message>
+  </messages>
+</mavlink>

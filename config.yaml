@@ -1,0 +1,82 @@
+# Multi-UUT Test System Configuration
+# Version 5.0
+
+# Test Mode
+# Options: ibit | playback
+test_mode: ibit
+
+# Flight Profile Playback (used when test_mode: playback)
+playback:
+  # Path to flight profile CSV (100 Hz, required columns listed in docs)
+  csv_path: ""
+  # Playback type: Actuation | Propulsion | Both
+  type: "Actuation"
+
+# Test Parameters
+test_parameters:
+  # Maximum time for IBIT test to complete (seconds)
+  ibit_timeout: 300
+  
+  # Maximum time for a single IBIT phase (seconds)
+  phase_timeout: 90
+  
+  # Maximum time for ARM command to succeed (seconds)
+  arm_timeout: 60
+  
+  # Maximum iterations when trying to ARM (clearing monitors)
+  max_arm_iterations: 20
+  
+  # Connection timeout for initial MAVLink connection (seconds)
+  connection_timeout: 10
+  
+  # Stabilization delay after relay enable (seconds)
+  stabilization_delay: 2
+
+# Hardware Configuration
+hardware:
+  # Default DAQ device name (detected automatically if available)
+  default_daq_device: "Dev1"
+  
+  # Number of relay lines to initialize
+  num_relay_lines: 8
+
+# Logging Configuration
+logging:
+  # Base directory for logs (relative to script location)
+  log_directory: "logs"
+  
+  # Base directory for reports
+  report_directory: "reports"
+  
+  # Maximum log file size before rotation (MB)
+  max_file_size_mb: 100
+  
+  # Log flush interval (seconds)
+  flush_interval: 2.0
+
+# Safety Features
+safety:
+  # Enable emergency stop button
+  emergency_stop_enabled: true
+  
+  # Watchdog timeout for connection health (seconds)
+  watchdog_timeout: 5.0
+  
+  # Maximum consecutive failures before skipping UUT
+  max_consecutive_failures: 3
+
+# UI Settings
+ui:
+  # Window geometry (x, y, width, height)
+  window_geometry: [50, 50, 1800, 1000]
+  
+  # Log text widget max height (pixels)
+  log_max_height: 150
+  
+  # Statistics update interval (seconds)
+  stats_update_interval: 1.0
+
+# Default Test Duration
+default_duration:
+  value: 14
+  unit: "Days"  # Options: Seconds, Minutes, Hours, Days

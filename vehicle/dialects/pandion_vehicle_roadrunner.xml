@@ -1,0 +1,1410 @@
+<?xml version="1.0"?>
+<mavlink>
+  <include>../../../aimavlink/message_definitions/v1.0/pandion_common.xml</include>
+  <dialect>102</dialect>
+  <!-- Currently utilize 122xx-series messages for Pandion Roadrunner -->
+  <!--   12100-12149 for downlink                                     -->
+  <!--   12150-12199 for uplink                                       -->
+  <enums>
+  <enum name="TJ40_DN_ECU_MODES">
+      <entry value="0" name="TJ40_DN_ECU_MODES_STOP"/>
+      <entry value="1" name="TJ40_DN_ECU_MODES_COOL"/>
+      <entry value="2" name="TJ40_DN_ECU_MODES_FIRE"/>
+      <entry value="3" name="TJ40_DN_ECU_MODES_START"/>
+      <entry value="4" name="TJ40_DN_ECU_MODES_IDLE"/>
+      <entry value="5" name="TJ40_DN_ECU_MODES_RUNNING"/>
+      <entry value="15" name="TJ40_DN_ECU_MODES_DEGRADED"/>
+      <entry value="40" name="TJ40_DN_ECU_MODES_TEST"/>
+      <entry value="50" name="TJ40_DN_ECU_MODES_LOCK"/>
+      <entry value="60" name="TJ40_DN_ECU_MODES_ERROR"/>
+    </enum>
+    <enum name="TJ40_DN_ECU_EED_CODES">
+     <entry value="0" name="TJ40_DN_EED_BAD_PROD_INFO"/>
+     <entry value="1" name="TJ40_DN_EED_INCOMPAT_SW_VER"/>
+     <entry value="4" name="TJ40_DN_EED_LOSS_OF_ENG_CONTROL"/>
+     <entry value="5" name="TJ40_DN_EED_MINIMAL_ENG_SPEED_TIMEOUT"/>
+     <entry value="6" name="TJ40_DN_EED_IGNITION_TIMEOUT"/>
+     <entry value="7" name="TJ40_DN_EED_ENG_START_LOW_VOLTS"/>
+     <entry value="9" name="TJ40_DN_EED_POWER_ELEMENT_OVERTEMP"/>
+     <entry value="10" name="TJ40_DN_EED_STARTER_GEN_ERROR"/>
+     <entry value="11" name="TJ40_DN_EED_FUEL_PUMP_ERR"/>
+     <entry value="12" name="TJ40_DN_EED_INTAKE_TEMP_SENSOR_ERROR"/>
+     <entry value="13" name="TJ40_DN_EED_EGT_TEMP_SENSOR_ERROR"/>
+     <entry value="15" name="TJ40_DN_EED_ENG_SPEED_SIG_LOST"/>
+     <entry value="16" name="TJ40_DN_EED_HW_OVERSPEED"/>
+     <entry value="17" name="TJ40_DN_EED_CAN_BUS_ERROR"/>
+     <entry value="18" name="TJ40_DN_EED_GLOW_PLUG_ERROR"/>
+     <entry value="26" name="TJ40_DN_EED_SW_OVERSPEED"/>
+     <entry value="27" name="TJ40_DN_EED_EGT_OVERTEMP"/>
+     <entry value="28" name="TJ40_DN_EED_BATTERY_LOW_VOLTS"/>
+     <entry value="32" name="TJ40_DN_EED_HIGH_EGT"/>
+     <entry value="33" name="TJ40_DN_EED_REG_ACCESS_DENIED"/>
+     <entry value="34" name="TJ40_DN_EED_CMD_NOT_ALLOWED"/>
+     <entry value="35" name="TJ40_DN_EED_RESERVED"/>
+     <entry value="36" name="TJ40_DN_EED_SAVE_OR_RESTORE_BACKUP"/>
+     <entry value="37" name="TJ40_DN_EED_LOSS_OF_ENG_CONTROL_CMD"/>
+     <entry value="38" name="TJ40_DN_EED_EXCEED_TIME_TO_OVERHAUL"/>
+     <entry value="39" name="TJ40_DN_EED_LIMITER_MAX_CURR_FUEL_PUMP"/>
+     <entry value="40" name="TJ40_DN_EED_LIMITER_MAX_EGT_TEMP"/>
+     <entry value="41" name="TJ40_DN_EED_LIMITER_MAX_SPEED_FUEL_PUMP"/>
+     <entry value="42" name="TJ40_DN_EED_LIMITER_MIN_SPEED_FUEL_PUMP"/>
+     <entry value="43" name="TJ40_DN_EED_PASSWORD_RESET_ACCEPTED"/>
+     <entry value="44" name="TJ40_DN_EED_PASSWORD_RESET_REJECTED"/>
+     <entry value="45" name="TJ40_DN_EED_AUTO_RESTART_PERFORMED"/>
+     <entry value="46" name="TJ40_DN_EED_ECU_WATCHDOG_RESET"/>
+     <entry value="47" name="TJ40_DN_EED_CORRECT_LOGIN_PASSWORD"/>
+     <entry value="48" name="TJ40_DN_EED_INCORRECT_LOGIN_PASSWORD"/>
+     <entry value="49" name="TJ40_DN_EED_BLOCKING_ENG_PROTECTIONS"/>
+     <entry value="50" name="TJ40_DN_EED_DEGRADED_MODE_ACTIVE"/>
+     <entry value="51" name="TJ40_DN_EED_MAX_GLOW_PLUG_HEATING_TIME"/>
+     <entry value="9999" name="TJ40_DN_ECU_PANDION_EED_NONE"/>
+    </enum>
+    <enum name="TJ40_UP_TEST_MODES">
+      <entry value="0" name="TJ40_UP_TEST_CMD_START_FUEL_VALVE"/>
+      <entry value="1" name="TJ40_UP_TEST_CMD_MAIN_FUEL_VALVE_1"/>
+      <entry value="2" name="TJ40_UP_TEST_CMD_MAIN_FUEL_VALVE_2"/>
+      <entry value="3" name="TJ40_UP_TEST_CMD_STARTER_GENERATOR"/>
+      <entry value="4" name="TJ40_UP_TEST_CMD_FUEL_PUMP"/>
+      <entry value="5" name="TJ40_UP_TEST_CMD_DRAIN_FUEL_FROM_ENGINE"/>
+      <entry value="6" name="TJ40_UP_TEST_CMD_PUMP_FUEL_TO_ENGINE"/>
+      <entry value="7" name="TJ40_UP_TEST_CMD_ENGINE_START"/>
+    </enum>
+    <enum name="V100_DN_FADEC_STATES">
+      <entry value="0" name="V100_DN_FADEC_STATES_OFF"/>
+      <entry value="1" name="V100_DN_FADEC_STATES_STANDBY"/>
+      <entry value="2" name="V100_DN_FADEC_STATES_PRESTART"/>
+      <entry value="3" name="V100_DN_FADEC_STATES_START"/>
+      <entry value="4" name="V100_DN_FADEC_STATES_GLOWPLUG"/>
+      <entry value="5" name="V100_DN_FADEC_STATES_PILOTSPRAY"/>
+      <entry value="6" name="V100_DN_FADEC_STATES_MAINFUEL"/>
+      <entry value="7" name="V100_DN_FADEC_STATES_KICK"/>
+      <entry value="8" name="V100_DN_FADEC_STATES_STABILIZE"/>
+      <entry value="9" name="V100_DN_FADEC_STATES_RUN"/>
+      <entry value="10" name="V100_DN_FADEC_STATES_IDLE"/>
+      <entry value="11" name="V100_DN_FADEC_STATES_SHUTDOWN"/>
+      <entry value="12" name="V100_DN_FADEC_STATES_COOLDOWN"/>
+      <entry value="13" name="V100_DN_FADEC_STATES_PENALTYBOX"/>
+      <entry value="14" name="V100_DN_FADEC_STATES_PRIME"/>
+      <entry value="15" name="V100_DN_FADEC_STATES_STARTERTEST"/>
+      <entry value="16" name="V100_DN_FADEC_STATES_ABORT"/>
+    </enum>
+    <enum name="PANDION_RR_IAR_STATES">
+        <entry value="0" name="PANDION_RR_IAR_STATE_SEND_STOP"/>
+        <entry value="1" name="PANDION_RR_IAR_STATE_POWER_OFF"/>
+        <entry value="2" name="PANDION_RR_IAR_STATE_WAIT_FOR_POWER_OFF"/>
+        <entry value="3" name="PANDION_RR_IAR_STATE_POWER_ON"/>
+        <entry value="4" name="PANDION_RR_IAR_STATE_WAIT_FOR_POWER_ON"/>
+        <entry value="5" name="PANDION_RR_IAR_STATE_SEND_RUN"/>
+        <entry value="6" name="PANDION_RR_IAR_STATE_WAIT_FOR_RUNNING"/>
+        <entry value="7" name="PANDION_RR_IAR_STATE_COMPLETE"/>
+        <entry value="8" name="PANDION_RR_IAR_STATE_NONE"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_MANUAL_CONTROL_STATES">
+      <entry value="0" name="PANDION_RR_NEST_MANUAL_CONTROL_CLOSE_CMD"/>
+      <entry value="1" name="PANDION_RR_NEST_MANUAL_CONTROL_OPEN_CMD"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_BIT_CONTROL_STATES">
+      <entry value="0" name="PANDION_RR_NEST_BIT_CONTROL_DOORS_CMD"/>
+      <entry value="1" name="PANDION_RR_NEST_BIT_CONTROL_HEATER_CMD"/>
+      <entry value="2" name="PANDION_RR_NEST_BIT_CONTROL_HEX_CMD"/>
+      <entry value="3" name="PANDION_RR_NEST_BIT_CONTROL_BATTERY_CMD"/>
+      <entry value="4" name="PANDION_RR_NEST_BIT_CONTROL_ALL_CMD"/>
+    </enum>
+    <enum name="PANDION_RR_ACTUATION_STATES">
+        <entry value="0" name="PANDION_RR_ACTUATION_STATE_OFF" />
+        <entry value="1" name="PANDION_RR_ACTUATION_STATE_IBIT" />
+        <entry value="2" name="PANDION_RR_ACTUATION_STATE_OPERATE" />
+        <entry value="3" name="PANDION_RR_ACTUATION_STATE_MANUAL" />
+        <entry value="4" name="PANDION_RR_ACTUATION_STATE_PLAYBACK" />
+        <entry value="5" name="PANDION_RR_ACTUATION_STATE_TRIM" />
+    </enum>
+    <enum name="PANDION_RR_ACTUATION_IBIT_SUBSTATE">
+        <entry value="0" name="PANDION_RR_ACTUATION_IBIT_BEGIN" />
+        <entry value="1" name="PANDION_RR_ACTUATION_IBIT_WAIT_FOR_SETTLE" />
+        <entry value="2" name="PANDION_RR_ACTUATION_IBIT_ELEVON" />
+        <entry value="3" name="PANDION_RR_ACTUATION_IBIT_RUDDERS" />
+        <entry value="4" name="PANDION_RR_ACTUATION_IBIT_TVC" />
+        <entry value="5" name="PANDION_RR_ACTUATION_IBIT_COMPLETE" />
+    </enum>
+    <enum name="MANUAL_ACTUATION_INPUT_SOURCE">
+        <entry value="0" name="INPUT_SRC_RESET" />
+        <entry value="1" name="INPUT_SRC_JOYPADS" />
+        <entry value="2" name="INPUT_SRC_ELEVON_SLIDER" />
+        <entry value="3" name="INPUT_SRC_RUDDER_SLIDER" />
+    </enum>
+    <enum name="PANDION_RR_PROX_SENSOR_LRF_MISC_FAULT_MASK">
+      <entry value="0" name="PANDION_RR_LRF_NOT_RESPONDING"/>
+      <entry value="1" name="PANDION_RR_APD_OUT_OF_RANGE"/>
+      <entry value="2" name="PANDION_RR_TEMP_OUT_OF_RANGE"/>
+      <entry value="3" name="PANDION_RR_DARK_CURRENT_TOO_HIGH"/>
+    </enum>
+    <enum name="PANDION_RR_PROX_SENSOR_MANUAL_TEST_STATES">
+      <entry value="0" name="PANDION_RR_PROX_SENSOR_MANUAL_DO_NOTHING"/>
+      <entry value="1" name="PANDION_RR_PROX_SENSOR_MANUAL_ACTIVATE_CMD"/>
+      <entry value="2" name="PANDION_RR_PROX_SENSOR_MANUAL_DEACTIVATE_CMD"/>
+      <entry value="3" name="PANDION_RR_PROX_SENSOR_MANUAL_DATA_COLLECT_CMD"/>
+    </enum>
+    <enum name="PANDION_RR_PROX_SENSOR_EXEC_STATES">
+      <entry value="0" name="PANDION_RR_PROX_STATE_DISABLED"/>
+      <entry value="1" name="PANDION_RR_PROX_STATE_SEND_CFG_PARAM"/>
+      <entry value="2" name="PANDION_RR_PROX_STATE_WAITING"/>
+      <entry value="3" name="PANDION_RR_PROX_STATE_ACTIVATING"/>
+      <entry value="4" name="PANDION_RR_PROX_STATE_DEACTIVATING"/>
+      <entry value="5" name="PANDION_RR_PROX_STATE_MANUAL"/>
+      <entry value="6" name="PANDION_RR_PROX_STATE_SHUTDOWN"/>
+    </enum>
+    <enum name="PANDION_RR_PROX_SENSOR_DATA_COLLECT_STATES">
+      <entry value="0" name="PANDION_RR_PROX_DATA_COLLECT_STATE_OFF"/>
+      <entry value="1" name="PANDION_RR_PROX_DATA_COLLECT_STATE_DATA_PENDING"/>
+      <entry value="2" name="PANDION_RR_PROX_DATA_COLLECT_STATE_RANGE_DATA_START"/>
+      <entry value="3" name="PANDION_RR_PROX_DATA_COLLECT_STATE_RANGE_DATA_DELAY"/>
+      <entry value="4" name="PANDION_RR_PROX_DATA_COLLECT_STATE_RANGE_DATA_ACTIVE"/>
+      <entry value="5" name="PANDION_RR_PROX_DATA_COLLECT_STATE_TRIGGER_TIME_START"/>
+      <entry value="6" name="PANDION_RR_PROX_DATA_COLLECT_STATE_TRIGGER_TIME_ACTIVE"/>
+      <entry value="7" name="PANDION_RR_PROX_DATA_COLLECT_STATE_COMPLETE"/>
+    </enum>
+    <enum name="PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND">
+      <entry value="0" name="PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND_AUTO"/>
+      <entry value="1" name="PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND_OFF"/>
+      <entry value="2" name="PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND_ON"/>
+    </enum>
+    <enum name="PANDION_RR_ESAD_MANUAL_POWER_CMD_ACK_STATUS">
+      <entry value="0" name="PANDION_RR_12261_ACCEPT"/>
+      <entry value="1" name="PANDION_RR_12261_REJECT"/>
+    </enum>
+    <enum name="PANDION_RR_BMS_STATE">
+      <entry value="0" name="PANDION_RR_BMS_STATE_SHOW_CAPACITY_ON_LEDS"/>
+      <entry value="1" name="PANDION_RR_BMS_STATE_OUTPUT_ENABLED_PROTECTIONS_ENABLED"/>
+      <entry value="2" name="PANDION_RR_BMS_STATE_OUTPUT_ENABLED_PROTECTIONS_DISABLED"/>
+      <entry value="3" name="PANDION_RR_BMS_STATE_SHUTDOWN_PENDING"/>
+      <entry value="4" name="PANDION_RR_BMS_STATE_OUTPUT_DISABLED_FROM_BMS_PROTECTIONS"/>
+      <entry value="5" name="PANDION_RR_BMS_STATE_OUTPUT_DISABLED_FROM_NUB_COMMAND"/>
+      <entry value="6" name="PANDION_RR_BMS_STATE_OUTPUT_DISABLED_INRUSH_PROTECTIONS"/>
+    </enum>
+    <enum name="PANDION_RR_BMS">
+      <entry value="0" name="PANDION_RR_BMS_PRIMARY"/>
+      <entry value="1" name="PANDION_RR_BMS_SECONDARY"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_KNOB_POS">
+      <entry value="0" name="PANDION_RR_NEST_KNOB_OFF"/>
+      <entry value="1" name="PANDION_RR_NEST_KNOB_REMOTE_START_VOLTAGE_APPLIED"/>
+      <entry value="2" name="PANDION_RR_NEST_KNOB_NEST_AND_VEHICLE_ON"/>
+      <entry value="3" name="PANDION_RR_NEST_KNOB_LAUNCH_READY"/>
+      <entry value="4" name="PANDION_RR_NEST_KNOB_NO_CONNECT"/>
+      <entry value="5" name="PANDION_RR_NEST_KNOB_ERROR"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_STATE">
+      <entry value="0" name="PANDION_RR_NEST_STATE_STANDBY"/>
+      <entry value="1" name="PANDION_RR_NEST_STATE_PREPARING_FOR_ENGINE_START"/>
+      <entry value="2" name="PANDION_RR_NEST_STATE_READY_FOR_ENGINE_START"/>
+      <entry value="3" name="PANDION_RR_NEST_STATE_PREPARING_FOR_LAUNCH"/>
+      <entry value="4" name="PANDION_RR_NEST_STATE_LAUNCH_CONSENT"/>
+      <entry value="5" name="PANDION_RR_NEST_STATE_TRANSITIONING_TO_STANDBY"/>
+      <entry value="6" name="PANDION_RR_NEST_STATE_ERROR"/>
+      <entry value="7" name="PANDION_RR_NEST_STATE_LOW_BATTERY_SLEEP_MODE"/>
+      <entry value="8" name="PANDION_RR_NEST_STATE_TERMINAL_ERROR"/>
+      <entry value="9" name="PANDION_RR_NEST_STATE_SHUTDOWN_IN_PROGRESS"/>
+      <entry value="10" name="PANDION_RR_NEST_STATE_STANDBY_WITH_LAUNCH_DISABLED"/>
+    </enum>
+    <enum name="PANDION_RR_HERMES_STATE">
+      <entry value="0" name="HERMES_STATE_INIT" />
+      <entry value="1" name="HERMES_STATE_CONFIG" />
+      <entry value="2" name="HERMES_STATE_RUN" />
+      <entry value="3" name="HERMES_STATE_ERROR" />
+      <entry value="4" name="HERMES_STATE_MAX" />
+    </enum>
+    <enum name="PANDION_RR_HERMES_RUN_SUBSTATE">
+      <entry value="0" name="HERMES_RUN_SUBSTATE_IDLE"/>
+      <entry value="1" name="HERMES_RUN_SUBSTATE_EXIT_ZONE"/>
+      <entry value="2" name="HERMES_RUN_SUBSTATE_LOITER"/>
+      <entry value="3" name="HERMES_RUN_SUBSTATE_ENGAGE"/>
+      <entry value="4" name="HERMES_RUN_SUBSTATE_RTB"/>
+      <entry value="5" name="HERMES_RUN_SUBSTATE_SCUTTLE"/>
+      <entry value="6" name="HERMES_RUN_SUBSTATE_MAX"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_DISCRETE_MASK">
+      <entry value="0" name="PANDION_RR_NEST_DISC_CHG_EN"/>
+      <entry value="1" name="PANDION_RR_NEST_DISC_L_EXH_CLSD"/>
+      <entry value="2" name="PANDION_RR_NEST_DISC_EXH_OPEN"/>
+      <entry value="3" name="PANDION_RR_NEST_DISC_R_LID_CLSD"/>
+      <entry value="4" name="PANDION_RR_NEST_DISC_R_LID_OPEN"/>
+      <entry value="5" name="PANDION_RR_NEST_DISC_L_LID_CLSD"/>
+      <entry value="6" name="PANDION_RR_NEST_DISC_L_LID_OPEN"/>
+      <entry value="7" name="PANDION_RR_NEST_DISC_NEST_UP"/>
+      <entry value="8" name="PANDION_RR_NEST_DISC_NO_AC_PWR"/>
+      <entry value="9" name="PANDION_RR_NEST_DISC_R_EXH_CLSD"/>
+    </enum>
+    <enum name="PANDION_RR_FIRMWARE_IBIT_STATE">
+    <entry value="0" name="PANDION_RR_FW_IBIT_STATE_PASS"/>
+    <entry value="1" name="PANDION_RR_FW_IBIT_STATE_FAIL"/>
+    <entry value="2" name="PANDION_RR_FW_IBIT_STATE_FINISHED"/>
+    <entry value="3" name="PANDION_RR_FW_IBIT_STATE_IN_PROGRESS"/>
+    <entry value="4" name="PANDION_RR_FW_IBIT_STATE_NOT_INITIATED"/>
+    <entry value="5" name="PANDION_RR_FW_IBIT_STATE_NOT_SUPPORTED"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_DOOR_FAULTS_MASK">
+      <entry value="0" name="PANDION_RR_NEST_DOOR_R_LID_LATCH"/>
+      <entry value="1" name="PANDION_RR_NEST_DOOR_L_LID_LATCH"/>
+      <entry value="2" name="PANDION_RR_NEST_DOOR_L_LID_SW"/>
+      <entry value="3" name="PANDION_RR_NEST_DOOR_R_LID_SW"/>
+      <entry value="4" name="PANDION_RR_NEST_DOOR_L_LID_TORQUE"/>
+      <entry value="5" name="PANDION_RR_NEST_DOOR_R_LID_ENCODER"/>
+      <entry value="6" name="PANDION_RR_NEST_DOOR_L_LID_MOTOR"/>
+      <entry value="7" name="PANDION_RR_NEST_DOOR_R_LID_MOTOR"/>
+      <entry value="8" name="PANDION_RR_NEST_DOOR_L_LID_EXH_LATCH"/>
+      <entry value="9" name="PANDION_RR_NEST_DOOR_R_LID_EXH_LATCH"/>
+      <entry value="10" name="PANDION_RR_NEST_DOOR_EXH_LSW"/>
+      <entry value="11" name="PANDION_RR_NEST_DOOR_EXH_ENCODER"/>
+      <entry value="12" name="PANDION_RR_NEST_DOOR_EXH_MOTOR"/>
+    </enum>
+    <enum name="PANDION_RR_ROUTE_TYPE">
+      <entry value="0" name="PANDION_RR_ROUTE_TYPE_LAUNCH"/>
+      <entry value="1" name="PANDION_RR_ROUTE_TYPE_ENROUTE"/>
+      <entry value="2" name="PANDION_RR_ROUTE_TYPE_RECOVERY"/>
+      <entry value="3" name="PANDION_RR_ROUTE_TYPE_SCUTTLE"/>
+      <entry value="255" name="PANDION_RR_ROUTE_TYPE_INVALID"/>
+    </enum>
+    <enum name="PANDION_RR_ROUTE_VALIDITY" bitmask="true">
+      <entry value="1" name="PANDION_RR_ROUTE_VALIDITY_LAUNCH"/>
+      <entry value="2" name="PANDION_RR_ROUTE_VALIDITY_ENROUTE"/>
+      <entry value="4" name="PANDION_RR_ROUTE_VALIDITY_RECOVERY"/>
+      <entry value="8" name="PANDION_RR_ROUTE_VALIDITY_SCUTTLE"/>
+    </enum>
+    <enum name="PANDION_RR_TSE_STATUS_MASK" bitmask="true">
+      <entry value="1" name="PANDION_RR_TSE_STATUS_MASK_TRACK_VALID"/>
+      <entry value="2" name="PANDION_RR_TSE_STATUS_MASK_CV_LOCK"/>
+    </enum>
+    <enum name="PANDION_RR_SELECTED_INS">
+      <entry value="0" name="PANDION_RR_SELECTED_INS_VN"/>
+      <entry value="1" name="PANDION_RR_SELECTED_INS_MONARCH_REF" />
+      <entry value="2" name="PANDION_RR_SELECTED_INS_MONARCH_ALT" />
+    </enum>
+    <enum name="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_VALIDITY">
+        <entry value="0" name="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_VALID"/>
+        <entry value="1" name="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_WC_SET"/>
+        <entry value="2" name="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_PHAROS_LOCKOUT"/>
+        <entry value="4" name="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_DEPART_WP_VIOLATES"/>
+    </enum>
+    <enum name="PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_VALIDITY">
+      <entry value="0" name="PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_VALID" />
+      <entry value="2" name="PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_PHAROS_LOCKOUT" />
+      <entry value="4" name="PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_RALLY_WP_VIOLATES" />
+    </enum>
+    <enum name="PANDION_RR_LAUNCH_TO_LOITER_CMD_ACK_STATUS">
+        <entry value="0" name="PANDION_609_ACCEPT"/>
+        <entry value="1" name="PANDION_609_REJECT_INVALID_FLIGHT_REGIME"/>
+        <entry value="2" name="PANDION_609_REJECT_INVALID_LLA"/>
+        <entry value="3" name="PANDION_609_REJECT_LAUNCH_LLA_OUTSIDE_OUTER_GEOFENCE"/>
+        <entry value="4" name="PANDION_609_REJECT_LOITER_LLA_OUTSIDE_INNER_GEOFENCE"/>
+        <entry value="5" name="PANDION_609_REJECT_LAND_LLA_OUTSIDE_OUTER_GEOFENCE"/>
+        <entry value="6" name="PANDION_609_REJECT_ENROUTE_MISSION_UPDATE_FAILED"/>
+        <entry value="7" name="PANDION_609_REJECT_TRANSITION_TO_LAUNCH_FAILED"/>
+        <entry value="8" name="PANDION_609_REJECT_IN_CLASSIC_MODE"/>
+        <entry value="9" name="PANDION_609_REJECT_MSG_INVALID"/>
+        <entry value="10" name="PANDION_609_REJECT_DECONFLICTION_DATA_INVALID"/>
+        <entry value="11" name="PANDION_609_REJECT_HARDWARE_SELECTOR_INVALID"/>
+        <entry value="12" name="PANDION_609_REJECT_LOITER_VIOLATES_KOZ"/>
+        <entry value="13" name="PANDION_609_REJECT_DEPARTURE_WAYPOINT_IN_KOZ_BUFFER"/>
+      </enum>
+      <enum name="PANDION_RR_UPDATE_LOITER_POINT_CMD_ACK_STATUS">
+        <entry value="0" name="PANDION_610_ACCEPT"/>
+        <entry value="1" name="PANDION_610_REJECT_INVALID_LLA"/>
+        <entry value="2" name="PANDION_610_REJECT_LLA_OUTSIDE_GEOFENCE"/>
+        <entry value="3" name="PANDION_610_REJECT_ENROUTE_MISSION_UPDATE_FAILED"/>
+        <entry value="4" name="PANDION_610_REJECT_INVALID_FLIGHT_REGIME"/>
+        <entry value="5" name="PANDION_610_REJECT_COMMAND_RATE_LIMITED"/>
+        <entry value="6" name="PANDION_610_REJECT_INVALID_DURING_RECOVERY"/>
+        <entry value="7" name="PANDION_610_REJECT_IN_CLASSIC_MODE"/>
+      </enum>
+      <enum name="PANDION_RR_SCUTTLE_AT_LOCATION_CMD_ACK_STATUS">
+        <entry value="0" name="PANDION_RR_SCUTTLE_AT_LOCATION_ACCEPT"/>
+        <entry value="1" name="PANDION_RR_SCUTTLE_AT_LOCATION_REJECT_INVALID_LLA"/>
+      </enum>
+    <enum name="PANDION_RR_IBIT_MON_STATUS_FLAGS" bitmask="true">
+      <entry value="0" name="PANDION_RR_IBIT_STATUS_NONE"/>
+      <entry value="1" name="PANDION_RR_IBIT_MISTRACKING_UPPER_RUDDER"/>
+      <entry value="2" name="PANDION_RR_IBIT_MISTRACKING_LOWER_RUDDER"/>
+      <entry value="4" name="PANDION_RR_IBIT_MISTRACKING_LEFT_TVC_UPPER"/>
+      <entry value="8" name="PANDION_RR_IBIT_MISTRACKING_LEFT_TVC_LOWER"/>
+      <entry value="16" name="PANDION_RR_IBIT_MISTRACKING_RIGHT_TVC_UPPER"/>
+      <entry value="32" name="PANDION_RR_IBIT_MISTRACKING_RIGHT_TVC_LOWER"/>
+      <entry value="64" name="PANDION_RR_IBIT_MISTRACKING_LEFT_ELEVON"/>
+      <entry value="128" name="PANDION_RR_IBIT_MISTRACKING_RIGHT_ELEVON"/>
+    </enum>
+      <enum name="PANDION_RR_FUEL_STATUS" bitmask="true">
+        <entry value="1" name="PANDION_RR_BINGO_FUEL_APPROACHING"/>
+        <entry value="2" name="PANDION_RR_SCUTTLE_FUEL_APPROACHING"/>
+        <entry value="4" name="PANDION_RR_BINGO_FUEL_REACHED"/>
+        <entry value="8" name="PANDION_RR_SCUTTLE_FUEL_REACHED"/>
+      </enum>
+    <enum name="SENS_GND_RADAR_VALID" bitmask="true">
+        <entry value="1" name="SENS_GND_RADAR_VALID_TIME"/>
+        <entry value="2" name="SENS_GND_RADAR_VALID_SENSOR_LLA"/>
+        <entry value="4" name="SENS_GND_RADAR_VALID_ELEVATION"/>
+        <entry value="8" name="SENS_GND_RADAR_VALID_ELEVATION_SIGMA"/>
+        <entry value="16" name="SENS_GND_RADAR_VALID_RANGE_RATE"/>
+        <entry value="32" name="SENS_GND_RADAR_VALID_RANGE_RATE_SIGMA"/>
+        <entry value="64" name="SENS_GND_RADAR_VALID_RETURN_STRENGTH"/>
+        <entry value="128" name="SENS_GND_RADAR_VALID_POS_ECEF"/>
+        <entry value="256" name="SENS_GND_RADAR_VALID_POS_ECEF_COV"/>
+        <entry value="512" name="SENS_GND_RADAR_VALID_VEL_ECEF"/>
+        <entry value="1024" name="SENS_GND_RADAR_VALID_VEL_ECEF_COV"/>
+        <entry value="2048" name="SENS_GND_RADAR_VALID_SNR_DB"/>
+    </enum>
+    <enum name="SENS_WISP_VALID" bitmask="true">
+        <entry value="1" name="SENS_WISP_VALID_TIME"/>
+        <entry value="2" name="SENS_WISP_VALID_POS_AER"/>
+        <entry value="4" name="SENS_WISP_VALID_VEL_AER"/>
+        <entry value="8" name="SENS_WISP_VALID_POS_ECEF"/>
+        <entry value="16" name="SENS_WISP_VALID_SENSOR_POS_ECEF"/>
+        <entry value="32" name="SENS_WISP_VALID_LRTB"/>
+    </enum>
+    <enum name="SENS_TRK_VALID" bitmask="true">
+        <entry value="1" name="SENS_TRK_VALID_ORIGIN_LLA"/>
+        <entry value="2" name="SENS_TRK_VALID_ENU_POS"/>
+        <entry value="4" name="SENS_TRK_VALID_ENU_POS_COV"/>
+        <entry value="8" name="SENS_TRK_VALID_ENU_VEL"/>
+        <entry value="16" name="SENS_TRK_VALID_ENU_VEL_COV"/>
+    </enum>
+    <enum name="SENS_GND_LIDAR_SENSOR_VALID" bitmask="true">
+        <entry value="1" name="SENS_GND_LIDAR_SENSOR_VALID_TIME"/>
+        <entry value="2" name="SENS_GND_LIDAR_SENSOR_VALID_POS_ECEF"/>
+    </enum>
+    <enum name="SENS_FREQ_JAMMER_VALID" bitmask="true">
+        <entry value="1" name="SENS_FREQ_JAMMER_VALID_STATE"/>
+    </enum>
+    <enum name="SENS_PROTOCOL_JAMMER_VALID" bitmask="true">
+        <entry value="1" name="SENS_PROTOCOL_JAMMER_VALID_STATE"/>
+    </enum>
+    <enum name="PANDION_RR_MAINTENANCE_COMMAND_TYPE">
+        <entry value="1" name="PANDION_RR_MAINTENANCE_COMMAND_MC_REBOOT"/>
+        <entry value="2" name="PANDION_RR_MAINTENANCE_COMMAND_LAUNCH_SEQ_TEST" />
+        <entry value="3" name="PANDION_RR_MAINTENANCE_COMMAND_NEST_ENGINE_START" />
+        <entry value="4" name="PANDION_RR_MAINTENANCE_COMMAND_IMU_DIAG_START" />
+        <entry value="5" name="PANDION_RR_MAINTENANCE_COMMAND_IMU_DIAG_STOP" />
+        <entry value="6" name="PANDION_RR_MAINTENANCE_COMMAND_VEHICLE_POWER_CYCLE" />
+        <entry value="7" name="PANDION_RR_MAINTENANCE_COMMAND_SEEKER_POWER_ON" />
+        <entry value="8" name="PANDION_RR_MAINTENANCE_COMMAND_SEEKER_POWER_OFF" />
+    </enum>
+    <enum name="PANDION_RR_MAINTENANCE_STATUS_TYPE">
+        <entry value="1" name="PANDION_RR_NO_STATUS" />
+        <entry value="2" name="PANDION_RR_MC_REBOOT_POWERED_OFF" />
+        <entry value="3" name="PANDION_RR_MC_REBOOT_POWERED_ON" />
+        <entry value="4" name="PANDION_RR_MC_REBOOT_COMMS_ESTABLISHED" />
+        <entry value="5" name="PANDION_RR_LAUNCH_SEQ_TEST_C2_HANDOFF_SUCCESS" />
+        <entry value="6" name="PANDION_RR_LAUNCH_SEQ_TEST_C2_HANDOFF_FAILURE" />
+        <entry value="7" name="PANDION_RR_LAUNCH_SEQ_TEST_NEST_OPEN_SUCCESS" />
+        <entry value="8" name="PANDION_RR_LAUNCH_SEQ_TEST_NEST_OPEN_FAILURE" />
+        <entry value="9" name="PANDION_RR_LAUNCH_SEQ_TEST_LAUNCH_CONSENT_SUCCESS" />
+        <entry value="10" name="PANDION_RR_LAUNCH_SEQ_TEST_LAUNCH_CONSENT_FAILURE" />
+        <entry value="11" name="PANDION_RR_LAUNCH_SEQ_TEST_SUCCESS" />
+        <entry value="12" name="PANDION_RR_LAUNCH_SEQ_TEST_FAILURE" />
+        <entry value="13" name="PANDION_RR_READY_FOR_NEST_ENGINE_START" />
+        <entry value="14" name="PANDION_RR_VEHICLE_POWER_CYCLE_REQUESTED" />
+        <entry value="15" name="PANDION_RR_VEHICLE_POWER_CYCLE_REJECTED" />
+        <entry value="16" name="PANDION_RR_SEEKER_POWERED_NA" />
+        <entry value="17" name="PANDION_RR_SEEKER_POWERED_OFF" />
+        <entry value="18" name="PANDION_RR_SEEKER_POWERED_ON" />
+        <entry value="19" name="PANDION_RR_SEEKER_POWER_REQUEST_REJECTED" />
+    </enum>
+    <enum name="PANDION_RR_LANDING_GEAR_COMMAND_TYPE">
+        <entry value="1" name="PANDION_RR_LANDING_GEAR_COMMAND_DEPLOY"/>
+    </enum>
+    <enum name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS" bitmask="true">
+      <!-- This should mirror the contents of hs_detections_t, -->
+      <!-- except with the "length" item removed -->
+        <entry value="1"   name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_PS_IS_PDU"/>
+        <entry value="2"   name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_ELEV_ARE_TAU"/>
+        <entry value="4"   name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_PSM_TVC"/>
+        <entry value="8"   name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_PSM_RUD"/>
+        <entry value="16"  name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_HITEC_TVC"/>
+        <entry value="32"  name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_HITEC_RUD"/>
+        <entry value="64"  name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_V100"/>
+        <entry value="128" name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_2ND_BATT"/>
+        <entry value="256" name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_ATTOLLO_PROX_SENSOR"/>
+        <entry value="512" name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_BROADSIDE_PROX_SENSOR"/>
+        <entry value="1024" name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_ADI_IMU"/>
+        <entry value="2048" name="PANDION_RR_HARDWARE_SELECTOR_OPTIONS_VN_IMU"/>
+    </enum>
+    <enum name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS" bitmask="true">
+      <!-- This should mirror the contents of hs_subsystems_t, -->
+      <!-- except with the "length" item removed -->
+        <entry value="1"   name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_PSM_ELMO_PWMSERVOS"/>
+        <entry value="2"   name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_PDU"/>
+        <entry value="4"   name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_ELEVONS_TAU_MK2"/>
+        <entry value="8"   name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_RUDD_TVC_HITEC"/>
+        <entry value="16"  name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_RUDD_HITEC"/>
+        <entry value="32"  name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_AI825_SERVO_POS_CMD"/>
+        <entry value="64"  name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_ENGINES_TJ40"/>
+        <entry value="128" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_ENGINES_V100"/>
+        <entry value="256" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_BATTERY_SECONDARY"/>
+        <entry value="512" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_ATTOLLO_PROX" />
+        <entry value="1024" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_BROADSIDE_PROX" />
+        <entry value="2048" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_VECTORNAV"/>
+        <entry value="4096" name="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS_ADI_IMU"/>
+    </enum>
+     <enum name="PANDION_RR_RFSEEKER_TARGET_TYPE">
+      <entry value="0" name="PANDION_RR_RFSEEKER_TARGET_TYPE_NONE"/>
+      <entry value="1" name="PANDION_RR_RFSEEKER_TARGET_TYPE_STATIC"/>
+      <entry value="2" name="PANDION_RR_RFSEEKER_TARGET_TYPE_DYNAMIC"/>
+    </enum>
+    <enum name="PANDION_RR_WARHEAD_TYPE">
+      <entry value="0" name="PANDION_RR_WARHEAD_TYPE_UNKNOWN"/>
+      <entry value="6" name="PANDION_RR_WARHEAD_TYPE_GOVT"/>
+      <entry value="7" name="PANDION_RR_WARHEAD_TYPE_ACME"/>
+    </enum>
+    <enum name="PANDION_RR_SEEKER_POWER_STATE">
+      <entry value="0" name="SEEKER_POWER_STATE_OFF" />
+      <entry value="1" name="SEEKER_POWER_STATE_ON" />
+      <entry value="2" name="SEEKER_POWER_STATE_NA" />
+    </enum>
+    <enum name="PANDION_RR_TAU_MK2_CHANNEL">
+      <entry value="0" name="TAU_MK2_CHANNEL_1_LEFT_ELEVON" />
+      <entry value="1" name="TAU_MK2_CHANNEL_2_RIGHT_ELEVON" />
+      <!-- Send this command to all possible channels (0-7 as applicable) -->
+      <entry value="8" name="TAU_MK2_CHANNEL_BROADCAST_ALL"/>
+    </enum>
+    <enum name="PANDION_RR_TAU_MK2_HALL_CALIB_STATUS">
+      <entry value="0" name="NOT_INITIATED" />
+      <entry value="1" name="IN_PROGRESS" />
+      <entry value="2" name="COMPLETE" />
+    </enum>
+    <enum name="PANDION_RR_TAU_MK2_MAINTENANCE_COMMAND">
+      <entry value="0" name="PANDION_RR_TAU_MK2_CMD_NO_COMMAND" />
+      <entry value="1" name="PANDION_RR_TAU_MK2_CMD_CLEAR_DETAILED_STATUS" />
+      <entry value="2" name="PANDION_RR_TAU_MK2_CMD_PERFORM_HALL_CALIBRATION" />
+      <entry value="3" name="PANDION_RR_TAU_MK2_CMD_ABORT_HALL_CALIBRATION" />
+      <entry value="4" name="PANDION_RR_TAU_MK2_CMD_PERFORM_RATCHET_IBIT" />
+      <entry value="5" name="PANDION_RR_TAU_MK2_CMD_ABORT_RATCHET_IBIT" />
+    </enum>
+    <enum name="PANDION_RR_TAU_MK2_TELEM_STATUS_BIT_POSITIONS" bitmask="true">
+      <entry value="0" name="PANDION_RR_TAU_MK2_TELEM_STATUS_BITS_POS_LIMIT"/>
+      <entry value="1" name="PANDION_RR_TAU_MK2_TELEM_STATUS_BITS_THERMAL_LIMIT"/>
+      <entry value="2" name="PANDION_RR_TAU_MK2_TELEM_STATUS_BITS_HALL_ERR"/>
+      <entry value="4" name="PANDION_RR_TAU_MK2_TELEM_STATUS_BITS_ENCODER_ERR"/>
+      <entry value="16" name="PANDION_RR_TAU_MK2_TELEM_STATUS_BITS_CMD_REJ"/>
+    </enum>
+      <enum name="PANDION_RR_UDA_SPIN_STATE">
+      <entry value="0" name="PANDION_RR_UDA_SPIN_STATE_FALSE"/>
+      <entry value="1" name="PANDION_RR_UDA_SPIN_STATE_TRUE"/>
+    </enum>
+    <enum name="PANDION_RR_NEST_XL_SLOT">
+        <entry value="0" name="PANDION_RR_NEST_XL_SLOT_NONE"/>
+        <entry value="1" name="PANDION_RR_NEST_XL_SLOT_1"/>
+        <entry value="2" name="PANDION_RR_NEST_XL_SLOT_2"/>
+        <entry value="3" name="PANDION_RR_NEST_XL_SLOT_3"/>
+        <entry value="4" name="PANDION_RR_NEST_XL_SLOT_4"/>
+    </enum>
+
+
+  </enums>
+  <messages>
+    <!-- Downlink/Status Messages: 12200-12249 -->
+    <message id="12200" name="PANDION_RR_ENGINE_STATUS">
+      <description>Pandion roadrunner engine status.</description>
+      <field type="uint16_t" name="eng_1_fuel_pump_curr_mA">Engine 1 Fuel Pump Current (mA)</field>
+      <field type="uint16_t" name="eng_1_fuel_pump_speed_rpm">Engine 1 Fuel Pump Speed (RPM)</field>
+      <field type="float" name="eng_1_fuel_consumption_l">Engine 1 Fuel Consumption (liters)</field>
+      <field type="float" name="eng_1_intake_temp_degC">Engine 1 Intake Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_1_egt_temp_degC">Engine 1 EGT Temp (Deg. C)</field>
+      <field type="float" name="eng_1_speed_vs_nominal_pct">Engine 1 Speed vs. Nominal (%)</field>
+      <field type="uint32_t" name="eng_1_speed">Engine 1 Speed (RPM)</field>
+      <field type="uint32_t" name="eng_1_required_speed">Engine 1 Required Speed (RPM)</field>
+      <field type="uint16_t" name="eng_1_mode">Engine 1 Mode</field>
+      <field type="uint16_t" name="eng_1_glow_plug_curr_A">Engine 1 Glow Plug Current  (A)</field>
+      <field type="uint16_t" name="eng_1_EED" enum="TJ40_DN_ECU_EED_CODES">Engine 1 EED</field>
+      <field type="uint8_t" name="eng_1_relay_state">0 = closed, 1 = open</field>
+
+      <field type="uint16_t" name="eng_2_fuel_pump_curr_mA">Engine 2 Fuel Pump Current (mA)</field>
+      <field type="uint16_t" name="eng_2_fuel_pump_speed_rpm">Engine 2 Fuel Pump Speed (RPM)</field>
+      <field type="float" name="eng_2_fuel_consumption_l">Engine 2 Fuel Consumption (liters)</field>
+      <field type="float" name="eng_2_intake_temp_degC">Engine 2 Intake Temp (Deg. C)</field>
+      <field type="int16_t" name="eng_2_egt_temp_degC">Engine 2 EGT Temp (Deg. C)</field>
+      <field type="float" name="eng_2_speed_vs_nominal_pct">Engine 2 Speed vs. Nominal (%)</field>
+      <field type="uint32_t" name="eng_2_speed">Engine 2 Speed (RPM)</field>
+      <field type="uint32_t" name="eng_2_required_speed">Engine 2 Required Speed (RPM)</field>
+      <field type="uint16_t" name="eng_2_mode">Engine 2 Mode</field>
+      <field type="uint16_t" name="eng_2_glow_plug_curr_A">Engine 2 Glow Plug Current  (A)</field>
+      <field type="uint16_t" name="eng_2_EED" enum="TJ40_DN_ECU_EED_CODES">Engine 2 Mode</field>
+      <field type="uint8_t" name="eng_2_relay_state">0 = closed, 1 = open</field>
+
+      <field type="uint8_t" name="hung_start_eshutdown">Emergency shutdown due to hung start</field>
+    </message>
+    <message id="12201" name="PANDION_RR_ACTUATION_SYS_STATUS">
+      <description>Pandion roadrunner actuation system status.</description>
+      <field type="float" name="dorsal_rudder_feedback_cdeg">Dorsal Rudder Servo Feedback</field>
+      <field type="float" name="ventral_rudder_feedback_cdeg">Ventral Rudder Servo Feedback</field>
+      <field type="float" name="left_tvc_upper_feedback_cdeg">Left TVC Upper Servo Feedback</field>
+      <field type="float" name="left_tvc_lower_feedback_cdeg">Left TVC Lower Servo Feedback</field>
+      <field type="float" name="right_tvc_upper_feedback_cdeg">Right TVC Upper Servo Feedback</field>
+      <field type="float" name="right_tvc_lower_feedback_cdeg">Right TVC Lower Servo Feedback</field>
+      <field type="float" name="left_elevon_feedback_cdeg">Left Elevon Servo Feedback</field>
+      <field type="float" name="right_elevon_feedback_cdeg">Right Elevon Servo Feedback</field>
+      <field type="uint16_t" name="dorsal_rudder_current_mA">Dorsal Rudder Servo Current</field>
+      <field type="uint16_t" name="ventral_rudder_current_mA">Ventral Rudder Servo Current</field>
+      <field type="uint16_t" name="left_tvc_upper_current_mA">Left TVC Upper Servo Current</field>
+      <field type="uint16_t" name="left_tvc_lower_current_mA">Left TVC Lower Servo Current</field>
+      <field type="uint16_t" name="right_tvc_upper_current_mA">Right TVC Upper Servo Current</field>
+      <field type="uint16_t" name="right_tvc_lower_current_mA">Right TVC Lower Servo Current</field>
+      <field type="int16_t" name="left_elevon_current_mA">Left Elevon Servo Current (measured)</field>
+      <field type="int16_t" name="right_elevon_current_mA">Right Elevon Servo Current (measured)</field>
+      <field type="int8_t" name="left_elevon_motor_temp_degC">Left Elevon Motor Temp</field>
+      <field type="int8_t" name="right_elevon_motor_temp_degC">Right Elevon Motor Temp</field>
+      <field type="uint8_t" name="actuation_state" enum="PANDION_RR_ACTUATION_STATES">Actuation State Current</field>
+      <field type="uint8_t" name="actuation_ibit_substate" enum="PANDION_RR_ACTUATION_IBIT_SUBSTATE">IBIT Substate Current When IBIT Running</field>
+      <field type="uint8_t" name="actuation_ibit_mon_status" enum="PANDION_RR_IBIT_MON_STATUS_FLAGS">Bitfield representing IBIT monitors set during IBIT</field>
+    </message>
+    <message id="12202" name="PANDION_RR_POWER_SYSTEM_DATA">
+      <description>Pandion roadrunner power system data.</description>
+      <field type="uint16_t" name="psm_vsns_vbatt_mV">PSM Vsns Vbatt</field>
+      <field type="uint16_t" name="psm_vsns_vservo_mV">PSM Vsns Vservo</field>
+      <field type="uint16_t" name="psm_vsns_vext_servo_mV">PSM Vsns Vext_servo</field>
+      <field type="uint16_t" name="psm_vsns_vpower_mV">PSM Vsns Vpower</field>
+      <field type="uint16_t" name="psm_isns_control_board_mA">PSM Isns Control Board</field>
+    </message>
+    <message id="12203" name="PANDION_RR_NEST_DATA">
+      <description>Nest data.</description>
+      <field type="uint8_t" name="nest_detected">0 = Nest not detected, 1 = Nest detected</field>
+      <field type="uint8_t" name="interlock_status">0 = vehicle unlocked, 1 = vehicle unlock pending, 2 = vehicle interlocked</field>
+      <field type="uint8_t" name="release_consent">0 = inhibit, 1 = enable</field>
+    </message>
+  <message id="12204" name="PANDION_RR_PROX_DATA">
+      <description>Pandion roadrunner proximity sensor data.</description>
+      <field type="uint8_t" name="active_lrfs">Bit 0 = LRF 0 active, Bit 1 = LRF 1 active, etc</field>
+      <field type="uint8_t" name="lrf_fault_mask">Bit 0 = LRF 0 fault, Bit 1 = LRF 1 fault, etc</field>
+      <field type="uint8_t" name="lrf_misc_fault_mask">See PANDION_RR_PROX_SENSOR_LRF_MISC_FAULT_MASK</field>
+      <field type="uint8_t" name="trigger_mask">Bit 0 = LRF 0 trig, Bit 1 = LRF 1 trig, etc</field>
+      <field type="uint8_t" name="triggered">0 = Not triggered, 1 = Triggered</field>
+      <field type="uint8_t" name="activated">0 = Not activated, 1 = Activated</field>
+      <field type="uint8_t" name="activation_command">0 = Commanded activated, 1 = Commanded deactivated</field>
+      <field type="uint8_t" name="exec_state" enum="PANDION_RR_PROX_SENSOR_EXEC_STATES">Disabled, Cfg, Waiting for Cmd, Activating, Deactivating, Manual</field>
+      <field type="uint8_t" name="data_collect_state" enum="PANDION_RR_PROX_SENSOR_DATA_COLLECT_STATES">Off, Pending, Start, Start Delay, Active, Trigger Time Start, Trig Time Active</field>
+      <field type="uint8_t" name="calc_trigger_delay_ms">Trigger Delay (ms) current value from AIFCS</field>
+  </message>
+    <message id="12205" name="PANDION_RR_V100_ENGINE_STATUS">
+      <description>Pandion roadrunner V100 engine status.</description>
+      <field type="uint32_t" name="eng_1_timestamp_ms">Engine 1 Elapsed Time Since Power-up (ms)</field>
+      <field type="uint32_t" name="eng_1_required_speed_rpm">Engine 1 Required Speed (RPM)</field>
+      <field type="uint32_t" name="eng_1_speed_rpm">Engine 1 Speed (RPM)</field>
+      <field type="int16_t" name="eng_1_egt_temp_degC">Engine 1 EGT Temp (Deg. C)</field>
+      <field type="uint16_t" name="eng_1_fuel_flow_ccm">Engine 1 Main Fuel Flow Rate (ccm)</field>
+      <field type="int16_t" name="eng_1_bus_current_mA">Engine 1 Bus Current (mA)</field>
+      <field type="uint16_t" name="eng_1_bus_input_voltage_mV">Engine 1 Bus Input Voltage (mV)</field>
+      <field type="uint16_t" name="eng_1_bus_output_voltage_mV">Engine 1 Bus Output Voltage (mV)</field>
+      <field type="uint8_t" name="eng_1_state">Engine 1 State</field>
+      <field type="uint8_t" name="eng_1_status">Engine 1 Status</field>
+      <field type="uint8_t" name="eng_1_operational">Engine 1 Operational</field>
+      <field type="uint8_t" name="eng_1_vehicle_type">Engine 1 Vehicle Type</field>
+      <field type="uint8_t" name="eng_1_maint_test_type">Engine 1 Maintenance Test Type</field>
+
+      <field type="uint32_t" name="eng_2_timestamp_ms">Engine 2 Elapsed Time Since Power-up (ms)</field>
+      <field type="uint32_t" name="eng_2_required_speed_rpm">Engine 2 Required Speed (RPM)</field>
+      <field type="uint32_t" name="eng_2_speed_rpm">Engine 2 Speed (RPM)</field>
+      <field type="int16_t" name="eng_2_egt_temp_degC">Engine 2 EGT Temp (Deg. C)</field>
+      <field type="uint16_t" name="eng_2_fuel_flow_ccm">Engine 2 Main Fuel Flow Rate (ccm)</field>
+      <field type="int16_t" name="eng_2_bus_current_mA">Engine 2 Bus Current (mA)</field>
+      <field type="uint16_t" name="eng_2_bus_input_voltage_mV">Engine 2 Bus Input Voltage (mV)</field>
+      <field type="uint16_t" name="eng_2_bus_output_voltage_mV">Engine 2 Bus Output Voltage (mV)</field>
+      <field type="uint8_t" name="eng_2_state">Engine 2 State</field>
+      <field type="uint8_t" name="eng_2_status">Engine 2 Status</field>
+      <field type="uint8_t" name="eng_2_operational">Engine 2 Operational</field>
+      <field type="uint8_t" name="eng_2_vehicle_type">Engine 2 Vehicle Type</field>
+      <field type="uint8_t" name="eng_2_maint_test_type">Engine 2 Maintenance Test Type</field>
+    </message>
+    <message id="12211" name="PANDION_RR_V100_ENGINE_TELEMETRY">
+      <description>All telemetry from a V100 engine</description>
+      <field type="uint8_t" name="engine_idx">Engine Index (0=Left, 1=Right)</field>
+      <field type="uint32_t" name="timestamp">Timestamp (ms)</field>
+      <field type="uint32_t" name="target_rpm">Target RPM</field>
+      <field type="uint32_t" name="actual_rpm">Actual RPM</field>
+      <field type="float" name="thrust_pct">Thrust (%)</field>
+      <field type="float" name="main_fuel_rate_ccm">Main Fuel Rate (ccm)</field>
+      <field type="float" name="fuel_consumed_ever_cl">Fuel Consumed Ever (cl)</field>
+      <field type="float" name="egt_control_degc">EGT Control (degC)</field>
+      <field type="float" name="egt_sensor_1_degc">EGT Sensor 1 (degC)</field>
+      <field type="float" name="egt_sensor_2_degc">EGT Sensor 2 (degC)</field>
+      <field type="float" name="egt_sensor_3_degc">EGT Sensor 3 (degC)</field>
+      <field type="float" name="ait_degc">AIT (degC)</field>
+      <field type="float" name="starter_generator_degc">Starter Generator (degC)</field>
+      <field type="float" name="flame_detector_degc">Flame Detector (degC)</field>
+      <field type="float" name="fuel_manifold_degc">fuel Manifold (degC)</field>
+      <field type="float" name="starter_generator_pcb_degc">Starter Generator PCB (degC)</field>
+      <field type="float" name="main_pump_pcb_degc">Main Pump PCB (degC)</field>
+      <field type="float" name="pilot_pump_pcb_degc">Pilot Pump PCB (degC)</field>
+      <field type="float" name="fadec_pcb_degc">FADEC PCB (degC)</field>
+      <field type="float" name="egb_pcb_degc">EGB PCB (degC)</field>
+      <field type="float" name="edaq_pcb_degc">EDAQ PCB (degC)</field>
+      <field type="float" name="vbus_in_v">VBus In (V)</field>
+      <field type="float" name="vbus_out_v">VBus Out (V)</field>
+      <field type="uint16_t" name="main_pump_setpoint_rpm">Main Pump Setpoint (rpm)</field>
+      <field type="uint16_t" name="main_pump_speed_rpm">Main Pump Speed (rpm)</field>
+      <field type="uint16_t" name="pilot_pump_setpoint_rpm">Pilot Pump Setpoint (rpm)</field>
+      <field type="uint16_t" name="pilot_pump_speed_rpm">Pilot Pump Speed (rpm)</field>
+      <field type="float" name="vbus_current_a">VBus Current (A)</field>
+      <field type="float" name="glow_plug_1_current_a">Glow Plug 1 Current (A)</field>
+      <field type="float" name="glow_plug_2_current_a">Glow Plug 2 Current (A)</field>
+      <field type="float" name="glow_plug_3_current_a">Glow Plug 3 Current (A)</field>
+      <field type="float" name="main_pump_current_a">Main Pump Current (A)</field>
+      <field type="float" name="pilot_pump_current_a">Pilot Pump Current (A)</field>
+      <field type="float" name="starter_generator_current_a">Starter Generator Current (A)</field>
+      <field type="uint16_t" name="fuel_pressure_mbar">Fuel Pressure (mbar)</field>
+      <field type="float" name="static_pressure_pa">Static Pressure (Pa)</field>
+      <field type="float" name="total_pressure_pa">Total Pressure (Pa)</field>
+      <field type="uint16_t" name="runtime_min">Runtime (min)</field>
+      <field type="uint8_t" name="state">State</field>
+      <field type="uint8_t" name="target_state">Target State</field>
+      <field type="uint8_t" name="status_flags_estop">Status Flags - EStop</field>
+      <field type="uint8_t" name="status_flags_egt_limit">Status Flags - EGT Limit</field>
+      <field type="uint8_t" name="status_flags_ait_limit">Status Flags - AIT Limit</field>
+      <field type="uint8_t" name="status_flags_min_fuel_limit">Status Flags - Min Fuel Limit</field>
+      <field type="uint8_t" name="status_flags_max_fuel_limit">Status Flags - Max Fuel Limit</field>
+      <field type="uint8_t" name="failure_flags_glow_plug_1">Failure Flags - Glow Plug 1</field>
+      <field type="uint8_t" name="failure_flags_glow_plug_2">Failure Flags - Glow Plug 2</field>
+      <field type="uint8_t" name="failure_flags_glow_plug_3">Failure Flags - Glow Plug 3</field>
+      <field type="uint8_t" name="failure_flags_egt_sensor_1">Failure Flags - EGT Sensor 1</field>
+      <field type="uint8_t" name="failure_flags_egt_sensor_2">Failure Flags - EGT Sensor 2</field>
+      <field type="uint8_t" name="failure_flags_egt_sensor_3">Failure Flags - EGT Sensor 3</field>
+      <field type="uint8_t" name="failure_flags_flame_sensor">Failure Flags - Flame Sensor</field>
+      <field type="uint8_t" name="failure_flags_ait_sensor">Failure Flags - AIT Sensor</field>
+      <field type="uint8_t" name="failure_flags_abs_press_sensor">Failure Flags - Abs Pres Sensor</field>
+      <field type="uint8_t" name="failure_flags_diff_pres_sensor">Failure Flags - Diff Pres Sensor</field>
+      <field type="uint8_t" name="failure_flags_main_fuel_valve">Failure Flags - Main Fuel Valve</field>
+      <field type="uint8_t" name="failure_flags_pilot_fuel_valve">Failure Flags - Pilot Fuel Valve</field>
+    </message>
+    <message id="12212" name="PANDION_RR_LOGGING_INFO">
+      <description>Pandion roadrunner logging information.</description>
+      <field type="char[32]" name="file_name">File of the source code reporting the info</field>
+      <field type="uint32_t" name="line_number">Line number of the source code reporting the info</field>
+      <field type="char[64]" name="info_details">Information details</field>
+    </message>
+    <message id="12206" name="PANDION_RR_BMS_DATA">
+      <description>BMS data.</description>
+      <field type="uint8_t" name="which_bms" enum="PANDION_RR_BMS">Whether this message comes from the primary or secondary BMS</field>
+      <field type="uint16_t" name="pack_voltage_mV">Voltage on the output of the battery pack load switch</field>
+      <field type="int16_t" name="pack_current_cA">The measured DC input current. A positive value denotes charge current, and a negative value denotes discharge current.</field>
+      <field type="uint16_t" name="cell1_voltage_mV">The measured voltage of cell 1 (bottom of cell stack)</field>
+      <field type="uint16_t" name="cell2_voltage_mV">The measured voltage of cell 2</field>
+      <field type="uint16_t" name="cell3_voltage_mV">The measured voltage of cell 3</field>
+      <field type="uint16_t" name="cell4_voltage_mV">The measured voltage of cell 4</field>
+      <field type="uint16_t" name="cell5_voltage_mV">The measured voltage of cell 5</field>
+      <field type="uint16_t" name="cell6_voltage_mV">The measured voltage of cell 6</field>
+      <field type="uint16_t" name="cell7_voltage_mV">The measured voltage of cell 7 (top of cell stack)</field>
+      <field type="int16_t" name="cell_temp1_centiC">Cell stack thermistor 1 temperature</field>
+      <field type="int16_t" name="cell_temp2_centiC">Cell stack thermistor 2 temperature</field>
+      <field type="int16_t" name="cell_temp3_centiC">Cell stack thermistor 3 temperature</field>
+      <field type="int16_t" name="cell_temp4_centiC">Cell stack thermistor 4 temperature</field>
+      <field type="int16_t" name="balancer_temp_centiC">Temperature of balance resistor array</field>
+      <field type="int16_t" name="load_switch_temp_centiC">Temperature of pack load switch</field>
+      <field type="uint16_t" name="remaining_capacity_mAh">Remaining capacity estimate in milliamp-hours</field>
+      <field type="uint8_t" name="state_of_charge_percent">Remaining capacity divided by total estimated usable capacity</field>
+      <field type="uint8_t" name="state" enum="PANDION_RR_BMS_STATE">Internal BMS State</field>
+      <field type="uint8_t" name="balancing">0 = Not balancing, 1 = Balancing</field>
+      <field type="uint16_t" name="min_pack_output_voltage_mV">Minimum voltage on the output of the battery pack load switch</field>
+      <field type="uint16_t" name="max_pack_output_voltage_mV">Maximum voltage on the output of the battery pack load switch</field>
+      <field type="int16_t" name="min_discharge_current_cA">Minimum discharge current of the battery pack</field>
+      <field type="int16_t" name="max_discharge_current_cA">Maximum discharge current of the battery pack</field>
+    </message>
+    <message id="12207" name="PANDION_RR_NEST_TELEMETRY">
+      <description>Nest data.</description>
+      <field type="uint16_t" name="discrete_bits">Various status bits</field>
+      <field type="int16_t" name="outside_air_temp_centiC">Temperature of the air outside the Nest enclosure</field>
+      <field type="int16_t" name="hx_temp_1_centiC">Temperature of Nest's heat exchanger</field>
+      <field type="int16_t" name="hx_temp_2_centiC">Temperature of Nest's heat exchanger</field>
+      <field type="int16_t" name="upper_int_temp_centiC">Internal temperature in the upper part of the Nest</field>
+      <field type="int16_t" name="exhaust_temp_deciC">Temperature of the Nest exhaust path</field>
+      <field type="int16_t" name="battery_temp_centiC">Temperature of the Nest battery</field>
+      <field type="int16_t" name="bulkhead_temp_centiC">Temperature of the Nest bulkhead connector</field>
+      <field type="int8_t" name="left_lid_torque_prct">Torque of the left lid actuator. +/- 0-100%</field>
+      <field type="uint8_t" name="right_lid_pos_prct">Position of the right lid actuator. 0 = fully closed. 100 = fully open</field>
+      <field type="uint8_t" name="exhaust_pos_prct">Position of the exhaust actuator. 0 = fully closed. 100 = fully open</field>
+      <field type="uint16_t" name="nest_battery_voltage_mV">Voltage of the Nest battery</field>
+      <field type="int16_t" name="vulture_current_cA">Current being provided by the Nest to its Vulture. Negative values represent current flowing from Nest to Vulture. Positive values represent current flowing from Vulture to Nest.</field>
+      <field type="uint8_t" name="knob_pos" enum="PANDION_RR_NEST_KNOB_POS">Position of the nest knob</field>
+      <field type="uint8_t" name="state" enum="PANDION_RR_NEST_STATE">Reported State</field>
+      <field type="int16_t" name="nest_battery_current_deciA">Current flowing to or from the Nest’s battery. Negative values denote battery discharge current, and positive values denote battery charge current.</field>
+      <field type="uint16_t" name="voc_sense_mV">Output of the VOC sensor, if installed. If not installed, 0</field>
+      <field type="float" name="heading_neg180_to_180">Heading obtained from differential GPS estimate </field>
+      <field type="uint8_t" name="rover_satellite_count">The number of satellites tracked by the rover receiver</field>
+      <field type="uint8_t" name="base_satellite_count">The number of satellites tracked by the base receiver</field>
+      <field type="uint8_t" name="rover_pvt_mode_solution_type">Rover GNSS solution type</field>
+      <field type="uint8_t" name="base_pvt_mode_solution_type">Base GNSS solution type</field>
+      <field type="uint8_t" name="bit_state" enum="PANDION_RR_FIRMWARE_IBIT_STATE">Built-in-test State</field>
+      <field type="uint16_t" name="bit_faults">Built-in-test fault bits</field>
+      <field type="uint16_t" name="bit_index">Built-in-test last test index</field>
+      <field type="float" name="nest_hdg_deg">Nest Heading</field>
+      <field type="float" name="nest_hdg_prev_deg">Nest Previous Heading</field>
+      <field type="uint16_t" name="nest_battery_drop_mV">Nest battery test - voltage drop reading</field>
+    </message>
+    <message id="12208" name="PANDION_RR_ROUTE_INFO">
+      <description>Roadrunner mission segment waypoint information.</description>
+      <field type="uint8_t" name="active_route_type">Current active route type</field>
+      <field type="uint8_t" name="route_data_validity">Bitmask for validity of data in msg</field>
+      <field type="int32_t" name="launch_takeoff_lat">Launch latitude, degE7</field>
+      <field type="int32_t" name="launch_takeoff_lon">Launch longitude, degE7</field>
+      <field type="int32_t" name="launch_takeoff_alt">Launch wgs84 altitude, mm</field>
+      <field type="int32_t" name="launch_departure_lat">Departure latitude, degE7</field>
+      <field type="int32_t" name="launch_departure_lon">Departure longitude, degE7</field>
+      <field type="int32_t" name="launch_departure_alt">Departure wgs84 altitude, mm</field>
+      <field type="int16_t" name="launch_hdg_limit_1_start_cdeg">start value in first launch heading limit, cdeg</field>
+      <field type="int16_t" name="launch_hdg_limit_1_end_cdeg">end value in first launch heading limit, cdeg</field>
+      <field type="int16_t" name="launch_hdg_limit_2_start_cdeg">start value in second launch heading limit, cdeg</field>
+      <field type="int16_t" name="launch_hdg_limit_2_end_cdeg">end value in second launch heading limit, cdeg</field>
+      <field type="int32_t" name="recovery_rally_lat">Rally latitude, degE7</field>
+      <field type="int32_t" name="recovery_rally_lon">Rally longitude, degE7</field>
+      <field type="int32_t" name="recovery_rally_alt">Rally wgs84 altitude, mm</field>
+      <field type="int32_t" name="recovery_landing_lat">Departure latitude, degE7</field>
+      <field type="int32_t" name="recovery_landing_lon">Departure longitude, degE7</field>
+      <field type="int32_t" name="recovery_landing_alt">Departure wgs84 altitude, mm</field>
+      <field type="int16_t" name="recovery_hdg_limit_start_cdeg">start value in land heading limit, cdeg</field>
+      <field type="int16_t" name="recovery_hdg_limit_end_cdeg">end value in land heading limit, cdeg</field>
+      <field type="int32_t" name="enroute_loiter_lat">Loiter latiude, degE7</field>
+      <field type="int32_t" name="enroute_loiter_lon">Loiter longitude, degE7</field>
+      <field type="int32_t" name="enroute_loiter_alt">Loiter altitude, mm</field>
+      <field type="int32_t" name="enroute_loiter_radius">Loiter radius in mm, positive for clockwise, negative for counter-clockwise</field>
+      <field type="int32_t" name="scuttle_lat">Scuttle latitude, degE7</field>
+      <field type="int32_t" name="scuttle_lon">Scuttle longitude, degE7</field>
+      <field type="int32_t" name="scuttle_alt">Scuttle altitude, mm</field>
+    </message>
+    <message id="12209" name="PANDION_RR_TSE_INFO">
+      <description>Roadrunner TSE info.</description>
+      <field type="uint16_t" name="status">Status bitfield</field>
+      <field type="int32_t" name="target_lat">Target latitude, degE7</field>
+      <field type="int32_t" name="target_lon">Target longitude, degE7</field>
+      <field type="int32_t" name="target_alt">Target wgs84 altitude, mm</field>
+    </message>
+    <message id="12210" name="PANDION_RR_SCUTTLE_SITES">
+      <description>Roadrunner mission segment waypoint information.</description>
+      <field type="uint8_t" name="scuttle_site_enabled">Current active route type</field>
+      <field type="int32_t[5]" name="scuttle_site_lat">Scuttle site latitude, degE7</field>
+      <field type="int32_t[5]" name="scuttle_site_lon">Scuttle site longitude, degE7</field>
+      <field type="int32_t[5]" name="scuttle_site_alt">Scuttle site wgs84 altitude, mm</field>
+    </message>
+    <message id="12214" name="PANDION_RR_TAU_MK2_DATA">
+      <description>Tau Mk2 Data.</description>
+        <field type="uint8_t" name="tau_mk2_channel_id" enum="PANDION_RR_TAU_MK2_CHANNEL">Tau channel id</field>
+        <field type="uint8_t" name="tau_mk2_standard_telemetry_status_bits">Tau standard telemetry, status field low byte</field>
+        <field type="uint8_t" name="tau_mk2_standard_telemetry_status_enabled">Tau standard telemetry, status field enabled bits</field>
+        <field type="uint8_t" name="tau_mk2_standard_telemetry_status_channel">Tau standard telemetry, status field channel bits</field>
+        <field type="int16_t" name="tau_mk2_standard_telemetry_position">Tau standard telemetry, position field</field>
+        <field type="uint16_t" name="tau_mk2_standard_telemetry_dc_v">Tau standard telemetry, DC_V field</field>
+        <field type="int16_t" name="tau_mk2_standard_telemetry_dc_i">Tau standard telemetry, DC_I field</field>
+        <field type="int16_t" name="tau_mk2_standard_telemetry_phi_sigma">Tau standard telemetry, PhiSigma field</field>
+        <field type="int16_t" name="tau_mk2_standard_telemetry_pcb_temp">Tau standard telemetry, PCB_Temp field</field>
+        <field type="int16_t" name="tau_mk2_standard_telemetry_stator_temp">Tau standard telemetry, Stator_Temp field</field>
+        <field type="uint16_t" name="tau_mk2_standard_telemetry_encoder_temp">Tau standard telemetry, Encoder_Temp field</field>
+        <field type="uint32_t" name="tau_mk2_encoder_detailed_status">Detailed status bits for the encoder</field>
+        <field type="uint32_t" name="tau_mk2_encoder_detailed_status_age_ms">Detailed status bits for the encoder</field>
+        <field type="uint8_t" name="tau_mk2_ratchet_ibit_state" enum="PANDION_RR_FIRMWARE_IBIT_STATE">Status of the most recent run of the Ratchet IBIT</field>
+        <field type="uint8_t" name="tau_mk2_hall_calibration_status" enum="PANDION_RR_TAU_MK2_HALL_CALIB_STATUS">Status of the most recent run of the Hall Sensor Calibration</field>
+        <field type="uint8_t" name="tau_mk2_internal_state">Internal State</field>
+    </message>
+
+    <!-- Uplink/Command Messages: 12250-12299 -->
+    <message id="12251" name="PANDION_RR_ENGINE_CONTROL">
+      <description>Pandion roadrunner engine control.</description>
+      <field type="uint8_t" name="eng_1_state_command">Engine 1 State Command</field>
+      <field type="uint8_t" name="eng_2_state_command">Engine 2 State Command</field>
+      <field type="uint8_t" name="eng_1_relay_state_command">Relay 1 State Command</field>
+      <field type="uint8_t" name="eng_2_relay_state_command">Relay 2 State Command</field>
+      <field type="uint8_t" name="eng_1_desired_pct_throttle_command">Engine 1 Desired Pct Throttle Command</field>
+      <field type="uint8_t" name="eng_2_desired_pct_throttle_command">Engine 2 Desired Pct Throttle Command</field>
+    </message>
+    <message id="12252" name="PANDION_RR_ENGINE_TEST_MSG">
+      <description>Pandion roadrunner engine control.</description>
+      <field type="uint8_t" name="eng_1_test_state">Engine 1 Test State</field>
+      <field type="uint8_t" name="eng_2_test_state">Engine 2 Test State</field>
+      <field type="uint8_t" name="eng_1_test_value">Engine 1 Test Value</field>
+      <field type="uint8_t" name="eng_2_test_value">Engine 2 Test Value</field>
+    </message>
+    <message id="12253" name="PANDION_RR_NEST_MANUAL_CONTROL">
+      <description>Pandion roadrunner nest manual control.</description>
+      <field type="uint8_t" name="nest_manual_control_cmd" enum="PANDION_RR_NEST_MANUAL_CONTROL_STATES">0 = close, 1 = open</field>
+    </message>
+    <message id="12254" name="PANDION_RR_NEST_BIT_CONTROL">
+      <description>Pandion roadrunner nest built-in-test control.</description>
+      <field type="uint8_t" name="nest_bit_control_cmd" enum="PANDION_RR_NEST_BIT_CONTROL_STATES">0 = doors, 1 = heater, 2 = hex, 3 = all</field>
+    </message>
+    <message id="12255" name="PANDION_RR_ACTUATION_MANUAL_CONTROL">
+      <description>Pandion roadrunner actuation manual control.</description>
+      <field type="double"  name="yaw">Yaw</field>
+      <field type="double"  name="pitch">Pitch</field>
+      <field type="double"  name="roll">Roll</field>
+      <field type="double"  name="elevon">Elevon Value</field>
+      <field type="double"  name="rudder">Rudder Value</field>
+      <field type="uint8_t" name="control_all_with_joypad">Control all with Joypad flag</field>
+      <field type="uint8_t" name="input_source" enum="MANUAL_ACTUATION_INPUT_SOURCE">Input Source</field>
+    </message>
+    <message id="12256" name="PANDION_RR_ACTUATION_REQUEST_MODE">
+      <description>Pandion roadrunner request actuation manual mode.</description>
+      <field type="uint8_t" name="requested_mode" enum="PANDION_RR_ACTUATION_STATES">Requested Actuation Mode</field>
+    </message>
+    <message id="12257" name="PANDION_RR_PROX_SENSOR_TEST_MSG">
+      <description>Pandion roadrunner proximity sensor test message</description>
+      <field type="uint8_t" name="prox_sensor_manual_test_cmd" enum="PANDION_RR_PROX_SENSOR_MANUAL_TEST_STATES">Nothing, Activate, Deactivate, Collect data</field>
+    </message>
+    <message id="12258" name="PANDION_RR_ACTUATION_TRIM_CONTROL">
+      <description>Pandion roadrunner actuation trim-focused manual control.</description>
+      <field type="float"  name="dorsal_rudder_cdeg">Dorsal Rudder</field>
+      <field type="float"  name="ventral_rudder_cdeg">Ventral Rudder</field>
+      <field type="float"  name="left_elevon_cdeg">Left Elevon</field>
+      <field type="float"  name="right_elevon_cdeg">Right Elevon</field>
+      <field type="float"  name="left_tvc_up_cdeg">Left TVC Upper Servo</field>
+      <field type="float"  name="left_tvc_low_cdeg">Left TVC Lower Servo</field>
+      <field type="float"  name="right_tvc_up_cdeg">Right TVC Upper Servo</field>
+      <field type="float"  name="right_tvc_low_cdeg">Right TVC Lower Servo</field>
+    </message>
+    <message id="12260" name="PANDION_RR_ESAD_MANUAL_POWER_CMD">
+      <description>Command ESAD power off or on</description>
+      <field type="uint8_t" name="command" enum="PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND">See PANDION_RR_ESAD_MANUAL_POWER_CMD_COMMAND Enum</field>
+    </message>
+    <message id="12261" name="PANDION_RR_ESAD_MANUAL_POWER_CMD_ACK">
+      <description>PANDION_RR_ESAD_MANUAL_POWER_CMD ack</description>
+      <field type="uint8_t" name="status" enum="PANDION_RR_ESAD_MANUAL_POWER_CMD_ACK_STATUS">See PANDION_RR_ESAD_MANUAL_POWER_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+    <message id="12262" name="PANDION_RR_FUEL_DATA">
+      <description>Percent of fuel remaining and time to bingo fuel</description>
+      <field type="float" name="remaining_fuel_pct">Remaining Fuel</field>
+      <field type="float" name="bingo_action_required_timer_sec">A countdown timer started when nearing bingo fuel, indicating that operator action is required.</field>
+      <field type="float" name="scuttle_action_required_timer_sec">A countdown timer started when nearing scuttle fuel, indicating that operator action is required.</field>
+      <field type="float" name="time_until_bingo_sec">Estimated time until bingo fuel. This value fluctuates and should not be displayed to the operator.</field>
+      <field type="float" name="time_until_scuttle_sec">Estimated time until scuttle fuel. This value fluctuates and should not be displayed to the operator.</field>
+      <field type="float" name="time_until_empty_sec">Estimated time until zero fuel</field>
+      <field type="uint8_t" name="fuel_status">Bitmask for fuel statuses</field>
+    </message>
+    <message id="12263" name="PANDION_RR_ESAD_STATE">
+        <description>ESAD state.</description>
+        <field type="uint8_t" name="powered_on">0 = off, 1 = on</field>
+        <field type="uint8_t" name="enabled">0 = disabled, 1 = enabled</field>
+        <field type="uint8_t" name="armed">0 = disarmed, 1 = armed</field>
+        <field type="uint8_t" name="disabled">0 = enabled, 1 = disabled</field>
+        <field type="uint8_t" name="executed">0 = not executed, 1 = executed</field>
+    </message>
+    <message id="12264" name="PANDION_RR_LAUNCH_TO_LOITER_ROUTE_REQUEST">
+        <description>Request to generate a launch route and return its departure waypoint location.</description>
+        <field type="uint8_t" name="request_id">ID associated with the request</field>
+        <field type="double" name="loiter_latitude_deg">Destination loiter latitude (deg)</field>
+        <field type="double" name="loiter_longitude_deg">Destination loiter longitude (deg)</field>
+        <field type="float" name="loiter_altitude_wgs84_m">Destination altitude (WGS84 meters)</field>
+    </message>
+    <message id="12265" name="PANDION_RR_LAUNCH_TO_LOITER_ROUTE_RESPONSE">
+        <description>Response for a launch route request.</description>
+        <field type="uint8_t" name="request_id">ID associated with the request</field>
+        <field type="uint8_t" name="valid" enum="PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_VALIDITY">See PANDION_RR_LAUNCH_ROUTE_GEN_REQUEST_VALIDITY for details</field>
+        <field type="double" name="launch_departure_latitude_deg">Launch departure latitude (deg)</field>
+        <field type="double" name="launch_departure_longitude_deg">Launch departure longitude (deg)</field>
+        <field type="float" name="launch_departure_altitude_wgs84_m">Launch departure altitude (WGS84 meters)</field>
+    </message>
+    <message id="12266" name="PANDION_RR_LAUNCH_TO_LOITER_CMD">
+        <description>Perform automated launch sequence to a loiter point.</description>
+        <field type="double" name="loiter_latitude_deg">Loiter Latitude (deg)</field>
+        <field type="double" name="loiter_longitude_deg">Loiter Longitude (deg)</field>
+        <field type="float" name="loiter_altitude_wgs84_m">Loiter Altitude in WGS-84 (meters)</field>
+    </message>
+    <message id="12267" name="PANDION_RR_LAUNCH_TO_LOITER_CMD_ACK">
+        <description>PANDION_RR_LAUNCH_TO_LOITER_CMD ack</description>
+        <field type="uint8_t" name="status">See PANDION_RR_LAUNCH_TO_LOITER_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+    <message id="12268" name="PANDION_RR_UPDATE_LOITER_POINT_CMD">
+        <description>Update the active loiter point</description>
+        <field type="double" name="loiter_latitude_deg">Latitude (deg)</field>
+        <field type="double" name="loiter_longitude_deg">Longitude (deg)</field>
+        <field type="float" name="loiter_altitude_wgs84_m">Altitude in WGS-84 (meters)</field>
+    </message>
+    <message id="12269" name="PANDION_RR_UPDATE_LOITER_POINT_CMD_ACK">
+        <description>PANDION_RR_UPDATE_LOITER_POINT_CMD ack</description>
+        <field type="uint8_t" name="status">See PANDION_RR_UPDATE_LOITER_POINT_CMD_ACK_STATUS Enum (0 = Accepted)</field>
+    </message>
+    <message id="12270" name="PANDION_RR_RECOVERY_ROUTE_REQUEST">
+        <description>Request to generate a recovery route and return its rally waypoint location.</description>
+        <field type="uint8_t" name="request_id">ID associated with the request</field>
+    </message>
+    <message id="12271" name="PANDION_RR_RECOVERY_ROUTE_RESPONSE">
+        <description>Response for a recovery route request.</description>
+        <field type="uint8_t" name="request_id">ID associated with the request</field>
+        <field type="uint8_t" name="valid" enum="PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_VALIDITY">See PANDION_RR_RECOVERY_ROUTE_GEN_REQUEST_VALIDITY for details</field>
+        <field type="double" name="recovery_rally_latitude_deg">Recovery rally waypoint latitude (deg)</field>
+        <field type="double" name="recovery_rally_longitude_deg">Recovery rally waypoint longitude (deg)</field>
+        <field type="float" name="recovery_rally_altitude_wgs84_m">Recovery rally waypoint altitude (WGS84 meters)</field>
+    </message>
+    <message id="12272" name="PANDION_RR_SCUTTLE_AT_LOCATION_CMD">
+        <description>Perform automated scuttle at the specified location.</description>
+        <field type="double" name="loiter_latitude_deg">Scuttle point latitude (degrees)</field>
+        <field type="double" name="loiter_longitude_deg">Scuttle point longitude (degrees)</field>
+        <field type="float" name="loiter_altitude_wgs84_m">Scuttle point altitude in WGS-84 (meters)</field>
+    </message>
+    <message id="12273" name="PANDION_RR_SCUTTLE_AT_LOCATION_CMD_ACK">
+        <description>PANDION_RR_SCUTTLE_AT_LOCATION_CMD response.</description>
+        <field type="uint8_t" name="status" enum="PANDION_RR_SCUTTLE_AT_LOCATION_CMD_ACK_STATUS">Response status code.</field>
+    </message>
+    <message id="12274" name="PANDION_RR_NEST_ID">
+        <description>Message containing the Nest ID (SN) and slot number (if applicable)</description>
+        <field type="uint32_t" name="nest_id">Nest ID corresponding to the Nest serial number</field>
+        <field type="uint8_t" invalid="0" name="slot_number" enum="PANDION_RR_NEST_XL_SLOT">Slot number (1-4)</field>
+    </message>
+    <message id="12275" name="PANDION_RR_DECONFLICTION_ZONE">
+        <description>Deconfliction zone information.</description>
+        <field type="uint32_t" name="nest_id">Nest ID of nest that this deconfliction zone applies to</field>
+        <field type="double" name="launch_survey_latitude_deg">Surveyed launch position latitude (deg)</field>
+        <field type="double" name="launch_survey_longitude_deg">Surveyed launch position longitude (deg)</field>
+        <field type="float" name="launch_survey_altitude_wgs84_m">Surveyed launch altitude (WGS-84 meters)</field>
+        <field type="float" name="launch_survey_heading_deg">Surveyed launch position heading (deg)</field>
+        <field type="float" name="launch_heading_limit_1_start_deg">Start value in first launch heading limit (deg)</field>
+        <field type="float" name="launch_heading_limit_1_end_deg">End value in first launch heading limit (deg)</field>
+        <field type="uint8_t" name="launch_heading_limit_1_enabled">First launch heading limits enabled</field>
+        <field type="float" name="launch_heading_limit_2_start_deg">Start value in second launch heading limit (deg)</field>
+        <field type="float" name="launch_heading_limit_2_end_deg">End value in second launch heading limit (deg)</field>
+        <field type="uint8_t" name="launch_heading_limit_2_enabled">Second launch heading limits enabled</field>
+        <field type="float" name="launch_heading_limits_reference_offset_deg">Launch heading reference offset (deg)</field>
+        <field type="uint8_t" name="platform_relative_launch_limits_enabled">Enabled relative launch bearing limits</field>
+        <field type="float" name="landing_heading_limit_start_deg">Start value in land heading limit (deg)</field>
+        <field type="float" name="landing_heading_limit_end_deg">End value in land heading limit (deg)</field>
+        <field type="double" name="landing_latitude_deg">Landing latitude (deg)</field>
+        <field type="double" name="landing_longitude_deg">Landing longitude (deg)</field>
+        <field type="uint8_t" name="landing_heading_limits_enabled">Landing heading limits enabled</field>
+        <field type="float" name="landing_ground_altitude_wgs84_m">Landing zone ground altitude (WGS-84 meters)</field>
+        <field type="float" name="scuttle_cruise_altitude_wgs84_m">Ditch cruise altitude (WGS-84 meters)</field>
+        <field type="float" name="loiter_altitude_offset_m">Loiter altitude offset (meters)</field>
+        <field type="uint8_t" name="ditch_1_enable">0 = disabled, 1 = enabled</field>
+        <field type="double" name="ditch_1_latitude_deg">Ditch 1 Landing Latitude (deg)</field>
+        <field type="double" name="ditch_1_longitude_deg">Ditch 1 Landing Longitude (deg)</field>
+        <field type="float" name="ditch_1_altitude_wgs84_m">Ditch 1 Altitude in WGS-84 (meters)</field>
+        <field type="uint8_t" name="ditch_2_enable">0 = disabled, 1 = enabled</field>
+        <field type="double" name="ditch_2_latitude_deg"> Ditch 2 Landing Latitude (deg)</field>
+        <field type="double" name="ditch_2_longitude_deg">Ditch 2 Landing Longitude (deg)</field>
+        <field type="float" name="ditch_2_altitude_wgs84_m">Ditch 2 Altitude in WGS-84 (meters)</field>
+        <field type="uint8_t" name="ditch_3_enable">0 = disabled, 1 = enabled</field>
+        <field type="double" name="ditch_3_latitude_deg"> Ditch 3 Landing Latitude (deg)</field>
+        <field type="double" name="ditch_3_longitude_deg">Ditch 3 Landing Longitude (deg)</field>
+        <field type="float" name="ditch_3_altitude_wgs84_m">Ditch 3 Altitude in WGS-84 (meters)</field>
+        <field type="uint8_t" name="ditch_4_enable">0 = disabled, 1 = enabled</field>
+        <field type="double" name="ditch_4_latitude_deg"> Ditch 4 Landing Latitude (deg)</field>
+        <field type="double" name="ditch_4_longitude_deg">Ditch 4 Landing Longitude (deg)</field>
+        <field type="float" name="ditch_4_altitude_wgs84_m">Ditch 4 Altitude in WGS-84 (meters)</field>
+        <field type="uint8_t" name="ditch_5_enable">0 = disabled, 1 = enabled</field>
+        <field type="double" name="ditch_5_latitude_deg"> Ditch 5 Landing Latitude (deg)</field>
+        <field type="double" name="ditch_5_longitude_deg">Ditch 5 Landing Longitude (deg)</field>
+        <field type="float" name="ditch_5_altitude_wgs84_m">Ditch 5 Altitude in WGS-84 (meters)</field>
+        <field type="double" name="contingency_loiter_latitude_deg">Site specific contingency loiter latitude (deg)</field>
+        <field type="double" name="contingency_loiter_longitude_deg">Site specific contingency loiter longitude (deg)</field>
+        <field type="float" name="contingency_loiter_altitude_wgs84_m">Site specific contingency loiter altitude (WGS-84 meters)</field>
+    </message>
+    <message id="12276" name="PANDION_RR_IAR_STATE">
+        <description>Pandion roadrunner in-air-restart state message</description>
+        <field type="uint8_t" name="iar_state_left_engine" enum="PANDION_RR_IAR_STATES">Left engine in-air restart state</field>
+        <field type="uint8_t" name="iar_state_right_engine" enum="PANDION_RR_IAR_STATES">Right engine in-air restart state</field>
+    </message>
+    <message id="12277" name="PANDION_RR_TAU_MK2_CONTROL">
+      <description>Pandion roadrunner Tau Mk2 control.</description>
+      <field type="uint8_t" name="tau_channel" enum="PANDION_RR_TAU_MK2_CHANNEL">Tau Channel</field>
+      <field type="uint32_t" name="maintenance_command" enum="PANDION_RR_TAU_MK2_MAINTENANCE_COMMAND"></field>
+    </message>
+    <message id="12280" name="PANDION_RR_SENS_GND_RADAR">
+        <description>Pandion roadrunner mission computer ground radar sensor measurement</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="double" name="sensor_latitude_deg">Sensor latitude in degrees</field>
+        <field type="double" name="sensor_longitude_deg">Sensor longitude in degrees</field>
+        <field type="float" name="sensor_altitude_wgs84_m">Sensor WGS84 altitude in m</field>
+        <field type="float" name="range_m">Range to target in m</field>
+        <field type="float" name="azimuth_ccw_rad">Azimuth of detected target in the sensor frame, positive CCW</field>
+        <field type="float" name="elevation_down_rad">Elevation of detected target in the sensor frame, positive down</field>
+        <field type="float" name="range_rate_mps">Range rate of detected target in m/s</field>
+        <field type="float" name="return_strength">Strength of the return</field>
+        <field type="float" name="snr_db">Signal to noise ratio of the return in dB</field>
+        <field type="uint64_t" name="track_id">ID of the track which the update is associated with</field>
+        <field type="float" name="elevation_sigma_rad">Standard deviation of the elevation angle></field>
+        <field type="float" name="range_rate_sigma_mps">Standard deviation of the range rate measurement</field>
+        <field type="double[3]" name="ecef_pos_m">Target position in the ECEF frame, meters</field>
+        <field type="float[3]" name="ecef_vel_mps">Target velocity in the ECEF frame, mps</field>
+        <field type="float[6]" name="ecef_pos_cov_m2">Target position estimate covariance in ECEF frame: mxx, mxy, mxz, myy, myz, mzz</field>
+        <field type="float[6]" name="ecef_vel_cov_m2ps2">Target velocity estimate covariance in ECEF frame: mxx, mxy, mxz, myy, myz, mzz</field>
+        <field type="uint64_t" name="capture_time_ns">GPS time that a Range-Velocity Map is received by the radar</field>
+    </message>
+    <message id="12281" name="PANDION_RR_SENS_WISP">
+        <description>Pandion roadrunner mission computer WISP sensor measurement</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="uint64_t" name="time_ns">GPS time of measurement</field>
+        <field type="int64_t" name="sensor_id">ID number of the WISP camera generating the track update</field>
+        <field type="uint64_t" name="track_id_2">ID for the track which the update is associated with</field>
+        <field type="int64_t" name="update_id">ID of the track update at the given frame</field>
+        <field type="int32_t" name="sequence_num_in_track">Counter for the number of detections associated with the track</field>
+        <field type="float[3]" name="pos_aer_rrm">Target position azimuth rad, elevation rad, range meters</field>
+        <field type="float[3]" name="vel_aer_rrmps">Target velocity azimuth rate rad/s, elevation rate rad/s, range m/s</field>
+        <field type="float" name="signal">Signal to noise ratio of WISP detection</field>
+        <field type="double[3]" name="pos_ecef_m">Track position in the ECEF frame, meters</field>
+        <field type="double[3]" name="sensor_pos_ecef_m">WISP position in the ECEF frame, meters</field>
+        <field type="float[4]" name="lrtb_deg">Bounding box in degrees: left, right, top, bottom</field>
+        <field type="uint8_t" name="cal_corrected">Whether or not the WISP track has had its calibration corrected</field>
+    </message>
+    <message id="12282" name="PANDION_RR_SENS_TRACK_STATE">
+        <description>Pandion roadrunner mission computer track state sensor measurement</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="int64_t" name="timestamp_us">GPS Time of the track</field>
+        <field type="int64_t" name="track_id">Unique ID for the track</field>
+        <field type="int64_t" name="last_cv_detection_time_us">GPS Time of last CV detection of track in us</field>
+        <field type="int64_t" name="last_measurement_time_us">GPS Time of last measurement of the track in us</field>
+        <field type="int64_t" name="verification_time_us">GPS Time when track was verified in us</field>
+        <field type="float[3]" name="enu_pos_m">Track ENU position in m</field>
+        <field type="float[3]" name="enu_vel_mps">Track ENU velocity in m/s</field>
+        <field type="float[6]" name="enu_pos_cov_m2">Track position estimate covariance in ENU frame: mxx, mxy, mxz, myy, myz, mzz</field>
+        <field type="float[6]" name="enu_vel_cov_m2ps2">Track velocity estimate covariance in ENU frame: mxx, mxy, mxz, myy, myz, mzz</field>
+        <field type="float" name="alt_agl_m">Track altitude above ground in m</field>
+        <field type="float" name="rcs_db">Track radar cross section in dB</field>
+        <field type="float" name="estimated_size_m">Estimated object size in m</field>
+        <field type="float" name="image_width_m">Estimated object width in m</field>
+        <field type="float" name="image_height_m">Estimated object height in m</field>
+        <field type="float" name="object_class_confidence">Confidence score of the estimated object class</field>
+        <field type="double" name="origin_lon_deg">Origin longitude for track state ENU frame in deg</field>
+        <field type="double" name="origin_lat_deg">Origin latitude for track state ENU frame in deg</field>
+        <field type="double" name="origin_alt_wgs84_m">Origin altitude WGS84 HAE in m</field>
+    </message>
+    <message id="12283" name="PANDION_RR_SENS_SILVUS_TOF">
+        <description>Pandion roadrunner mission computer Silvus sensor measurement</description>
+        <field type="int64_t" name="system_timestamp_us">GPS Time of the ownship at time of sample</field>
+        <field type="int64_t" name="timestamp_us">GPS Time of the TOF measurement</field>
+        <field type="int16_t" name="node_id">Silvus node ID</field>
+        <field type="uint32_t" name="tof_ns">TOF measurement in nanoseconds</field>
+        <field type="double[3]" name="lla_pos_degdegm">Node LLA position in deg, deg, m (WGS84)</field>
+    </message>
+    <message id="12284" name="PANDION_RR_SENS_GND_LIDAR">
+        <description>Pandion roadrunner mission computer ground sensor measurement for precision landing</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="uint8_t" name="sensor_type">0 for Aeva, 1 for Blickfeld, 2 for Ouster</field>
+        <field type="int64_t" name="timestamp_us">GPS Time of the ground sensor measurement</field>
+        <field type="double[3]" name="ecef_pos_m">Target position in the ECEF frame, meters</field>
+        <field type="float[6]" name="ecef_pos_cov_m2">Target position estimate covariance in ECEF frame: mxx, mxy, mxz, myy, myz, mzz</field>
+        <field type="float" name="range_m">Range to target in m</field>
+        <field type="float" name="azimuth_rad">Azimuth of detected target in the sensor frame, positive CCW</field>
+        <field type="float" name="elevation_rad">Elevation of detected target in the sensor frame, positive down</field>
+        <field type="float" name="range_sigma_m">Standard deviation of the range measurement</field>
+        <field type="float" name="azimuth_sigma_rad">Standard deviation of the azimuth angle></field>
+        <field type="float" name="elevation_sigma_rad">Standard deviation of the elevation angle></field>
+        <field type="double[3]" name="lla_pos_degdegm">Node LLA position in deg, deg, m (WGS84)</field>
+        <field type="double[4]" name="q_ned2ecef">Sensor orientation w.r.t. global frame</field>
+    </message>
+    <message id="12285" name="PANDION_RR_SENS_FREQ_JAMMER">
+        <description>Blue force frequency jammer status</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="int64_t" name="system_timestamp_us">Timestamp for active action</field>
+        <field type="uint8_t" name="active_flag">Flag TRUE if frequency jammer active</field>
+    </message>
+    <message id="12286" name="PANDION_RR_SENS_PROTOCOL_JAMMER">
+        <description>Blue force protocol jammer status</description>
+        <field type="uint32_t" name="validity_bm">Validity bitmask</field>
+        <field type="int64_t" name="system_timestamp_us">Timestamp for active action</field>
+        <field type="uint8_t" name="active_flag">Flag TRUE if protocol jammer active</field>
+    </message>
+    <message id="12287" name="PANDION_RR_TIME_SYNC">
+      <description>Reports the time of the last sync pulse from pandion, used from setting pandion's clock</description>
+      <field type="uint64_t" name="last_pulse_time_ns">Last Pulse Time in GPS NS</field>
+      <field type="uint8_t" name="last_pulse_time_valid">Last Pulse Time is from a Valid and Synced source</field>
+    </message>
+    <message id="12288" name="PANDION_RR_MONARCH_STATUS">
+        <description>RR-specific Monarch status</description>
+        <field type="uint8_t" name="gnss_is_from_survey">GNSS measurements are currently coming from surveyed data</field>
+        <field type="uint8_t" name="heading_is_from_survey">Heading measurements are currently coming from surveyed data</field>
+        <field type="uint8_t" name="gnss_is_from_landing">GNSS measurements are currently coming from landing estimate</field>
+        <field type="uint8_t" name="ts2_mon_active">TS2 sensor measurements are being monitored</field>
+        <field type="uint8_t" name="gnd_ldr_mon_active">Landing sensor measurements are being monitored</field>
+        <field type="uint8_t" name="vn_heading_en_mode">NAV_ALGN_SRC mode used for VN heading</field>
+        <field type="uint8_t" name="rzlr_config">Monarch RZLR configuration, specific to vehicle application</field>
+        <field type="uint8_t" name="selected_ins" enum="PANDION_RR_SELECTED_INS">Selected INS</field>
+        <field type="float" name="inactive_monarch_time_since_gnss_upd_s">Time since last GNSS update for inactive Monarch instance</field>
+        <field type="float" name="inactive_monarch_time_since_heading_upd_s">Time since last Heading update for inactive Monarch instance</field>
+        <field type="float" name="inactive_monarch_time_since_ecef_upd_s">Time since last ECEF update for inactive Monarch instance</field>
+        <field type="float" name="inactive_monarch_time_since_gnd_lidar_upd_s">Time since last LiDAR update for inactive Monarch instance</field>
+        <field type="uint8_t" name="inactive_monarch_gnss_is_from_landing">GNSS measurements are currently coming from landing estimate for inactive Monarch instance</field>
+        <field type="uint8_t" name="inactive_monarch_ts2_mon_active">TS2 sensor measurements are being monitored for inactive Monarch instance</field>
+        <field type="uint8_t" name="inactive_monarch_gnd_ldr_mon_active">Landing sensor measurements are being monitored for inactive Monarch instance</field>
+    </message>
+    <message id="12289" name="PANDION_RR_CANBUS_USAGE_MONITOR">
+        <description>Pandion canbus utilization</description>
+        <field type="uint32_t" name="can1_rx_rate_bytes_per_sec">Avg Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can1_rx_peak_rate_bytes_per_sec">Peak Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can1_tx_rate_bytes_per_sec">Avg Tx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can1_tx_peak_rate_bytes_per_sec">Peak Tx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can4_rx_rate_bytes_per_sec">Avg Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can4_rx_peak_rate_bytes_per_sec">Peak Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can4_tx_rate_bytes_per_sec">Avg Tx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can4_tx_peak_rate_bytes_per_sec">Peak Tx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can5_rx_rate_bytes_per_sec">Avg Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can5_rx_peak_rate_bytes_per_sec">Peak Rx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can5_tx_rate_bytes_per_sec">Avg Tx canbus usage in bytes/sec</field>
+        <field type="uint32_t" name="can5_tx_peak_rate_bytes_per_sec">Peak Tx canbus usage in bytes/sec</field>
+    </message>
+    <message id="12290" name="PANDION_RR_MAINTENANCE_COMMAND">
+        <description>Pandion Roadrunner maintenance command</description>
+        <field type="uint8_t" name="command" enum="PANDION_RR_MAINTENANCE_COMMAND_TYPE"></field>
+    </message>
+    <message id="12291" name="PANDION_RR_PLAYBACK_COMMAND">
+        <description>Pandion roadrunner profile playback command message</description>
+        <field type="float" name="left_elevon_ted_command_cdeg">Left Elevon CDeg Command</field>
+        <field type="float" name="right_elevon_ted_command_cdeg">Right Elevon CDeg Command</field>
+        <field type="float" name="lower_rudder_tel_command_cdeg">Lower Rudder CDeg Command</field>
+        <field type="float" name="upper_rudder_tel_command_cdeg">Upper Rudder CDeg Command</field>
+        <field type="float" name="left_tvc_upper_command_cdeg">Left Upper TVC CDeg Command</field>
+        <field type="float" name="left_tvc_lower_command_cdeg">Left Lower TVC CDeg Command</field>
+        <field type="float" name="right_tvc_upper_command_cdeg">Right Upper TVC CDeg Command</field>
+        <field type="float" name="right_tvc_lower_command_cdeg">Right Lower TVC CDeg Command</field>
+        <field type="float" name="left_engine_speed_command_prct_thrust">Left Engine Speed Percent Thrust Command</field>
+        <field type="float" name="right_engine_speed_command_prct_thrust">Right Engine Speed Percent Thrust Command</field>
+    </message>
+    <message id="12292" name="PANDION_RR_WCET_STATS">
+        <description>Pandion Roadrunner WCET Stats</description>
+        <field type="char[64]" name="task_name">name of the task"</field>
+        <field type="uint32_t" name="wcet_ns">worse case execution time"</field>
+        <field type="uint32_t" name="wcet_ns_percent">worse case execution time %age"</field>
+        <field type="uint32_t" name="avg_ns">avg execution time"</field>
+        <field type="uint32_t" name="avg_ns_percent">avg execution time %age"</field>
+    </message>
+    <message id="12293" name="PANDION_RR_HARDWARE_SELECTOR_STATUS">
+        <description>Pandion Roadrunner Hardware Selector Status</description>
+      <!-- on the next line, options should have enum="PANDION_RR_HARDWARE_SELECTOR_OPTIONS", but this breaks the rust codegen thingy -->
+        <field type="uint16_t" name="options"></field>
+      <!-- on the next line, subsystems_enabled should have enum="PANDION_RR_HARDWARE_SELECTOR_SUBSYSTEMS", but this breaks the rust codegen thingy -->
+        <field type="uint16_t" name="subsystems_enabled"></field>
+    </message>
+    <message id="12295" name="PANDION_RR_LANDING_GEAR_DEPLOY_COMMAND">
+        <description>Pandion Roadrunner deploy landing gear command</description>
+        <field type="uint8_t" name="command" enum="PANDION_RR_LANDING_GEAR_COMMAND_TYPE">Landing Gear Command</field>
+    </message>
+    <message id="12296" name="PANDION_RR_MAINTENANCE_COMMAND_STATUS">
+        <description>Pandion Roadrunner Maintenance Command Status</description>
+        <field type="uint8_t" name="status" enum="PANDION_RR_MAINTENANCE_STATUS_TYPE"></field>
+    </message>
+    <message id="12297" name="PANDION_RR_UDP_USAGE_MONITOR">
+        <description>Pandion UDP utilization</description>
+        <field type="uint32_t" name="udp_gcs_rx_rate_bytes_per_sec">Avg UDP GCS Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_gcs_rx_peak_rate_bytes_per_sec">Peak UDP GCS Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_gcs_tx_rate_bytes_per_sec">Avg UDP GCS Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_gcs_tx_peak_rate_bytes_per_sec">Peak UDP GCS Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_qgc_rx_rate_bytes_per_sec">Avg UDP QGC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_qgc_rx_peak_rate_bytes_per_sec">Peak UDP QGC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_qgc_tx_rate_bytes_per_sec">Avg UDP QGC Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_qgc_tx_peak_rate_bytes_per_sec">Peak UDP QGC Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_mc_rx_rate_bytes_per_sec">Avg UDP MC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_mc_rx_peak_rate_bytes_per_sec">Peak UDP MC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_mc_tx_rate_bytes_per_sec">Avg UDP MC Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_mc_tx_peak_rate_bytes_per_sec">Peak UDP MC Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_raw_mc_rx_rate_bytes_per_sec">Avg UDP Raw MC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_raw_mc_gcs_rx_peak_rate_bytes_per_sec">Peak UDP Raw MC Rx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_raw_mc_tx_rate_bytes_per_sec">Avg UDP Raw MC Tx usage in bytes/sec</field>
+        <field type="uint32_t" name="udp_raw_mc_tx_peak_rate_bytes_per_sec">Peak UDP Raw MC Tx usage in bytes/sec</field>
+    </message>
+    <message id="12298" name="PANDION_RR_UDP_QOS_MONITOR">
+        <description>Pandion UDP QOS monitoring</description>
+        <field type="uint32_t" name="udp_gcs_rx_dropped_bytes">UDP GCS Rx dropped bytes</field>
+        <field type="uint32_t" name="udp_gcs_rx_dropped_count">UDP GCS Rx dropped count</field>
+        <field type="uint32_t" name="udp_gcs_tx_dropped_bytes">UDP GCS Tx dropped bytes</field>
+        <field type="uint32_t" name="udp_gcs_tx_dropped_count">UDP GCS Tx dropped count</field>
+        <field type="uint32_t" name="udp_qgc_rx_dropped_bytes">UDP QGC Rx dropped bytes</field>
+        <field type="uint32_t" name="udp_qgc_rx_dropped_count">UDP QGC Rx dropped count</field>
+        <field type="uint32_t" name="udp_qgc_tx_dropped_bytes">UDP QGC Tx dropped bytes</field>
+        <field type="uint32_t" name="udp_qgc_tx_dropped_count">UDP QGC Tx dropped count</field>
+        <field type="uint32_t" name="udp_mc_rx_dropped_bytes">UDP MC Rx dropped bytes</field>
+        <field type="uint32_t" name="udp_mc_rx_dropped_count">UDP MC Rx dropped count</field>
+        <field type="uint32_t" name="udp_mc_tx_dropped_bytes">UDP MC Tx dropped bytes</field>
+        <field type="uint32_t" name="udp_mc_tx_dropped_count">UDP MC Tx dropped count</field>
+        <field type="uint32_t" name="udp_raw_mc_tx_dropped_bytes">UDP Raw MC Tx dropped bytes</field>
+        <field type="uint32_t" name="udp_raw_mc_tx_dropped_count">UDP Raw MC Tx dropped count</field>
+    </message>
+    <!-- RF SEEKER -->
+    <message id="12300" name="PANDION_RR_RFSEEKER_HEARTBEAT">
+      <description>Pandion Roadrunner RF Seeker Status message</description>
+      <field type="uint8_t" name="connection_alive">Connection Alive</field>
+      <field type="uint64_t" name="gps_timestamp_us" units="us">GPS Timestamp</field>
+    </message>
+    <message id="12301" name="PANDION_RR_RFSEEKER_TIME_SYNC_STATUS">
+      <description>Pandion Roadrunner time sync status message</description>
+      <field type="uint64_t" name="sync_time_us" units="us">Master timer reference GPS time</field>
+      <field type="int64_t" name="sync_skew_us" units="us">Master timer resync skew</field>
+      <field type="uint64_t" name="uorb_time_us" units="us">Seeker time since boot</field>
+    </message>
+    <message id="12302" name="PANDION_RR_RFSEEKER_NAV_SOLUTION">
+      <description>Pandion Roadrunner RF Seeker Nav Solution message</description>
+      <field type="double" name="lat" units="deg">Latitude</field>
+      <field type="double" name="lon" units="deg">Longitude</field>
+      <field type="float" name="alt" units="m">Geodetic altitude (WGS84)</field>
+      <field type="float[4]" name="q">Attitude quaternion (qw, qx, qy, qz) representing rotation from platform frame to ECEF frame (1 0 0 0 is the null-rotation)</field>
+      <field type="float[3]" name="vel" units="m/s">Velocity (east, north, up)</field>
+      <field type="float[3]" name="att_rate" units="rad/s">Angular rates (platform frame)</field>
+    </message>
+    <message id="12304" name="PANDION_RR_RFSEEKER_TARGET_INFO">
+      <description>Pandion Roadrunner RF Seeker Target Information message</description>
+      <field type="uint8_t" name="target_type" enum="PANDION_RR_RFSEEKER_TARGET_TYPE">Type of target</field>
+      <field type="uint32_t" name="num_updates">Number of updates whether the target was detected or not</field>
+      <field type="uint32_t" name="num_detects">Number of updates when the target was detected</field>
+      <field type="uint32_t" name="num_consec_misses">Number of consecutive no-detect updates</field>
+      <field type="uint8_t" name="in_track">Whether we are in-track</field>
+      <field type="int32_t" name="detect_num">seeker_detect.detect_num used in measurement update (-1 if no update)</field>
+      <field type="uint32_t" name="num_tracks">Number of target tracks</field>
+    </message>
+    <message id="12305" name="PANDION_RR_RFSEEKER_BIT_RESULTS">
+      <description>Pandion Roadrunner RF Seeker BIT Results message</description>
+      <field type="uint32_t" name="BIT_results">BIT results as a bit field (BIT_results=0 means seeker passed BIT)</field>
+    </message>
+    <message id="12306" name="PANDION_RR_PDU_TELEMETRY_POWER">
+      <description>Roadrunner PDU power telemetry.</description>
+      <field type="float" name="pdu_battery_voltage" units="V">PDU battery voltage</field>
+      <field type="float" name="pdu_fuel_pressure" units="bars">PDU fuel pressure</field>
+      <field type="float" name="pdu_left_engine_current" units="A">PDU left engine current</field>
+      <field type="float" name="pdu_left_engine_hssw_voltage" units="V">PDU left engine hssw</field>
+      <field type="float" name="pdu_left_engine_pwr_rail_voltage" units="V">PDU left engine power rail</field>
+      <field type="float" name="pdu_rigth_engine_current" units="A">PDU right engine current</field>
+      <field type="float" name="pdu_right_engine_hssw_voltage" units="V">PDU right engine hssw</field>
+      <field type="float" name="pdu_right_engine_pwr_rail_voltage" units="V">PDU right engine power rail</field>
+    </message>
+    <message id="12307" name="PANDION_RR_PDU_TELEMETRY_SERVO_VOLTAGE">
+      <description>Roadrunner PDU servo voltage telemetry.</description>
+      <field type="float" name="pdu_dorsal_voltage" units="V">PDU dorsal voltage</field>
+      <field type="float" name="pdu_ventral_voltage" units="V">PDU ventral voltage</field>
+      <field type="float" name="pdu_left_upper_voltage" units="V">PDU left upper voltage</field>
+      <field type="float" name="pdu_left_lower_voltage" units="V">PDU left lower voltage</field>
+      <field type="float" name="pdu_right_upper_voltage" units="V">PDU right upper voltage</field>
+      <field type="float" name="pdu_right_lower_voltage" units="V">PDU right lower voltage</field>
+      <field type="float" name="pdu_servo_power_rail_voltage" units="V">PDU servo power rail voltage</field>
+    </message>
+    <message id="12308" name="PANDION_RR_PDU_TELEMETRY_SERVO_CURRENT">
+      <description>Roadrunner PDU servo current telemetry.</description>
+      <field type="float" name="pdu_dorsal_current" units="A">PDU dorsal current</field>
+      <field type="float" name="pdu_ventral_current" units="A">PDU ventral current</field>
+      <field type="float" name="pdu_left_upper_current" units="A">PDU left upper current</field>
+      <field type="float" name="pdu_left_lower_current" units="A">PDU left lower current</field>
+      <field type="float" name="pdu_right_upper_current" units="A">PDU right upper current</field>
+      <field type="float" name="pdu_right_lower_current" units="A">PDU right lower current</field>
+      <field type="float" name="pdu_servo_tau1_current" units="A">PDU tau1 current</field>
+      <field type="float" name="pdu_servo_tau2_current" units="A">PDU tau2 current</field>
+    </message>
+    <message id="12309" name="PANDION_RR_PDU_TELEMETRY_GLOW_PLUG">
+      <description>Roadrunner PDU glow plug telemetry.</description>
+      <field type="uint16_t" name="pdu_glow_plug_sfc">PDU glow plug sfc</field>
+      <field type="uint16_t" name="pdu_glow_plug_test_index">PDU glow plug test index</field>
+      <field type="uint8_t" name="pdu_glow_plug_engine_index">PDU glow plug engine index</field>
+      <field type="uint16_t" name="pdu_glow_plug_resistance">PDU glow plug resistance</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_pass">PDU glow plug pass status</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_fail">PDU glow plug fail status</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_finished">PDU glow plug finished status</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_in_progress">PDU glow plug in-progress status</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_not_initiated">PDU glow plug not-initiated status</field>
+      <field type="uint8_t" name="pdu_glow_plug_status_not_supported">PDU glow plug not-supported status</field>
+    </message>
+    <message id="12310" name="PANDION_RR_PARAM_VALUE">
+      <description>Emit the value of a onboard parameter. The inclusion of param_count and param_index in the message allows the recipient to keep track of received parameters and allows him to re-request missing parameters after a loss or timeout. The parameter microservice is documented at https://mavlink.io/en/services/parameter.html.
+        Mirrors PARAM_VALUE, but for a 64-bit value. Additional field to specify stable parameters for the recipient.</description>
+      <field type="char[16]" name="param_id">Onboard parameter id, terminated by NULL if the length is less than 16 human-readable chars and WITHOUT null termination (NULL) byte if the length is exactly 16 chars - applications have to provide 16+1 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+      <field type="uint16_t" name="param_count">Total number of onboard parameters</field>
+      <field type="uint16_t" name="param_index">Index of this onboard parameter</field>
+      <field type="uint8_t" name="param_stable">Is this stable parameter</field>
+    </message>
+    <message id="12311" name="PANDION_RR_WARHEAD_ID">
+      <description>Warhead ID</description>
+      <field type="uint8_t" name="id" enum="PANDION_RR_WARHEAD_TYPE">Warhead ID</field>
+    </message>
+    <message id="12312" name="PANDION_RR_GCS_PARAM_LOAD">
+      <description>GCS param upload app message that provides parameter definitions, stable and unstable crc. At the end of transmission, confirm_send is use to indicate the vehicle to save provided parameters. For each PANDION_RR_GCS_PARAM_LOAD, the vehicle responds with PANDION_RR_GCS_PARAM_LOAD_ACK message below.
+      The double param_value is encoded in accordance with param_type.</description>
+      <field type="char[16]" name="param_id">Onboard parameter id, terminated by NULL if the length is less than 16 human-readable chars and WITHOUT null termination (NULL) byte if the length is exactly 16 chars - applications have to provide 16+1 bytes storage if the ID is stored as string</field>
+      <field type="double" name="param_value">Onboard parameter value</field>
+      <field type="uint8_t" name="param_type" enum="MAV_PARAM_TYPE">Onboard parameter type.</field>
+      <field type="uint32_t" name="stable_crc">Current stable crc</field>
+      <field type="uint32_t" name="unstable_crc">Current unstable crc</field>
+      <field type="uint16_t" name="param_index">Index of current param</field>
+      <field type="uint8_t" name="confirm_send">Confirm complete transmission or send clear cmd( 0: continue sending, 1: save params )</field>
+    </message>
+    <message id="12313" name="PANDION_RR_GCS_PARAM_LOAD_ACK">
+      <description>Vehicle acknowledgment of received parameter load message.</description>
+      <field type="char[16]" name="param_id">Onboard parameter id, terminated by NULL if the length is less than 16 human-readable chars and WITHOUT null termination (NULL) byte if the length is exactly 16 chars - applications have to provide 16+1 bytes storage if the ID is stored as string</field>
+      <field type="uint16_t" name="param_index">Index of current param</field>
+      <field type="uint8_t" name="load_stat">Result of parameter load (0: success, 1: invalid parameter, 2: stable store error, 3: unstable store error, 4: gen store error)</field>
+    </message>
+    <message id="12314" name="PANDION_RR_UPTIME">
+      <description>Message containing the current uptime as a pandion system tick and tick rate</description>
+      <field type="uint32_t" name="tick_time">Current RTOS tick time</field>
+      <field type="uint32_t" name="tick_rate">Ticks per second</field>
+    </message>
+    <message id="12315" name="PANDION_RR_ROUTE_PLANNING_KINEMATICS">
+      <description>Roadrunner kinematics used for MC Route Planning</description>
+      <field type="double" name="cruise_speed_mps" units="m/s">Cruise speed</field>
+      <field type="double" name="loiter_speed_mps" units="m/s">Loiter speed</field>
+      <field type="double" name="min_speed_mps" units="m/s">Minimum speed</field>
+      <field type="double" name="max_speed_mps" units="m/s">Maximum speed</field>
+      <field type="double" name="max_descend_rate_mps" units="m/s">Maximum descend rate</field>
+      <field type="double" name="max_climb_rate_mps" units="m/s">Maximum climb rate</field>
+      <field type="double" name="max_bank_angle_deg" units="deg">Maximum bank angle</field>
+      <field type="double" name="max_acceleration_mps2" units="m/s/s">Maximum acceleration</field>
+      <field type="double" name="far_field_end_tgo_sec" units="sec">Tgo time to end far-field guidance</field>
+      <field type="double" name="exit_maneuver_max_tgo_sec" units="sec">Max tgo to perform exit maneuver</field>
+    </message>
+    <message id="12316" name="PANDION_RR_KSZ_CONTROL">
+      <description>KSZ Control</description>
+      <field type="uint8_t" name="val">0 = Power off, 1 = Power On</field>
+    </message>
+    <message id="12317" name="PANDION_RR_VMS_ROUTE_PLANNING_STATUS">
+      <description>VMS Route Planning Status</description>
+      <field type="uint8_t" name="state" enum="PANDION_RR_HERMES_STATE">Hermes state</field>
+      <field type="uint8_t" name="substate" enum="PANDION_RR_HERMES_RUN_SUBSTATE">Hermes RUN mode substate</field>
+      <field type="uint8_t" name="buffer_violated">0 = Not Violated, 1 = KOZ buffer violated</field>
+      <field type="uint8_t" name="koz_violated">0 = Not Violated, 1 = KOZ violated</field>
+      <field type="uint8_t" name="pharos_lockout">0 = Accepting Pharos missions, 1 = Not accepting Pharos missions</field>
+      <field type="uint8_t" name="reroute_to_tse">0 = Rerouting to contingency loiter, 1 = Rerouting to TSE</field>
+      <field type="float"   name="buffer_coefficient">Min. turn radius scale factor used for determining KOZ buffer size</field>      
+    </message>
+    <message id="12318" name="PANDION_RR_SEEKER_POWER_STATUS">
+        <description>Seeker Power Status.</description>
+        <field type="uint8_t" name="status" enum="PANDION_RR_SEEKER_POWER_STATE">Seeker Power state</field>
+    </message>
+    <message id="12319" name="PANDION_RR_DECONFLICTION_VALIDITY_DATA">
+      <description>Deconfliction/Site configuration criteria validity status</description>
+      <field type="uint8_t" name="stale">No deconfliction data has been received or no data received in the last 5 seconds</field>
+      <field type="uint8_t" name="nest_id_mismatch">Deconfliction provided ID does not match the Nest reported ID</field>
+      <field type="uint8_t" name="landing_location_not_set">The landing latitude and longitude are 0</field>
+      <field type="uint8_t" name="landing_location_violates_fence">The landing latitude and longitude are outside the inner geofence</field>
+      <field type="uint8_t" name="contingency_loiter_center_violates_fence">The contingency loiter violates the inner fence</field>
+      <field type="uint8_t" name="contingency_loiter_violates_fence">The contingency loiter radius violates the inner fence</field>
+      <field type="uint8_t" name="contingency_loiter_center_violates_koz">The contingency loiter violates a keep-out-zone</field>
+      <field type="uint8_t" name="contingency_loiter_violates_koz">The contingency loiter radius violates a keep-out-zone</field>
+      <field type="uint8_t" name="launch_location_not_set">The launch location latitude, latitude, and altitude are 0</field>
+      <field type="uint8_t" name="launch_location_violates_fence">The launch location violates the inner fence</field>
+      <field type="uint8_t" name="invalid_scuttle_1">Scuttle location is enable and violates the inner fence or a keep-out-zone</field>
+      <field type="uint8_t" name="invalid_scuttle_2">Scuttle location is enable and violates the inner fence or a keep-out-zone</field>
+      <field type="uint8_t" name="invalid_scuttle_3">Scuttle location is enable and violates the inner fence or a keep-out-zone</field>
+      <field type="uint8_t" name="invalid_scuttle_4">Scuttle location is enable and violates the inner fence or a keep-out-zone</field>
+      <field type="uint8_t" name="invalid_scuttle_5">Scuttle location is enable and violates the inner fence or a keep-out-zone</field>
+    </message>
+    <message id="12320" name="PANDION_RR_HOST_NAV_ATT_STATE">
+        <description>Host Navigation and Attitude State Message.</description>
+        <field type="uint8_t" name="uda_spin_state" enum="PANDION_RR_UDA_SPIN_STATE">UDA Spin State</field>
+        <field type="uint64_t" name="uda_sys_tov_ns" units="ns">UDA Data Time of Validity</field>
+        <field type="float" name="uda_vel_east_mps" units="m/s">UDA East Velocity</field>
+        <field type="float" name="uda_vel_north_mps" units="m/s">UDA North Velocity</field>
+        <field type="float" name="uda_vel_up_mps" units="m/s">UDA Up Velocity</field>
+        <field type="float" name="uda_acc_east_mpss" units="m/s/s">UDA East Acceleration</field>
+        <field type="float" name="uda_acc_north_mpss" units="m/s/s">UDA North Acceleration</field>
+        <field type="float" name="uda_acc_up_mpss" units="m/s/s">UDA Up Acceleration</field>
+        <field type="float" name="uda_att_roll_rad" units="rad">UDA Attitude Roll</field>
+        <field type="float" name="uda_att_yaw_rad" units="rad">UDA Attitude Yaw</field>
+        <field type="float" name="uda_att_pitch_rad" units="rad">UDA Attitude Pitch</field>
+        <field type="float" name="uda_att_rate_roll_rps" units="rad/s">UDA Attitude Roll Rate</field>
+        <field type="float" name="uda_att_rate_yaw_rps" units="rad/s">UDA Attitude Yaw Rate</field>
+        <field type="float" name="uda_att_rate_pitch_rps" units="rad/s">UDA Attitude Pitch Rate</field>
+        <field type="float" name="uda_alt_m" units="m">UDA Altitude</field>
+        <field type="double" name="uda_lat_rad" units="rad">UDA Lattitude</field>
+        <field type="double" name="uda_long_rad" units="rad">UDA Longitude</field>
+    </message>
+    <message id="12321" name="PANDION_RR_HOST_NEST_CAL">
+        <description>Host Nest Calibration Message.</description>
+        <field type="float" name="platform_lever_arm_x_m" units="m">Platform lever arm for X direction calibration parameter</field>
+        <field type="float" name="platform_lever_arm_y_m" units="m">Platform lever arm for Y direction calibration parameter</field>
+        <field type="float" name="platform_lever_arm_z_m" units="m">Platform lever arm for Z direction calibration parameter</field>
+        <field type="float" name="att_offset_roll_deg" units="deg"> Attitude roll offset calibration parameter</field>
+        <field type="float" name="att_offset_pitch_deg" units="deg"> Attitude pitch offset calibration parameter</field>
+        <field type="float" name="att_offset_yaw_deg" units="deg"> Attitude yaw offset calibration parameter</field>
+    </message>
+    <message id="12322" name="PANDION_RR_CYCLE_WCET">
+      <description>Cycle Task WCET</description>
+      <field type="uint32_t" name="wcet_percent_x10">WCET percent multiplied by 10</field>
+      <field type="uint32_t" name="avg_percent_x10">Average execution time percent multiplied by 10</field>
+    </message>
+  </messages>
+</mavlink>
