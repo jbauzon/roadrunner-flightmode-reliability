@@ -4,6 +4,8 @@ Main Window - Roadrunner Flight Test operator console.
 import os
 import json
 import time
+import socket
+import threading
 import platform
 import subprocess
 from datetime import datetime
@@ -12,7 +14,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QMessageBox, QFileDialog, QApplication, QScrollArea, QSizePolicy
 )
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
 from hardware.daq import SimpleDAQController
@@ -31,8 +33,18 @@ from .widgets import (
 class MultiUUTTestGUI(QMainWindow):
     """Roadrunner Flight Test operator console — multi-UUT IBIT and Playback."""
 
+    # Signal for executing commands from the command server thread
+    _remote_cmd = pyqtSignal(str, dict)
+
+    COMMAND_PORT = 18888
+
     def __init__(self):
         super().__init__()
+
+        # Remote command signal -> handler on GUI thread
+        self._remote_cmd.connect(self._execute_remote_command)
+        self._cmd_response = {}
+        self._cmd_event = threading.Event()
 
         # ── Directories ───────────────────────────────────────────────────
         # script_dir is ui/ — project root is one level up
@@ -82,6 +94,9 @@ class MultiUUTTestGUI(QMainWindow):
         QTimer.singleShot(200, lambda: self.on_test_mode_changed(
             self.test_config_widget.get_test_mode()
         ))
+
+        # Start command server for remote control (click_start.py, test scripts)
+        self._start_command_server()
 
     # ═══════════════════════════════════════════════════════════════════════
     # UI construction
@@ -771,6 +786,160 @@ class MultiUUTTestGUI(QMainWindow):
             self.log("✓ Settings loaded")
         except Exception as e:
             self.log(f"⚠ Could not load settings: {e}")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Remote command server
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _start_command_server(self):
+        """Start a TCP command server on localhost for remote control."""
+        def _server():
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                srv.bind(('127.0.0.1', self.COMMAND_PORT))
+                srv.listen(1)
+                srv.settimeout(1.0)
+                self.log(f"Command server listening on port {self.COMMAND_PORT}")
+            except OSError as e:
+                self.log(f"Command server failed to start: {e}")
+                return
+
+            while True:
+                try:
+                    conn, addr = srv.accept()
+                    data = conn.recv(4096).decode('utf-8')
+                    if data:
+                        try:
+                            req = json.loads(data)
+                            cmd = req.get('cmd', '')
+                            args = req.get('args', {})
+
+                            # Execute on GUI thread via signal
+                            self._cmd_event.clear()
+                            self._cmd_response = {}
+                            self._remote_cmd.emit(cmd, args)
+
+                            # Wait for GUI thread to process (up to 30s)
+                            self._cmd_event.wait(timeout=30.0)
+                            response = self._cmd_response
+                        except json.JSONDecodeError:
+                            response = {'error': 'Invalid JSON'}
+
+                        conn.sendall(json.dumps(response).encode('utf-8'))
+                    conn.close()
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+
+        t = threading.Thread(target=_server, daemon=True)
+        t.start()
+
+    def _execute_remote_command(self, cmd, args):
+        """Execute a remote command on the GUI thread."""
+        try:
+            if cmd == 'start':
+                # Bypass QMessageBox confirmation
+                self._auto_start_test(int(args.get('seconds', 120)))
+                self._cmd_response = {'ok': True, 'msg': 'Test started'}
+
+            elif cmd == 'stop':
+                self.testing_active = False
+                if self.current_test_executor:
+                    self.current_test_executor.stop()
+                self._cmd_response = {'ok': True, 'msg': 'Stop requested'}
+
+            elif cmd == 'emergency':
+                self.emergency_stop()
+                self._cmd_response = {'ok': True, 'msg': 'Emergency stop'}
+
+            elif cmd == 'status':
+                uut_statuses = [
+                    {'serial': u.serial_number, 'status': u.status,
+                     'iterations': u.iterations_completed}
+                    for u in self.uuts
+                ]
+                self._cmd_response = {
+                    'ok': True,
+                    'testing': self.testing_active,
+                    'mode': self.test_mode,
+                    'uuts': uut_statuses,
+                    'elapsed': time.time() - self.batch_start_datetime.timestamp()
+                    if self.batch_start_datetime and self.testing_active else 0,
+                }
+
+            elif cmd == 'screenshot':
+                path = os.path.join(
+                    self.project_root, 'screenshots',
+                    f'remote_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
+                )
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                pixmap = self.grab()
+                pixmap.save(path, 'PNG')
+                self._cmd_response = {'ok': True, 'path': path,
+                                      'size': f'{pixmap.width()}x{pixmap.height()}'}
+
+            elif cmd == 'set_duration':
+                secs = int(args.get('seconds', 120))
+                if secs < 60:
+                    self.test_config_widget.duration_input.setValue(secs)
+                    self.test_config_widget.duration_unit_combo.setCurrentText("Seconds")
+                elif secs < 3600:
+                    self.test_config_widget.duration_input.setValue(secs // 60)
+                    self.test_config_widget.duration_unit_combo.setCurrentText("Minutes")
+                else:
+                    self.test_config_widget.duration_input.setValue(secs // 3600)
+                    self.test_config_widget.duration_unit_combo.setCurrentText("Hours")
+                self._cmd_response = {'ok': True, 'seconds': secs}
+
+            else:
+                self._cmd_response = {'error': f'Unknown command: {cmd}'}
+
+        except Exception as e:
+            self._cmd_response = {'error': str(e)}
+        finally:
+            self._cmd_event.set()
+
+    def _auto_start_test(self, duration_seconds=120):
+        """Start the test programmatically without QMessageBox confirmation."""
+        if not self.daq.do_task:
+            raise Exception("DAQ not initialized")
+        if not self.uuts:
+            raise Exception("No UUTs configured")
+
+        # Set duration
+        self.test_config_widget.duration_input.setValue(duration_seconds)
+        self.test_config_widget.duration_unit_combo.setCurrentText("Seconds")
+
+        test_mode = self.test_config_widget.get_test_mode()
+        playback_csv = self.test_config_widget.get_playback_csv()
+        playback_type = self.test_config_widget.get_playback_type()
+
+        # Reset UUTs
+        for uut in self.uuts:
+            uut.status = "Ready"
+            uut.iterations_completed = 0
+        self.uut_table_widget.update_table(self.uuts)
+
+        self.testing_active = True
+        self.batch_start_datetime = datetime.now()
+        self.batch_end_time = self.batch_start_datetime.timestamp() + duration_seconds
+        self.current_uut_index = -1
+        self.test_mode = test_mode
+        self.playback_csv = playback_csv
+        self.playback_type = playback_type
+
+        self.test_config.update(self.test_config_widget.get_config())
+        self.control_buttons.set_testing_mode(True)
+
+        mode_label = "IBIT" if test_mode == 'ibit' else f"Playback ({playback_type})"
+        self.log("=" * 56)
+        self.log(f"  BATCH START  --  {mode_label}  ({duration_seconds}s)")
+        self.log("=" * 56)
+
+        self.elapsed_timer.start(1000)
+        self.start_next_uut()
 
     def closeEvent(self, event):
         if self.testing_active:

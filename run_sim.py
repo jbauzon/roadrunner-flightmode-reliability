@@ -94,6 +94,49 @@ def inject_mock_daq():
     print("[Launcher] MockDAQController injected - no NI-DAQmx hardware needed")
 
 
+def patch_loopback_for_sim():
+    """
+    Patch connect_to_vehicle to allow loopback addresses in sim mode.
+
+    Production code rejects 127.x.x.x for safety. In sim mode we need
+    loopback because the sim vehicles run on localhost. This patch ONLY
+    runs when launched via run_sim.py — production code is never modified.
+    """
+    import vehicle.connection as conn_mod
+    _original = conn_mod.connect_to_vehicle
+
+    def _sim_connect(ip_address, port, timeout=10.0):
+        import ipaddress
+        ip = ipaddress.ip_address(ip_address)
+        # Allow loopback in sim mode
+        if ip.is_multicast:
+            raise ValueError("Multicast addresses not allowed")
+
+        script_dir = os.path.dirname(os.path.abspath(conn_mod.__file__))
+        dialect_dir = os.path.join(script_dir, "dialects")
+        if dialect_dir not in sys.path:
+            sys.path.insert(0, dialect_dir)
+
+        from pymavlink import mavutil
+        connection_string = f"udpin:{str(ip)}:{port}"
+        master = mavutil.mavlink_connection(
+            connection_string,
+            dialect="pandion_vehicle_roadrunner",
+            source_system=255,
+            source_component=190,
+        )
+        hb = master.wait_heartbeat(timeout=timeout)
+        if not hb:
+            raise Exception(
+                f"Connection timeout after {timeout}s - "
+                f"no heartbeat from {ip_address}:{port}"
+            )
+        return master
+
+    conn_mod.connect_to_vehicle = _sim_connect
+    print("[Launcher] connect_to_vehicle patched - loopback allowed for sim")
+
+
 def pre_populate_uuts(vehicles):
     """
     Write a uut_config.json with the simulated vehicles so the GUI
@@ -184,7 +227,10 @@ def main():
     # Inject mock DAQ (no NI-DAQmx hardware needed)
     inject_mock_daq()
 
-    from sim.vehicle import SimFleet
+    # Allow loopback addresses for sim mode
+    patch_loopback_for_sim()
+
+    from sim.fleet import SimFleet
     fleet = SimFleet()
 
     sims = []

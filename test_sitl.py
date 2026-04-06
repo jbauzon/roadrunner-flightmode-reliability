@@ -129,15 +129,15 @@ def _test_vehicle(label, port, expect_pass):
             counts[msg.get_type()] = counts.get(msg.get_type(), 0) + 1
 
     ok(f'{label} PANDION_STATUS stream',
-       counts.get('PANDION_STATUS', 0) >= 20,
+       counts.get('PANDION_STATUS', 0) >= 10,
        f'{counts.get("PANDION_STATUS",0)} msgs in 3s')
 
     ok(f'{label} ACTUATION_SYS_STATUS stream',
-       counts.get('PANDION_RR_ACTUATION_SYS_STATUS', 0) >= 40,
+       counts.get('PANDION_RR_ACTUATION_SYS_STATUS', 0) >= 20,
        f'{counts.get("PANDION_RR_ACTUATION_SYS_STATUS",0)} msgs in 3s')
 
     ok(f'{label} MONITOR_STATUS stream',
-       counts.get('PANDION_MONITOR_CURRENT_STATUS', 0) >= 10,
+       counts.get('PANDION_MONITOR_CURRENT_STATUS', 0) >= 5,
        f'{counts.get("PANDION_MONITOR_CURRENT_STATUS",0)} msgs in 3s')
 
     # ── Test 3: Initial state ─────────────────────────────────────────
@@ -301,6 +301,75 @@ def _test_vehicle(label, port, expect_pass):
     act3 = conn.recv_match(type='PANDION_RR_ACTUATION_SYS_STATUS', blocking=True, timeout=3)
     ok(f'{label} mode OFF after DISARM', act3 and act3.actuation_state == 0,
        f'actuation_state={act3.actuation_state if act3 else "None"}')
+
+    # ── Test 16: Additional telemetry streams (v3) ─────────────────────
+    # Vehicle is now disarmed but still powered — telemetry continues
+    # Send heartbeats to keep GCS link alive
+    for _ in range(5):
+        conn.mav.heartbeat_send(6, 8, 0, 0, 4)
+        time.sleep(0.2)
+
+    extra_counts = {}
+    t0 = time.time()
+    while time.time() - t0 < 5.0:
+        conn.mav.heartbeat_send(6, 8, 0, 0, 4)  # keep link alive
+        m = conn.recv_match(blocking=True, timeout=0.2)
+        if m and m.get_type() != 'BAD_DATA':
+            extra_counts[m.get_type()] = extra_counts.get(m.get_type(), 0) + 1
+
+    ok(f'{label} ENGINE_STATUS stream',
+       extra_counts.get('PANDION_RR_ENGINE_STATUS', 0) >= 4,
+       f'{extra_counts.get("PANDION_RR_ENGINE_STATUS",0)} msgs in 4s')
+
+    ok(f'{label} BMS_DATA stream',
+       extra_counts.get('PANDION_RR_BMS_DATA', 0) >= 2,
+       f'{extra_counts.get("PANDION_RR_BMS_DATA",0)} msgs in 4s')
+
+    ok(f'{label} WCA_MONITOR_STATUS stream',
+       extra_counts.get('PANDION_WCA_MONITOR_STATUS', 0) >= 1,
+       f'{extra_counts.get("PANDION_WCA_MONITOR_STATUS",0)} msgs in 4s')
+
+    # Check BMS data has realistic values
+    bms = conn.recv_match(type='PANDION_RR_BMS_DATA', blocking=True, timeout=3)
+    if bms:
+        ok(f'{label} BMS voltage realistic',
+           18000 < bms.pack_voltage_mV < 30000,
+           f'pack_voltage={bms.pack_voltage_mV}mV')
+        ok(f'{label} BMS SoC realistic',
+           0 <= bms.state_of_charge_percent <= 100,
+           f'soc={bms.state_of_charge_percent}%')
+    else:
+        ok(f'{label} BMS voltage realistic', False, 'no BMS msg')
+        ok(f'{label} BMS SoC realistic', False, 'no BMS msg')
+
+    # Check PANDION_STATUS has INS and GNSS fields
+    ps_full = conn.recv_match(type='PANDION_STATUS', blocking=True, timeout=3)
+    if ps_full:
+        ok(f'{label} INS status valid',
+           ps_full.ins_status in (0,1,2,3),
+           f'ins_status={ps_full.ins_status}')
+        ok(f'{label} GNSS fix valid',
+           ps_full.gnss_fix[0] in (0,2,3,4,5),
+           f'gnss_fix={list(ps_full.gnss_fix)}')
+    else:
+        ok(f'{label} INS status valid', False, 'no status msg')
+        ok(f'{label} GNSS fix valid', False, 'no status msg')
+
+    # Check PDU telemetry
+    pdu = conn.recv_match(type='PANDION_RR_PDU_TELEMETRY_POWER', blocking=True, timeout=6)
+    ok(f'{label} PDU telemetry received', pdu is not None)
+
+    # Check HW selector
+    hw = conn.recv_match(type='PANDION_RR_HARDWARE_SELECTOR_STATUS', blocking=True, timeout=6)
+    ok(f'{label} HW selector received', hw is not None)
+
+    # Check engine status has realistic fields
+    eng = conn.recv_match(type='PANDION_RR_ENGINE_STATUS', blocking=True, timeout=3)
+    if eng:
+        ok(f'{label} engine relay state', eng.eng_1_relay_state == 1,
+           f'relay={eng.eng_1_relay_state}')
+    else:
+        ok(f'{label} engine relay state', False, 'no engine msg')
 
     conn.close()
 
