@@ -34,3 +34,6 @@ app_settings.json
 
 # Compiled MAVLink dialects
 vehicle/dialects/*_pb2.py
+screenshots/
+sim_uut_config.json
+sim_config.yaml

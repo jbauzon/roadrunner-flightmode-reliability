@@ -17,7 +17,7 @@ from PyQt5.QtGui import QFont
 
 from hardware.daq import SimpleDAQController
 from vehicle.connection import UUT
-from test.executor import UUTTestExecutor, PlaybackTestExecutor
+from testing.executor import UUTTestExecutor, PlaybackTestExecutor
 from . import theme as T
 from .widgets import (
     HeaderBanner,
