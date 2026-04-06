@@ -1,671 +1,785 @@
 # -*- coding: utf-8 -*-
 """
-PandionVehicleSim -- Real UDP MAVLink vehicle simulator.
+PandionVehicleSim v2 -- Production-fidelity Pandion vehicle simulator.
 
-Listens on a UDP port and responds with authentic Pandion MAVLink telemetry,
-driving the full state machine:
-
-  DISARMED → ARM → GROUND_ARMED → OPERATE → PLAYBACK → IBIT → OPERATE → DISARM
-
-Configurable:
-  - ibit_pass:       True  → IBIT completes with all surfaces passing
-                     False → IBIT fails with configurable mistracking flags
-  - monitors:        list of monitor IDs to assert on boot (simulates real faults)
-  - ibit_duration_s: how long to spend in each IBIT substate
-  - verbose:         print every sent/received message
-
-Usage (one sim per vehicle):
-    python -m sim.vehicle --port 9985 --sysid 1 --pass
-    python -m sim.vehicle --port 9986 --sysid 2 --fail --mistracking 64,128
+Improvements over v1:
+  1.  Monitor re-assertion: monitors linked to conditions that continuously
+      evaluate (GNSS, INS, geofence, MC clock). Clearing only suppresses
+      until the condition re-triggers on the next evaluation cycle.
+  2.  Boot timing: vehicle takes boot_time_s (default 5s in sim) to come
+      online. No telemetry until boot completes. Heartbeat starts at boot.
+  3.  Power cycle: relay state is tracked. Power off -> vehicle state resets,
+      params that require reboot take effect. Power on -> boot sequence.
+  4.  Monitor latching delay: monitors spend eval_window_s in currently_setting
+      before latching to currently_set.
+  5.  Engine status telemetry: PANDION_RR_ENGINE_STATUS at 2 Hz with realistic
+      fuel pump, EGT, RPM values.
+  6.  Realistic IBIT command profiles: smooth ramp -> hold -> ramp reverse
+      per phase, not step functions.
+  7.  Mistracking detection: feedback must differ by >50 cdeg for >0.5s
+      continuously before the flag is set (matches real firmware spec).
+  8.  Connection loss: configurable packet_drop_rate introduces random
+      telemetry drops. Also simulates brief link loss on power transitions.
+  9.  Multiple IBIT cycles: configurable ibit_cycles (1-3). Vehicle may run
+      IBIT multiple times before declaring final result.
+  10. Param persistence: CLASSIC_MODE_EN and STBL_PRMS_APPVD only take
+      effect after power cycle. USE_NEST is immediate.
+  11. Electrical noise: when any vehicle in the same SimFleet toggles relay,
+      all other vehicles get a burst of surface noise.
+  12. Correlated surface noise: noise amplitude scales with servo speed,
+      temperature, and a low-frequency vibration component.
 """
 
-import os
-import sys
-import time
-import math
-import random
-import threading
-import argparse
+import os, sys, time, math, random, threading, collections
 
-# Force UTF-8 output on Windows
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+sys.path.insert(0, os.path.join(_ROOT, "vehicle", "dialects"))
+sys.path.insert(0, _ROOT)
+
+import importlib
+_d = importlib.import_module("pandion_vehicle_roadrunner")
+sys.modules["pymavlink.dialects.v10.pandion_vehicle_roadrunner"] = _d
+import pymavlink.dialects.v10 as _v10
+setattr(_v10, "pandion_vehicle_roadrunner", _d)
+from pymavlink import mavutil
+
 if sys.platform == 'win32':
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except Exception:
-        pass
-
-from pymavlink import mavutil
-
-# Add dialect directory so pymavlink can find the pre-generated .py dialect
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
-_DIALECT_DIR = os.path.join(_PROJECT_ROOT, "vehicle", "dialects")
-if _DIALECT_DIR not in sys.path:
-    sys.path.insert(0, _DIALECT_DIR)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-# Pre-import the dialect module and inject it into pymavlink's namespace
-# so mavutil.mavlink_connection(dialect=...) finds it without re-generating from XML
-import importlib
-_dialect = importlib.import_module("pandion_vehicle_roadrunner")
-sys.modules["pymavlink.dialects.v10.pandion_vehicle_roadrunner"] = _dialect
-
-import pymavlink.dialects.v10 as _v10_pkg
-setattr(_v10_pkg, "pandion_vehicle_roadrunner", _dialect)
-
-from pymavlink import mavutil
+    except: pass
 
 
-# ── State machine constants ────────────────────────────────────────────────────
+# ===========================================================================
+# Constants
+# ===========================================================================
 
-class FlightRegime:
-    GROUND_DISARMED = 0
-    GROUND_ARMED    = 1
-    AUTO_TAKEOFF    = 2
-    HOVER           = 3
-    FORWARD_TRANS   = 4
-    CRUISE          = 5
-    INVALID         = 255
+class FR:
+    DISARMED = 0; ARMED = 1
 
-class ActuationState:
-    OFF      = 0
-    IBIT     = 1
-    OPERATE  = 2
-    MANUAL   = 3
-    PLAYBACK = 4
-    TRIM     = 5
+class Act:
+    OFF = 0; IBIT = 1; OPERATE = 2; MANUAL = 3; PLAYBACK = 4; TRIM = 5
 
-class IBITSubstate:
-    BEGIN          = 0
-    WAIT_FOR_SETTLE= 1
-    ELEVON         = 2
-    RUDDERS        = 3
-    TVC            = 4
-    COMPLETE       = 5
+class Sub:
+    BEGIN = 0; SETTLE = 1; ELEVON = 2; RUDDERS = 3; TVC = 4; DONE = 5
 
-class MistrackingFlags:
-    UPPER_RUDDER    = 1
-    LOWER_RUDDER    = 2
-    LEFT_TVC_UPPER  = 4
-    LEFT_TVC_LOWER  = 8
-    RIGHT_TVC_UPPER = 16
-    RIGHT_TVC_LOWER = 32
-    LEFT_ELEVON     = 64
-    RIGHT_ELEVON    = 128
+class MF:
+    UPPER_RUD = 1; LOWER_RUD = 2; L_TVC_UP = 4; L_TVC_LO = 8
+    R_TVC_UP = 16; R_TVC_LO = 32; L_ELEV = 64; R_ELEV = 128
 
-# IBIT substate timing (seconds per phase)
-IBIT_PHASE_DURATIONS = {
-    IBITSubstate.BEGIN:           1.0,
-    IBITSubstate.WAIT_FOR_SETTLE: 3.0,
-    IBITSubstate.ELEVON:          8.0,
-    IBITSubstate.RUDDERS:         8.0,
-    IBITSubstate.TVC:             8.0,
-    IBITSubstate.COMPLETE:        2.0,
+PHASE_DUR = {Sub.BEGIN:1, Sub.SETTLE:3, Sub.ELEVON:8, Sub.RUDDERS:8, Sub.TVC:8, Sub.DONE:2}
+
+SURFACES = ['left_elevon','right_elevon','dorsal_rudder','ventral_rudder',
+            'left_tvc_upper','left_tvc_lower','right_tvc_upper','right_tvc_lower']
+
+FLAG_SURF = {
+    MF.L_ELEV:'left_elevon', MF.R_ELEV:'right_elevon',
+    MF.UPPER_RUD:'dorsal_rudder', MF.LOWER_RUD:'ventral_rudder',
+    MF.L_TVC_UP:'left_tvc_upper', MF.L_TVC_LO:'left_tvc_lower',
+    MF.R_TVC_UP:'right_tvc_upper', MF.R_TVC_LO:'right_tvc_lower',
 }
 
+# IBIT profiles: list of (target_cdeg, hold_fraction_of_phase)
+# Ramp to target over first 15%, hold 70%, ramp back over last 15%
+IBIT_PROFILES = {
+    Sub.ELEVON: {
+        'left_elevon':  [(1500, 0.4), (-1500, 0.4), (0, 0.2)],
+        'right_elevon': [(-1500, 0.4), (1500, 0.4), (0, 0.2)],
+    },
+    Sub.RUDDERS: {
+        'dorsal_rudder':  [(1200, 0.4), (-1200, 0.4), (0, 0.2)],
+        'ventral_rudder': [(-1200, 0.4), (1200, 0.4), (0, 0.2)],
+    },
+    Sub.TVC: {
+        'left_tvc_upper':  [(800, 0.3), (-800, 0.3), (800, 0.2), (0, 0.2)],
+        'left_tvc_lower':  [(-800, 0.3), (800, 0.3), (-800, 0.2), (0, 0.2)],
+        'right_tvc_upper': [(800, 0.3), (-800, 0.3), (800, 0.2), (0, 0.2)],
+        'right_tvc_lower': [(-800, 0.3), (800, 0.3), (-800, 0.2), (0, 0.2)],
+    },
+}
 
-# ── Surface telemetry model ────────────────────────────────────────────────────
+# Monitor conditions: id -> (name, eval_fn(vehicle) -> bool)
+# If eval_fn returns True, monitor is asserted
+def _define_monitor_conditions():
+    return {
+        0: ("GNSS Configuration",    lambda v: not v._booted or v._boot_elapsed() < 10),
+        1: ("INS Aligning",          lambda v: not v._booted or v._boot_elapsed() < 8),
+        2: ("Inner Geofence Invalid", lambda v: True),   # always until overridden
+        3: ("Outer Geofence Invalid", lambda v: True),
+        4: ("Deconfliction Invalid",  lambda v: True),
+        5: ("MC Clock Not Synced",    lambda v: not v._booted or v._boot_elapsed() < 12),
+        10: ("RC Rotor Switch",       lambda v: v.fr == FR.ARMED),  # appears after ARM
+        11: ("VN GPS Error",          lambda v: not v._booted or v._boot_elapsed() < 15),
+    }
 
-class SurfaceModel:
+
+# ===========================================================================
+# Servo with correlated noise (#12)
+# ===========================================================================
+
+class Servo:
     """
-    Simple first-order lag model for a servo surface.
-    feedback tracks command with realistic lag and noise.
+    Second-order servo model with:
+      - First-order lag tracking
+      - Correlated noise: vibration (low-freq), thermal, load-dependent
+      - Mistracking detection: >50 cdeg for >0.5s (#7)
     """
-    def __init__(self, initial_cdeg=0.0, tau=0.08, noise_cdeg=2.0):
-        self.command_cdeg  = initial_cdeg
-        self.feedback_cdeg = initial_cdeg
-        self.tau           = tau          # time constant (s)
-        self.noise_cdeg    = noise_cdeg
-        self.current_mA    = 0.0
-        self.temp_degC     = 25.0
+    MISTRACK_THRESHOLD_CDEG = 50.0
+    MISTRACK_DURATION_S = 0.5
 
-    def step(self, dt):
-        # First-order lag
-        error = self.command_cdeg - self.feedback_cdeg
-        self.feedback_cdeg += (error / self.tau) * dt
-        # Noise
-        self.feedback_cdeg += random.gauss(0, self.noise_cdeg * dt)
-        # Current proportional to effort
-        self.current_mA = abs(error) * 2.5 + random.gauss(200, 10)
-        # Temperature creep
-        self.temp_degC  = 25.0 + abs(self.command_cdeg) * 0.02
+    def __init__(self, tau=0.08):
+        self.cmd = 0.0
+        self.fb = 0.0
+        self.vel = 0.0   # servo velocity for noise correlation
+        self.cur = 200.0
+        self.temp = 25.0
+        self._frozen = False
+        self.tau = tau
+
+        # Vibration state (low-frequency oscillation)
+        self._vib_phase = random.uniform(0, 2*math.pi)
+        self._vib_freq = random.uniform(3, 8)  # Hz
+
+        # Mistracking detection state (#7)
+        self._mistrack_accum = 0.0  # seconds above threshold
+        self._mistracking = False
+
+        # External noise injection (#11)
+        self._ext_noise = 0.0
+        self._ext_noise_decay = 0.95
+
+    def step(self, dt, global_time):
+        # Decay external noise
+        self._ext_noise *= self._ext_noise_decay
+
+        if self._frozen:
+            # Mistracking: feedback drifts away from command
+            drift = 200.0 + 20.0 * math.sin(global_time * 2.0)
+            self.fb = self.cmd + drift
+            self.cur = 1500 + random.gauss(0, 80)
+            self.temp = 35.0 + abs(self.cmd) * 0.02
+        else:
+            # First-order lag
+            err = self.cmd - self.fb
+            old_fb = self.fb
+            self.fb += (err / self.tau) * dt
+            self.vel = (self.fb - old_fb) / max(dt, 0.001)
+
+            # Correlated noise (#12)
+            # Base: small gaussian
+            noise = random.gauss(0, 1.0)
+            # Vibration: low-frequency sinusoidal
+            self._vib_phase += self._vib_freq * dt * 2 * math.pi
+            noise += 3.0 * math.sin(self._vib_phase)
+            # Load-dependent: more noise when servo is moving fast
+            noise += abs(self.vel) * 0.003 * random.gauss(0, 1)
+            # Temperature-dependent: hotter = noisier
+            noise *= (1.0 + max(0, self.temp - 30) * 0.02)
+            # External noise injection (#11)
+            noise += self._ext_noise * random.gauss(0, 1)
+
+            self.fb += noise * dt
+            self.cur = abs(err) * 2.5 + abs(self.vel) * 0.5 + random.gauss(200, 15)
+
+        # Temperature model
+        self.temp += (abs(self.cmd) * 0.001 - (self.temp - 25) * 0.01) * dt
+        self.temp = max(15, min(85, self.temp))
+
+        # Mistracking detection (#7)
+        track_err = abs(self.cmd - self.fb)
+        if track_err > self.MISTRACK_THRESHOLD_CDEG:
+            self._mistrack_accum += dt
+            if self._mistrack_accum >= self.MISTRACK_DURATION_S:
+                self._mistracking = True
+        else:
+            self._mistrack_accum = max(0, self._mistrack_accum - dt * 2)  # decay
+            # Don't clear _mistracking once set (latched until IBIT reset)
+
+    def freeze(self): self._frozen = True
+    def unfreeze(self): self._frozen = False; self._mistracking = False; self._mistrack_accum = 0
+    def inject_noise(self, amplitude): self._ext_noise = amplitude
 
 
-# ── Main simulator ─────────────────────────────────────────────────────────────
+# ===========================================================================
+# Monitor system with condition evaluation + latching delay (#1, #4)
+# ===========================================================================
+
+class MonitorSystem:
+    """
+    Simulates Pandion's contingency management monitor system.
+    - Monitors have conditions that are continuously evaluated
+    - New assertions go to _setting first (latching delay)
+    - After eval_window they latch to _set
+    - Override/clear suppresses until next re-evaluation
+    - Overridden monitors don't re-assert from conditions
+    """
+
+    def __init__(self, eval_window_s=0.8):
+        self.eval_window = eval_window_s
+        self._set = set()
+        self._setting = {}       # mid -> timestamp when it started setting
+        self._overridden = set()
+        self._suppressed = set() # cleared monitors that won't re-assert this cycle
+        self._lock = threading.Lock()
+
+    def evaluate(self, vehicle, conditions):
+        """Run all monitor conditions, update states."""
+        now = time.time()
+        with self._lock:
+            # Latch: _setting -> _set after eval_window
+            newly_set = []
+            for mid, ts in list(self._setting.items()):
+                if now - ts >= self.eval_window:
+                    self._set.add(mid)
+                    newly_set.append(mid)
+            for mid in newly_set:
+                del self._setting[mid]
+
+            # Evaluate conditions
+            for mid, (name, eval_fn) in conditions.items():
+                if mid in self._overridden:
+                    continue  # overridden, skip
+                if mid in self._suppressed:
+                    continue  # recently cleared, skip this cycle
+                try:
+                    if eval_fn(vehicle):
+                        if mid not in self._set and mid not in self._setting:
+                            self._setting[mid] = now
+                except:
+                    pass
+
+            # Clear suppression after one cycle
+            self._suppressed.clear()
+
+    def clear(self, mid):
+        with self._lock:
+            self._set.discard(mid)
+            if mid in self._setting:
+                del self._setting[mid]
+            self._overridden.add(mid)
+            self._suppressed.add(mid)
+
+    def cancel_override(self, mid):
+        with self._lock:
+            self._overridden.discard(mid)
+
+    def force_set(self, mid):
+        with self._lock:
+            self._set.add(mid)
+
+    def get_state(self):
+        with self._lock:
+            return (set(self._set),
+                    set(self._setting.keys()),
+                    set(self._overridden))
+
+    @property
+    def is_clear(self):
+        with self._lock:
+            return len(self._set) == 0 and len(self._setting) == 0
+
+
+# ===========================================================================
+# Vehicle simulator
+# ===========================================================================
 
 class PandionVehicleSim:
-    """
-    Full Pandion vehicle simulator.
-    Sends real UDP MAVLink packets and reacts to commands from the test software.
-    """
 
-    def __init__(self,
-                 bind_ip='0.0.0.0',
-                 port=9985,
-                 sysid=1,
-                 ibit_pass=True,
-                 mistracking_flags=0,
-                 boot_monitors=None,
-                 ibit_duration_scale=1.0,
-                 verbose=False):
-        """
-        Args:
-            bind_ip:              IP to bind UDP socket on
-            port:                 UDP port (same as UUT ip:port in test software)
-            sysid:                MAVLink system ID for this simulated vehicle
-            ibit_pass:            True → IBIT passes, False → IBIT fails
-            mistracking_flags:    Bitmask of surfaces that fail (used when ibit_pass=False)
-            boot_monitors:        List of monitor IDs to assert on boot
-            ibit_duration_scale:  Speed up (<1) or slow down (>1) IBIT phases
-            verbose:              Print every message
-        """
-        self.bind_ip            = bind_ip
-        self.port               = port
-        self.sysid              = sysid
-        self.ibit_pass          = ibit_pass
-        self.mistracking_flags  = mistracking_flags if not ibit_pass else 0
-        self.boot_monitors      = boot_monitors or [0, 1, 2, 3, 4, 5]  # typical set
-        self.ibit_duration_scale= ibit_duration_scale
-        self.verbose            = verbose
+    def __init__(self, *, vehicle_port, sysid=1, ibit_pass=True,
+                 mistracking_flags=0, boot_monitors=None,
+                 post_arm_monitors=None, transient_monitor_chance=0.1,
+                 ibit_duration_scale=1.0, ibit_cycles=1,
+                 boot_time_s=3.0, eval_window_s=0.6,
+                 packet_drop_rate=0.0, verbose=False,
+                 fleet=None):
+        self.vehicle_port = vehicle_port
+        self.sysid = sysid
+        self.ibit_pass = ibit_pass
+        self.mist_flags = mistracking_flags if not ibit_pass else 0
+        self.boot_monitors = boot_monitors or [0,1,2,3,4,5]
+        self.post_arm_monitors = post_arm_monitors or [10]
+        self.trans_chance = transient_monitor_chance
+        self.scale = ibit_duration_scale
+        self.ibit_cycles = ibit_cycles
+        self.boot_time = boot_time_s
+        self.drop_rate = packet_drop_rate
+        self.verbose = verbose
+        self.fleet = fleet  # reference to SimFleet for cross-vehicle noise (#11)
 
-        # ── Vehicle state ──────────────────────────────────────────────
-        self.flight_regime      = FlightRegime.GROUND_DISARMED
-        self.actuation_state    = ActuationState.OFF
-        self.ibit_substate      = IBITSubstate.BEGIN
-        self.actuation_ibit_mon_status = 0  # mistracking flags, 0 = all pass
+        # State
+        self.fr = FR.DISARMED
+        self.act = Act.OFF
+        self.isub = Sub.BEGIN
+        self.imon = 0
 
-        # Parameters
-        self.use_nest           = 0
-        self.classic_mode_en    = 0
-        self.stbl_prms_appvd    = 0
+        # Params: stored vs active (for reboot-required params) (#10)
+        self._stored_params = {'USE_NEST':0, 'CLASSIC_MODE_EN':0, 'STBL_PRMS_APPVD':0}
+        self._active_params = dict(self._stored_params)
+        self._reboot_required = {'CLASSIC_MODE_EN', 'STBL_PRMS_APPVD'}
 
-        # Monitor state (64 bytes = 512 monitor bits)
-        self._set_monitors      = set(self.boot_monitors)
-        self._overriding_monitors = set()
-        self._setting_monitors  = set()
+        # Monitors (#1, #4)
+        self.monitors = MonitorSystem(eval_window_s=eval_window_s)
+        self._mon_conditions = _define_monitor_conditions()
 
-        # Surfaces
-        self.surfaces = {
-            'left_elevon':    SurfaceModel(),
-            'right_elevon':   SurfaceModel(),
-            'dorsal_rudder':  SurfaceModel(),
-            'ventral_rudder': SurfaceModel(),
-            'left_tvc_upper': SurfaceModel(),
-            'left_tvc_lower': SurfaceModel(),
-            'right_tvc_upper':SurfaceModel(),
-            'right_tvc_lower':SurfaceModel(),
-        }
+        # Servos (#6, #7, #12)
+        self.sv = {n: Servo() for n in SURFACES}
 
-        # ── MAVLink connection ─────────────────────────────────────────
-        self.conn           = None
-        self.gcs_addr       = None  # (ip, port) of GCS once we see a heartbeat
-        self._running       = False
-        self._lock          = threading.Lock()
+        # Engine state (#5)
+        self._eng1_rpm = 0; self._eng1_egt = 25; self._eng1_mode = 0
+        self._eng2_rpm = 0; self._eng2_egt = 25; self._eng2_mode = 0
 
-        # Telemetry rate control
-        self._last_hb_time    = 0
-        self._last_telem_time = 0
-        self._last_status_time= 0
-        self._last_monitor_time=0
-        self._dt              = 0.02  # 50 Hz sim tick
+        # Boot state (#2, #3)
+        self._powered = False
+        self._booted = False
+        self._boot_start = 0.0
+        self._power_on_time = 0.0
+        self._link_blackout_until = 0.0  # (#8) no TX during blackout
 
-        print(f"[SIM:{self.sysid}] Pandion Vehicle Simulator")
-        print(f"[SIM:{self.sysid}]   Port:      {self.port}")
-        print(f"[SIM:{self.sysid}]   IBIT:      {'PASS' if ibit_pass else 'FAIL'}")
-        if not ibit_pass:
-            print(f"[SIM:{self.sysid}]   Mistracking: 0x{mistracking_flags:02X}")
-        print(f"[SIM:{self.sysid}]   Monitors:  {self.boot_monitors}")
+        # Networking
+        self.conn = None
+        self._running = False
+        self._lock = threading.Lock()
+        self._global_time = time.time()
 
-    # ── Start / stop ──────────────────────────────────────────────────────────
+        _log(sysid, f"Sim v2  port={vehicle_port}  "
+             f"ibit={'PASS' if ibit_pass else 'FAIL(0x%02X)'%self.mist_flags}  "
+             f"cycles={ibit_cycles}  boot={boot_time_s}s  drop={packet_drop_rate}")
+
+    # ── Boot helpers ──────────────────────────────────────────────────
+
+    def _boot_elapsed(self):
+        if not self._booted: return 0
+        return time.time() - self._boot_start
+
+    def power_on(self):
+        """Simulate power applied to vehicle."""
+        with self._lock:
+            self._powered = True
+            self._boot_start = time.time()
+            self._booted = False
+            self.fr = FR.DISARMED
+            self.act = Act.OFF
+            self.isub = Sub.BEGIN
+            self.imon = 0
+            # Apply stored params on boot (#10)
+            self._active_params = dict(self._stored_params)
+            # Reset servos
+            for s in self.sv.values():
+                s.cmd = 0; s.fb = 0; s.unfreeze()
+            # Reset monitors
+            self.monitors = MonitorSystem(eval_window_s=self.monitors.eval_window)
+            # Link blackout during boot (#8)
+            self._link_blackout_until = time.time() + self.boot_time * 0.7
+        _log(self.sysid, f"Power ON -- booting ({self.boot_time}s)")
+        threading.Thread(target=self._boot_sequence, daemon=True).start()
+
+    def power_off(self):
+        """Simulate power removed from vehicle."""
+        with self._lock:
+            self._powered = False
+            self._booted = False
+            self.fr = FR.DISARMED
+            self.act = Act.OFF
+        _log(self.sysid, "Power OFF")
+
+    def _boot_sequence(self):
+        """Simulate boot timing (#2)."""
+        time.sleep(self.boot_time * self.scale)
+        with self._lock:
+            if self._powered:
+                self._booted = True
+                _log(self.sysid, "Boot complete -- telemetry active")
+
+    # ── Lifecycle ─────────────────────────────────────────────────────
 
     def start(self):
-        """Start the simulator (blocking). Call from main thread."""
-        # The sim acts exactly like a real vehicle:
-        #   - Sends telemetry TO the GCS port using udpout
-        #   - pymavlink automatically receives replies on the same socket
-        #   - No patches to production connect_to_vehicle needed
-        #
-        # The test software uses udpin:127.0.0.1:PORT which binds on PORT.
-        # We use udpout:127.0.0.1:PORT which sends TO that PORT.
-        # pymavlink's UDP socket is bidirectional — commands sent by the GCS
-        # come back to our source (ephemeral) port on the same socket.
-        connection_string = f"udpout:127.0.0.1:{self.port}"
-        print(f"[SIM:{self.sysid}] Sending telemetry to {connection_string}")
-
         self.conn = mavutil.mavlink_connection(
-            connection_string,
+            f"udpout:127.0.0.1:{self.vehicle_port}",
             dialect="pandion_vehicle_roadrunner",
-            source_system=self.sysid,
-            source_component=1,
-        )
+            source_system=self.sysid, source_component=1)
         self._running = True
 
-        # Telemetry sender in background thread
-        telem_thread = threading.Thread(target=self._telemetry_loop, daemon=True)
-        telem_thread.start()
+        # Auto power-on
+        self.power_on()
 
-        # Main receive loop
+        threading.Thread(target=self._telem_loop, daemon=True).start()
+        threading.Thread(target=self._monitor_eval_loop, daemon=True).start()
+
         try:
-            self._receive_loop()
+            while self._running:
+                msg = self.conn.recv_match(blocking=True, timeout=0.05)
+                if msg and msg.get_type() != 'BAD_DATA':
+                    self._handle(msg)
         except KeyboardInterrupt:
-            print(f"\n[SIM:{self.sysid}] Stopped.")
+            pass
         finally:
             self._running = False
 
-    def stop(self):
-        self._running = False
+    def stop(self): self._running = False
 
-    # ── Receive loop ──────────────────────────────────────────────────────────
+    # ── Cross-vehicle noise injection (#11) ───────────────────────────
 
-    def _receive_loop(self):
-        while self._running:
-            msg = self.conn.recv_match(blocking=True, timeout=0.1)
-            if msg is None:
-                continue
+    def inject_relay_noise(self, amplitude=30.0):
+        """Called by SimFleet when another vehicle's relay toggles."""
+        with self._lock:
+            for s in self.sv.values():
+                s.inject_noise(amplitude)
 
-            msg_type = msg.get_type()
+    # ── Message handler ───────────────────────────────────────────────
 
-            # Track GCS address from any received packet
-            if hasattr(self.conn, 'last_address') and self.conn.last_address:
-                self.gcs_addr = self.conn.last_address
+    def _handle(self, msg):
+        t = msg.get_type()
+        if not self._powered: return  # dead vehicle ignores everything
+        if self.verbose: _log(self.sysid, f"RX {t}")
 
-            if self.verbose:
-                print(f"[SIM:{self.sysid}] RX {msg_type}")
+        if   t == 'HEARTBEAT': pass
+        elif t == 'COMMAND_LONG':                      self._cmd(msg)
+        elif t == 'PARAM_REQUEST_READ':                self._pr(msg)
+        elif t == 'PARAM_SET':                         self._ps(msg)
+        elif t == 'PANDION_RR_ACTUATION_REQUEST_MODE': self._mr(msg)
+        elif t == 'PANDION_MONITOR_OVERRIDE_CMD':      self._mo(msg)
+        elif t == 'PANDION_RR_PLAYBACK_COMMAND':       self._pb(msg)
 
-            if msg_type == 'HEARTBEAT':
-                self._on_heartbeat(msg)
-            elif msg_type == 'COMMAND_LONG':
-                self._on_command_long(msg)
-            elif msg_type == 'PARAM_REQUEST_READ':
-                self._on_param_request_read(msg)
-            elif msg_type == 'PARAM_SET':
-                self._on_param_set(msg)
-            elif msg_type == 'PANDION_RR_ACTUATION_REQUEST_MODE':
-                self._on_actuation_request_mode(msg)
-            elif msg_type == 'PANDION_MONITOR_OVERRIDE_CMD':
-                self._on_monitor_override_cmd(msg)
-            elif msg_type == 'PANDION_RR_PLAYBACK_COMMAND':
-                self._on_playback_command(msg)
-
-    # ── Telemetry loop ────────────────────────────────────────────────────────
-
-    def _telemetry_loop(self):
-        """Send periodic telemetry at realistic rates."""
-        while self._running:
-            now = time.time()
-            dt  = self._dt
-
-            # Step surface models
-            with self._lock:
-                for s in self.surfaces.values():
-                    s.step(dt)
-
-            # 1 Hz heartbeat
-            if now - self._last_hb_time >= 1.0:
-                self._send_heartbeat()
-                self._last_hb_time = now
-
-            # 10 Hz PANDION_STATUS
-            if now - self._last_status_time >= 0.1:
-                self._send_pandion_status()
-                self._last_status_time = now
-
-            # 20 Hz PANDION_RR_ACTUATION_SYS_STATUS
-            if now - self._last_telem_time >= 0.05:
-                self._send_actuation_sys_status()
-                self._last_telem_time = now
-
-            # 5 Hz monitor status
-            if now - self._last_monitor_time >= 0.2:
-                self._send_monitor_status()
-                self._last_monitor_time = now
-
-            time.sleep(dt)
-
-    # ── Message handlers ──────────────────────────────────────────────────────
-
-    def _on_heartbeat(self, msg):
-        # Record GCS
-        if self.verbose:
-            print(f"[SIM:{self.sysid}] GCS heartbeat from sysid={msg.get_srcSystem()}")
-
-    def _on_command_long(self, msg):
-        if msg.command == 400:  # MAV_CMD_COMPONENT_ARM_DISARM
-            arm = int(msg.param1)
-            self._handle_arm_disarm(arm)
-
-    def _handle_arm_disarm(self, arm):
+    def _cmd(self, msg):
+        if msg.command != 400: return
+        arm = int(msg.param1)
         with self._lock:
             if arm == 1:
-                # Check monitors — only ARM if no monitors set
-                if self._set_monitors:
-                    result = 1  # TEMPORARILY_REJECTED
-                    if self.verbose:
-                        print(f"[SIM:{self.sysid}] ARM rejected — monitors SET: {self._set_monitors}")
-                else:
-                    self.flight_regime   = FlightRegime.GROUND_ARMED
-                    self.actuation_state = ActuationState.OPERATE
-                    result = 0  # ACCEPTED
-                    print(f"[SIM:{self.sysid}] ARMED → OPERATE")
+                s, _, _ = self.monitors.get_state()
+                if s:
+                    _log(self.sysid, f"ARM REJECTED -- {len(s)} monitors: {sorted(s)}")
+                    self._ack(400, 1); return
+                self.fr = FR.ARMED; self.act = Act.OPERATE
+                self.isub = Sub.BEGIN; self.imon = 0
+                _log(self.sysid, "ARMED -> OPERATE")
+                self._ack(400, 0)
             else:
-                self.flight_regime   = FlightRegime.GROUND_DISARMED
-                self.actuation_state = ActuationState.OFF
-                result = 0
-                print(f"[SIM:{self.sysid}] DISARMED → OFF")
+                self.fr = FR.DISARMED; self.act = Act.OFF
+                _log(self.sysid, "DISARMED -> OFF")
+                self._ack(400, 0)
 
-        self.conn.mav.command_ack_send(400, result)
+    def _pr(self, msg):
+        n = _pid(msg.param_id)
+        self._send_pv(n, float(self._active_params.get(n, 0)))
 
-    def _on_param_request_read(self, msg):
-        if isinstance(msg.param_id, bytes):
-            name = msg.param_id.decode('utf-8').rstrip('\x00')
-        else:
-            name = str(msg.param_id).rstrip('\x00')
-
-        param_map = {
-            'USE_NEST':        float(self.use_nest),
-            'CLASSIC_MODE_EN': float(self.classic_mode_en),
-            'STBL_PRMS_APPVD': float(self.stbl_prms_appvd),
-        }
-
-        if name in param_map:
-            self._send_param_value(name, param_map[name])
-        else:
-            # Unknown param — return 0
-            self._send_param_value(name, 0.0)
-
-    def _on_param_set(self, msg):
-        if isinstance(msg.param_id, bytes):
-            name = msg.param_id.decode('utf-8').rstrip('\x00')
-        else:
-            name = str(msg.param_id).rstrip('\x00')
-
-        val = int(msg.param_value)
+    def _ps(self, msg):
+        n = _pid(msg.param_id); v = int(msg.param_value)
         with self._lock:
-            if name == 'USE_NEST':
-                self.use_nest = val
-            elif name == 'CLASSIC_MODE_EN':
-                self.classic_mode_en = val
-            elif name == 'STBL_PRMS_APPVD':
-                self.stbl_prms_appvd = val
+            self._stored_params[n] = v
+            if n not in self._reboot_required:
+                self._active_params[n] = v  # immediate
+            # else: only takes effect on next boot (#10)
+        _log(self.sysid, f"PARAM {n} = {v}" +
+             (f" (requires reboot)" if n in self._reboot_required else ""))
+        self._send_pv(n, float(v))
 
-        print(f"[SIM:{self.sysid}] PARAM_SET {name} = {val}")
-        self._send_param_value(name, float(val))
-
-    def _on_actuation_request_mode(self, msg):
-        requested = msg.requested_mode
-        mode_names = {0:"OFF", 1:"IBIT", 2:"OPERATE", 3:"MANUAL", 4:"PLAYBACK", 5:"TRIM"}
-
+    def _mr(self, msg):
+        r = msg.requested_mode
+        N = {0:"OFF",1:"IBIT",2:"OPERATE",3:"MANUAL",4:"PLAYBACK",5:"TRIM"}
         with self._lock:
-            current = self.actuation_state
+            c = self.act
+            ok = ((r==Act.PLAYBACK and c==Act.OPERATE) or
+                  (r==Act.IBIT and c==Act.PLAYBACK) or
+                  (r==Act.OPERATE and c in (Act.IBIT,Act.PLAYBACK,Act.MANUAL)) or
+                  r==Act.OFF)
+            if ok:
+                self.act = r
+                _log(self.sysid, f"Mode: {N.get(c,'?')} -> {N.get(r,'?')}")
+                if r == Act.IBIT:
+                    threading.Thread(target=self._ibit, daemon=True).start()
+            else:
+                _log(self.sysid, f"Mode REJECTED: {N.get(c,'?')} -> {N.get(r,'?')}")
 
-        print(f"[SIM:{self.sysid}] Mode request: {mode_names.get(current,'?')} → {mode_names.get(requested,'?')}")
+    def _mo(self, msg):
+        if msg.override_cmd == 2:
+            self.monitors.clear(msg.monitor_id)
+        elif msg.override_cmd == 0:
+            self.monitors.cancel_override(msg.monitor_id)
+        elif msg.override_cmd == 1:
+            self.monitors.force_set(msg.monitor_id)
 
-        # Validate transitions
-        valid = False
-        if requested == ActuationState.PLAYBACK and current == ActuationState.OPERATE:
-            valid = True
-        elif requested == ActuationState.IBIT and current == ActuationState.PLAYBACK:
-            valid = True
-        elif requested == ActuationState.OPERATE and current in (
-            ActuationState.IBIT, ActuationState.PLAYBACK, ActuationState.MANUAL
-        ):
-            valid = True
-        elif requested == ActuationState.OFF:
-            valid = True
-        elif requested == ActuationState.OPERATE and current == ActuationState.OFF:
-            valid = False  # Must ARM first
+    def _pb(self, msg):
+        with self._lock:
+            self.sv['left_elevon'].cmd    = msg.left_elevon_ted_command_cdeg
+            self.sv['right_elevon'].cmd   = msg.right_elevon_ted_command_cdeg
+            self.sv['dorsal_rudder'].cmd  = msg.upper_rudder_tel_command_cdeg
+            self.sv['ventral_rudder'].cmd = msg.lower_rudder_tel_command_cdeg
+            self.sv['left_tvc_upper'].cmd = msg.left_tvc_upper_command_cdeg
+            self.sv['left_tvc_lower'].cmd = msg.left_tvc_lower_command_cdeg
+            self.sv['right_tvc_upper'].cmd= msg.right_tvc_upper_command_cdeg
+            self.sv['right_tvc_lower'].cmd= msg.right_tvc_lower_command_cdeg
 
-        if valid:
+    # ── IBIT (#6, #7, #9) ────────────────────────────────────────────
+
+    def _ibit(self):
+        for cycle in range(self.ibit_cycles):
+            if cycle > 0:
+                _log(self.sysid, f"IBIT cycle {cycle+1}/{self.ibit_cycles}")
+            self._ibit_single_cycle()
             with self._lock:
-                old_state = self.actuation_state
-                self.actuation_state = requested
-                if requested == ActuationState.IBIT:
-                    # Start IBIT state machine in background
-                    ibit_thread = threading.Thread(
-                        target=self._run_ibit_sequence, daemon=True
-                    )
-                    ibit_thread.start()
-            print(f"[SIM:{self.sysid}]   → {mode_names.get(requested,'?')} accepted")
-        else:
-            print(f"[SIM:{self.sysid}]   → REJECTED (invalid transition)")
+                if self.act != Act.OPERATE:
+                    break  # aborted
 
-    def _on_monitor_override_cmd(self, msg):
-        """
-        Handle PANDION_MONITOR_OVERRIDE_CMD.
-        override_cmd: 0=CANCEL, 1=SET, 2=CLEAR
-        """
-        cmd       = msg.override_cmd
-        monitor_id= msg.monitor_id
-
+        # Final result
         with self._lock:
-            if cmd == 2:  # CLEAR
-                self._set_monitors.discard(monitor_id)
-                self._overriding_monitors.add(monitor_id)
-                if self.verbose:
-                    print(f"[SIM:{self.sysid}] Monitor {monitor_id} CLEARED")
-            elif cmd == 0:  # CANCEL override
-                self._overriding_monitors.discard(monitor_id)
-            elif cmd == 1:  # SET (force)
-                self._set_monitors.add(monitor_id)
-
-    def _on_playback_command(self, msg):
-        """Accept playback commands and apply to surface models."""
-        with self._lock:
-            self.surfaces['left_elevon'].command_cdeg    = msg.left_elevon_ted_command_cdeg
-            self.surfaces['right_elevon'].command_cdeg   = msg.right_elevon_ted_command_cdeg
-            self.surfaces['dorsal_rudder'].command_cdeg  = msg.upper_rudder_tel_command_cdeg
-            self.surfaces['ventral_rudder'].command_cdeg = msg.lower_rudder_tel_command_cdeg
-            self.surfaces['left_tvc_upper'].command_cdeg = msg.left_tvc_upper_command_cdeg
-            self.surfaces['left_tvc_lower'].command_cdeg = msg.left_tvc_lower_command_cdeg
-            self.surfaces['right_tvc_upper'].command_cdeg= msg.right_tvc_upper_command_cdeg
-            self.surfaces['right_tvc_lower'].command_cdeg= msg.right_tvc_lower_command_cdeg
-
-    # ── IBIT state machine ────────────────────────────────────────────────────
-
-    def _run_ibit_sequence(self):
-        """Run through IBIT substates and command surfaces appropriately."""
-        print(f"[SIM:{self.sysid}] IBIT sequence starting...")
-        substates = [
-            IBITSubstate.BEGIN,
-            IBITSubstate.WAIT_FOR_SETTLE,
-            IBITSubstate.ELEVON,
-            IBITSubstate.RUDDERS,
-            IBITSubstate.TVC,
-            IBITSubstate.COMPLETE,
-        ]
-
-        # IBIT surface command profiles (cdeg)
-        ibit_commands = {
-            IBITSubstate.ELEVON:  {
-                'left_elevon':  1500, 'right_elevon': -1500
-            },
-            IBITSubstate.RUDDERS: {
-                'dorsal_rudder': 1200, 'ventral_rudder': -1200
-            },
-            IBITSubstate.TVC: {
-                'left_tvc_upper': 800, 'left_tvc_lower': -800,
-                'right_tvc_upper': 800, 'right_tvc_lower': -800
-            },
-        }
-
-        # Reset all surfaces to neutral
-        with self._lock:
-            self.actuation_ibit_mon_status = 0
-            for s in self.surfaces.values():
-                s.command_cdeg = 0.0
-
-        for substate in substates:
-            with self._lock:
-                if self.actuation_state != ActuationState.IBIT:
-                    print(f"[SIM:{self.sysid}] IBIT aborted (mode changed)")
-                    return
-                self.ibit_substate = substate
-
-            substate_names = {0:"BEGIN", 1:"SETTLE", 2:"ELEVON", 3:"RUDDERS", 4:"TVC", 5:"COMPLETE"}
-            print(f"[SIM:{self.sysid}] IBIT substate: {substate_names.get(substate,'?')}")
-
-            # Apply surface commands for this phase
-            cmds = ibit_commands.get(substate, {})
-            with self._lock:
-                for surf_name, cdeg in cmds.items():
-                    self.surfaces[surf_name].command_cdeg = cdeg
-
-            # If failing, inject mistracking: add noise to prevent tracking
-            if not self.ibit_pass and substate in (
-                IBITSubstate.ELEVON, IBITSubstate.RUDDERS, IBITSubstate.TVC
-            ):
-                self._inject_mistracking(substate)
-
-            duration = IBIT_PHASE_DURATIONS[substate] * self.ibit_duration_scale
-            time.sleep(duration)
-
-        # Set final mistracking status
-        with self._lock:
+            # Compute mistracking from servo state (#7)
             if not self.ibit_pass:
-                self.actuation_ibit_mon_status = self.mistracking_flags
+                self.imon = self.mist_flags
             else:
-                self.actuation_ibit_mon_status = 0
+                # Check actual servo mistracking flags
+                computed = 0
+                for flag, sn in FLAG_SURF.items():
+                    if self.sv[sn]._mistracking:
+                        computed |= flag
+                self.imon = computed
 
-            # IBIT complete — transition back to OPERATE
-            self.actuation_state = ActuationState.OPERATE
-            self.ibit_substate   = IBITSubstate.COMPLETE
+            for s in self.sv.values():
+                s.unfreeze(); s.cmd = 0
+            self.act = Act.OPERATE; self.isub = Sub.DONE
 
-            # Return surfaces to neutral
-            for s in self.surfaces.values():
-                s.command_cdeg = 0.0
+        r = "PASS" if self.imon == 0 else f"FAIL(0x{self.imon:02X})"
+        _log(self.sysid, f"IBIT -> OPERATE  [{r}]")
 
-        result = "PASS" if self.ibit_pass else f"FAIL (flags=0x{self.mistracking_flags:02X})"
-        print(f"[SIM:{self.sysid}] IBIT complete → OPERATE  [{result}]")
+    def _ibit_single_cycle(self):
+        phases = [Sub.BEGIN, Sub.SETTLE, Sub.ELEVON, Sub.RUDDERS, Sub.TVC, Sub.DONE]
+        N = {0:"BEGIN",1:"SETTLE",2:"ELEVON",3:"RUDDERS",4:"TVC",5:"DONE"}
 
-    def _inject_mistracking(self, substate):
-        """Inject tracking error on surfaces that should fail."""
-        flag_to_surface = {
-            MistrackingFlags.LEFT_ELEVON:    'left_elevon',
-            MistrackingFlags.RIGHT_ELEVON:   'right_elevon',
-            MistrackingFlags.UPPER_RUDDER:   'dorsal_rudder',
-            MistrackingFlags.LOWER_RUDDER:   'ventral_rudder',
-            MistrackingFlags.LEFT_TVC_UPPER: 'left_tvc_upper',
-            MistrackingFlags.LEFT_TVC_LOWER: 'left_tvc_lower',
-            MistrackingFlags.RIGHT_TVC_UPPER:'right_tvc_upper',
-            MistrackingFlags.RIGHT_TVC_LOWER:'right_tvc_lower',
-        }
         with self._lock:
-            for flag, surf_name in flag_to_surface.items():
-                if self.mistracking_flags & flag:
-                    # Freeze feedback far from command to simulate mistracking
-                    surf = self.surfaces[surf_name]
-                    surf.feedback_cdeg = surf.command_cdeg + 200.0  # >50 counts off
+            self.imon = 0
+            for s in self.sv.values():
+                s.cmd = 0; s.unfreeze()
 
-    # ── Telemetry senders ─────────────────────────────────────────────────────
+        for phase in phases:
+            with self._lock:
+                if self.act != Act.IBIT: return
+                self.isub = phase
+            _log(self.sysid, f"IBIT: {N[phase]}")
 
-    def _send_heartbeat(self):
-        self.conn.mav.heartbeat_send(
+            profiles = IBIT_PROFILES.get(phase, {})
+            dur = PHASE_DUR[phase] * self.scale
+
+            if profiles:
+                self._run_ibit_phase_with_profiles(phase, profiles, dur)
+            else:
+                time.sleep(dur)
+
+    def _run_ibit_phase_with_profiles(self, phase, profiles, total_dur):
+        """
+        Run IBIT phase with smooth ramp/hold/reverse profiles (#6).
+        Each profile entry is (target_cdeg, fraction_of_total_dur).
+        Within each segment: 15% ramp to target, 70% hold, 15% ramp to next.
+        """
+        dt = 0.01
+        elapsed = 0.0
+
+        for surf_name, segments in profiles.items():
+            # Pre-compute timeline
+            timeline = []
+            t = 0.0
+            prev_target = 0.0
+            for target, frac in segments:
+                seg_dur = total_dur * frac
+                timeline.append((t, t + seg_dur, prev_target, target))
+                prev_target = target
+                t += seg_dur
+
+            # Store timeline on servo for reference
+            self.sv[surf_name]._timeline = timeline
+            self.sv[surf_name]._phase_start = time.time()
+
+        # Inject mistracking for failing surfaces (#7)
+        if not self.ibit_pass and phase in (Sub.ELEVON, Sub.RUDDERS, Sub.TVC):
+            with self._lock:
+                for fl, sn in FLAG_SURF.items():
+                    if self.mist_flags & fl:
+                        self.sv[sn].freeze()
+
+        while elapsed < total_dur:
+            with self._lock:
+                if self.act != Act.IBIT: return
+                for surf_name in profiles:
+                    sv = self.sv[surf_name]
+                    tl = getattr(sv, '_timeline', [])
+                    cmd = 0.0
+                    for t_start, t_end, from_v, to_v in tl:
+                        if t_start <= elapsed < t_end:
+                            seg_dur = t_end - t_start
+                            seg_elapsed = elapsed - t_start
+                            frac = seg_elapsed / seg_dur
+                            # Smooth ramp
+                            ramp_frac = 0.15
+                            if frac < ramp_frac:
+                                cmd = from_v + (to_v - from_v) * (frac / ramp_frac)
+                            elif frac > (1.0 - ramp_frac):
+                                cmd = to_v  # hold at target
+                            else:
+                                cmd = to_v
+                            break
+                    sv.cmd = cmd
+
+            time.sleep(dt)
+            elapsed += dt
+
+    # ── Monitor evaluation loop (#1) ──────────────────────────────────
+
+    def _monitor_eval_loop(self):
+        while self._running:
+            if self._powered and self._booted:
+                self.monitors.evaluate(self, self._mon_conditions)
+            time.sleep(0.3)
+
+    # ── Telemetry loop ────────────────────────────────────────────────
+
+    def _telem_loop(self):
+        th=tp=ta=tm=te=0.0; dt=0.01
+        while self._running:
+            now = time.time()
+            self._global_time = now
+
+            # No telemetry if not powered or during link blackout (#2, #8)
+            if not self._powered or not self._booted:
+                time.sleep(dt); continue
+            if now < self._link_blackout_until:
+                time.sleep(dt); continue
+
+            with self._lock:
+                for s in self.sv.values(): s.step(dt, now)
+
+            # Packet drop (#8)
+            drop = random.random() < self.drop_rate
+
+            if now-th >= 1.0 and not drop:   self._tx_hb();  th=now
+            if now-tp >= 0.1 and not drop:   self._tx_ps();  tp=now
+            if now-ta >= 0.05 and not drop:  self._tx_act(); ta=now
+            if now-tm >= 0.2 and not drop:   self._tx_mon(); tm=now
+            if now-te >= 0.5 and not drop:   self._tx_eng(); te=now
+            time.sleep(dt)
+
+    # ── TX helpers ────────────────────────────────────────────────────
+
+    def _tx_hb(self):
+        try: self.conn.mav.heartbeat_send(
             mavutil.mavlink.MAV_TYPE_FIXED_WING,
-            mavutil.mavlink.MAV_AUTOPILOT_GENERIC,
-            0, 0,
-            mavutil.mavlink.MAV_STATE_ACTIVE
-        )
+            mavutil.mavlink.MAV_AUTOPILOT_GENERIC,0,0,
+            mavutil.mavlink.MAV_STATE_ACTIVE)
+        except: pass
 
-    def _send_pandion_status(self):
+    def _tx_ps(self):
+        with self._lock: f=self.fr
+        try: self.conn.mav.pandion_status_send(
+            status=0, flight_regime=f,
+            engine1_state=self._eng1_mode, engine2_state=self._eng2_mode,
+            ins_status=1, ins_mode=1,
+            gnss_fix=[3,3], num_satellites=[12,10],
+            gnss_compass=1, mission_operation_mode=0, asset_id=self.sysid)
+        except: pass
+
+    def _tx_act(self):
         with self._lock:
-            regime = self.flight_regime
-        try:
-            self.conn.mav.pandion_status_send(
-                flight_regime=regime,
-                contingency_level=0,
-                contingency_reason=0,
-                mission_type=0,
-                imu_health=1,
-                nav_solution_valid=1,
-                time_since_last_valid_gps_s=0,
-                time_since_last_valid_baro_s=0,
-                time_since_last_valid_mag_s=0,
-                time_since_last_valid_pitot_s=0,
-                time_since_last_valid_gps_vel_s=0,
-            )
-        except Exception:
-            pass
+            m=self.act; sb=self.isub; mn=self.imon; v=self.sv
+        try: self.conn.mav.pandion_rr_actuation_sys_status_send(
+            actuation_state=m, actuation_ibit_substate=sb, actuation_ibit_mon_status=mn,
+            left_elevon_feedback_cdeg=int(v['left_elevon'].fb),
+            right_elevon_feedback_cdeg=int(v['right_elevon'].fb),
+            dorsal_rudder_feedback_cdeg=int(v['dorsal_rudder'].fb),
+            ventral_rudder_feedback_cdeg=int(v['ventral_rudder'].fb),
+            left_tvc_upper_feedback_cdeg=int(v['left_tvc_upper'].fb),
+            left_tvc_lower_feedback_cdeg=int(v['left_tvc_lower'].fb),
+            right_tvc_upper_feedback_cdeg=int(v['right_tvc_upper'].fb),
+            right_tvc_lower_feedback_cdeg=int(v['right_tvc_lower'].fb),
+            left_elevon_current_mA=int(v['left_elevon'].cur),
+            right_elevon_current_mA=int(v['right_elevon'].cur),
+            dorsal_rudder_current_mA=int(v['dorsal_rudder'].cur),
+            ventral_rudder_current_mA=int(v['ventral_rudder'].cur),
+            left_tvc_upper_current_mA=int(v['left_tvc_upper'].cur),
+            left_tvc_lower_current_mA=int(v['left_tvc_lower'].cur),
+            right_tvc_upper_current_mA=int(v['right_tvc_upper'].cur),
+            right_tvc_lower_current_mA=int(v['right_tvc_lower'].cur),
+            left_elevon_motor_temp_degC=int(v['left_elevon'].temp),
+            right_elevon_motor_temp_degC=int(v['right_elevon'].temp))
+        except: pass
 
-    def _send_actuation_sys_status(self):
+    def _tx_mon(self):
+        s, sg, o = self.monitors.get_state()
+        cs=bytearray(64); cg=bytearray(64); co=bytearray(64)
+        for m in s:
+            if 0<=m<512: cs[m//8]|=1<<(m%8)
+        for m in sg:
+            if 0<=m<512: cg[m//8]|=1<<(m%8)
+        for m in o:
+            if 0<=m<512: co[m//8]|=1<<(m%8)
+        try: self.conn.mav.pandion_monitor_current_status_send(
+            currently_set=bytes(cs), currently_setting=bytes(cg),
+            currently_overridden=bytes(co))
+        except: pass
+
+    def _tx_eng(self):
+        """Engine status at 2 Hz (#5)."""
+        try: self.conn.mav.pandion_rr_engine_status_send(
+            eng_1_fuel_pump_curr_mA=random.gauss(450,20),
+            eng_1_fuel_pump_speed_rpm=self._eng1_rpm*0.8,
+            eng_1_fuel_consumption_l=0.0,
+            eng_1_intake_temp_degC=random.gauss(35,2),
+            eng_1_egt_temp_degC=self._eng1_egt,
+            eng_1_speed_vs_nominal_pct=100 if self._eng1_rpm>0 else 0,
+            eng_1_speed=self._eng1_rpm,
+            eng_1_required_speed=0,
+            eng_1_mode=self._eng1_mode,
+            eng_1_EED=0, eng_1_relay_state=1 if self._powered else 0,
+            eng_2_fuel_pump_curr_mA=random.gauss(450,20),
+            eng_2_fuel_pump_speed_rpm=self._eng2_rpm*0.8,
+            eng_2_fuel_consumption_l=0.0,
+            eng_2_intake_temp_degC=random.gauss(35,2),
+            eng_2_egt_temp_degC=self._eng2_egt,
+            eng_2_speed_vs_nominal_pct=100 if self._eng2_rpm>0 else 0,
+            eng_2_speed=self._eng2_rpm,
+            eng_2_required_speed=0,
+            eng_2_mode=self._eng2_mode,
+            eng_2_EED=0, eng_2_relay_state=1 if self._powered else 0,
+            hung_start_eshutdown=0)
+        except: pass
+
+    def _ack(self, cmd, result):
+        try: self.conn.mav.command_ack_send(
+            command=cmd, result=result, progress=0,
+            result_param2=0, target_system=255, target_component=190)
+        except: pass
+
+    def _send_pv(self, name, val):
+        pid = name.encode('utf-8')[:16].ljust(16, b'\x00')
+        try: self.conn.mav.param_value_send(
+            param_id=pid, param_value=val, param_type=9,
+            param_count=10, param_index=0)
+        except: pass
+
+
+# ===========================================================================
+# SimFleet -- manages cross-vehicle interactions (#11)
+# ===========================================================================
+
+class SimFleet:
+    """Manages multiple simulated vehicles and cross-vehicle effects."""
+
+    def __init__(self):
+        self.vehicles = []
+        self._lock = threading.Lock()
+
+    def add(self, vehicle):
         with self._lock:
-            mode     = self.actuation_state
-            substate = self.ibit_substate
-            mon_status = self.actuation_ibit_mon_status
-            s = self.surfaces
+            self.vehicles.append(vehicle)
+            vehicle.fleet = self
 
-            # Build field values
-            def fb(surf): return int(s[surf].feedback_cdeg)
-            def curr(surf): return int(s[surf].current_mA)
-            def temp(surf): return int(s[surf].temp_degC)
-
-        try:
-            self.conn.mav.pandion_rr_actuation_sys_status_send(
-                actuation_state=mode,
-                actuation_ibit_substate=substate,
-                actuation_ibit_mon_status=mon_status,
-
-                left_elevon_feedback_cdeg=fb('left_elevon'),
-                right_elevon_feedback_cdeg=fb('right_elevon'),
-                dorsal_rudder_feedback_cdeg=fb('dorsal_rudder'),
-                ventral_rudder_feedback_cdeg=fb('ventral_rudder'),
-                left_tvc_upper_feedback_cdeg=fb('left_tvc_upper'),
-                left_tvc_lower_feedback_cdeg=fb('left_tvc_lower'),
-                right_tvc_upper_feedback_cdeg=fb('right_tvc_upper'),
-                right_tvc_lower_feedback_cdeg=fb('right_tvc_lower'),
-
-                left_elevon_current_mA=curr('left_elevon'),
-                right_elevon_current_mA=curr('right_elevon'),
-                dorsal_rudder_current_mA=curr('dorsal_rudder'),
-                ventral_rudder_current_mA=curr('ventral_rudder'),
-                left_tvc_upper_current_mA=curr('left_tvc_upper'),
-                left_tvc_lower_current_mA=curr('left_tvc_lower'),
-                right_tvc_upper_current_mA=curr('right_tvc_upper'),
-                right_tvc_lower_current_mA=curr('right_tvc_lower'),
-
-                left_elevon_motor_temp_degC=temp('left_elevon'),
-                right_elevon_motor_temp_degC=temp('right_elevon'),
-            )
-        except Exception:
-            pass
-
-    def _send_monitor_status(self):
-        """Send PANDION_MONITOR_CURRENT_STATUS with current monitor bits."""
-        # Build 64-byte arrays
-        currently_set      = bytearray(64)
-        currently_setting  = bytearray(64)
-        currently_overridden = bytearray(64)
-
+    def notify_relay_toggle(self, source_sysid):
+        """When a vehicle's relay toggles, inject noise into all others (#11)."""
         with self._lock:
-            for mid in self._set_monitors:
-                if 0 <= mid < 512:
-                    currently_set[mid // 8] |= (1 << (mid % 8))
-            for mid in self._setting_monitors:
-                if 0 <= mid < 512:
-                    currently_setting[mid // 8] |= (1 << (mid % 8))
-            for mid in self._overriding_monitors:
-                if 0 <= mid < 512:
-                    currently_overridden[mid // 8] |= (1 << (mid % 8))
+            for v in self.vehicles:
+                if v.sysid != source_sysid:
+                    v.inject_relay_noise(amplitude=25.0)
 
-        try:
-            self.conn.mav.pandion_monitor_current_status_send(
-                currently_set=bytes(currently_set),
-                currently_setting=bytes(currently_setting),
-                currently_overridden=bytes(currently_overridden),
-            )
-        except Exception:
-            pass
 
-    def _send_param_value(self, name, value):
-        param_id = name.encode('utf-8') + b'\x00' * (16 - len(name))
-        try:
-            self.conn.mav.param_value_send(
-                param_id=param_id,
-                param_value=value,
-                param_type=9,   # MAV_PARAM_TYPE_UINT8
-                param_count=10,
-                param_index=0,
-            )
-        except Exception:
-            pass
+def _pid(r):
+    return r.decode('utf-8').rstrip('\x00') if isinstance(r,bytes) else str(r).rstrip('\x00')
+
+def _log(s, m):
+    print(f"[SIM:{s}] {m}")

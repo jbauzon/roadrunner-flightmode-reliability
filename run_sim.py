@@ -59,21 +59,28 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def start_vehicle(vcfg, verbose=False):
-    """Instantiate and start a PandionVehicleSim in a daemon thread."""
+def start_vehicle(vcfg, verbose=False, fleet=None):
+    """Start a simulated vehicle (single udpout connection)."""
     from sim.vehicle import PandionVehicleSim
 
     sim = PandionVehicleSim(
-        bind_ip='0.0.0.0',
-        port=vcfg['port'],
+        vehicle_port=vcfg['port'],
         sysid=vcfg.get('sysid', 1),
         ibit_pass=vcfg.get('ibit_pass', True),
         mistracking_flags=vcfg.get('mistracking_flags', 0),
         boot_monitors=vcfg.get('boot_monitors', [0, 1, 2, 3]),
+        post_arm_monitors=vcfg.get('post_arm_monitors', [10]),
+        transient_monitor_chance=vcfg.get('transient_monitor_chance', 0.1),
         ibit_duration_scale=vcfg.get('ibit_duration_scale', 1.0),
+        ibit_cycles=vcfg.get('ibit_cycles', 1),
+        boot_time_s=vcfg.get('boot_time_s', 3.0),
+        eval_window_s=vcfg.get('eval_window_s', 0.6),
+        packet_drop_rate=vcfg.get('packet_drop_rate', 0.0),
         verbose=verbose,
+        fleet=fleet,
     )
-
+    if fleet:
+        fleet.add(sim)
     t = threading.Thread(target=sim.start, daemon=True, name=f"sim-{vcfg['port']}")
     t.start()
     return sim, t
@@ -177,15 +184,16 @@ def main():
     # Inject mock DAQ (no NI-DAQmx hardware needed)
     inject_mock_daq()
 
-    # Start vehicle simulators
+    from sim.vehicle import SimFleet
+    fleet = SimFleet()
+
     sims = []
     for v in vehicles:
-        print(f"[Launcher] Starting sim: {v['serial']} on port {v['port']}")
-        sim, thread = start_vehicle(v, verbose=args.verbose)
+        sim, thread = start_vehicle(v, verbose=args.verbose, fleet=fleet)
         sims.append((sim, thread))
-        time.sleep(0.2)  # Stagger port binds
+        time.sleep(0.3)
 
-    print(f"[Launcher] All {len(sims)} simulators running")
+    print(f"[Launcher] All {len(sims)} simulators running (fleet size={len(fleet.vehicles)})")
 
     if args.no_gui:
         print("[Launcher] --no-gui mode — press Ctrl+C to stop")
