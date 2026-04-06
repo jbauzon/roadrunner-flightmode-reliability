@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-run_sim.py — Roadrunner Flight Test full simulation launcher.
+run_sim.py -- Roadrunner Flight Test full simulation launcher.
 
 Starts one simulated Pandion vehicle per UUT entry in sim_config.yaml,
 each listening on its own UDP port sending real MAVLink packets.
@@ -37,6 +38,14 @@ import threading
 import argparse
 
 import yaml
+
+# Force UTF-8 output on Windows consoles (cp1252 can't handle unicode)
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -75,51 +84,7 @@ def inject_mock_daq():
     from sim.mock_daq import MockDAQController
     import hardware.daq as daq_module
     daq_module.SimpleDAQController = MockDAQController
-    print("[Launcher] MockDAQController injected → no NI-DAQmx hardware needed")
-
-
-def patch_connection_for_sim():
-    """
-    Patch connect_to_vehicle to use udpout instead of udpin.
-
-    In production the test software listens (udpin) and the real vehicle
-    sends to it.  In simulation the sim listens (udpin) and the test
-    software must connect with udpout so both sides can exchange packets
-    over the same port.
-    """
-    import vehicle.connection as conn_mod
-    _original = conn_mod.connect_to_vehicle
-
-    def _sim_connect(ip_address, port, timeout=10.0):
-        import sys, os, ipaddress
-        from pymavlink import mavutil
-
-        ip = str(ipaddress.ip_address(ip_address))
-        script_dir = os.path.dirname(os.path.abspath(conn_mod.__file__))
-        dialect_dir = os.path.join(script_dir, "dialects")
-        if dialect_dir not in sys.path:
-            sys.path.insert(0, dialect_dir)
-
-        # udpout: connect TO the sim's listening port
-        connection_string = f"udpout:{ip}:{port}"
-        print(f"[SIM-PATCH] Connecting with {connection_string}")
-
-        master = mavutil.mavlink_connection(
-            connection_string,
-            dialect="pandion_vehicle_roadrunner",
-            source_system=255,
-            source_component=190,
-        )
-
-        hb = master.wait_heartbeat(timeout=timeout)
-        if not hb:
-            raise Exception(
-                f"Connection timeout after {timeout}s — no heartbeat from {ip}:{port}"
-            )
-        return master
-
-    conn_mod.connect_to_vehicle = _sim_connect
-    print("[Launcher] connect_to_vehicle patched → udpout for sim mode")
+    print("[Launcher] MockDAQController injected - no NI-DAQmx hardware needed")
 
 
 def pre_populate_uuts(vehicles):
@@ -142,7 +107,7 @@ def pre_populate_uuts(vehicles):
     out_path = os.path.join(_ROOT, 'sim_uut_config.json')
     with open(out_path, 'w') as f:
         json.dump(cfg, f, indent=2)
-    print(f"[Launcher] UUT config written → {out_path}")
+    print(f"[Launcher] UUT config written: {out_path}")
     return out_path
 
 
@@ -209,9 +174,8 @@ def main():
 
     print(f"[Launcher] Starting {len(vehicles)} vehicle simulator(s)...")
 
-    # Inject mock DAQ and patch connection before anything else imports them
+    # Inject mock DAQ (no NI-DAQmx hardware needed)
     inject_mock_daq()
-    patch_connection_for_sim()
 
     # Start vehicle simulators
     sims = []
@@ -250,7 +214,7 @@ def _write_default_config(path):
             {
                 'serial':             'RR-SIM-001',
                 'ip':                 '127.0.0.1',
-                'port':               9985,
+                'port':               19901,
                 'relay_line':         0,
                 'sysid':              1,
                 'ibit_pass':          True,
@@ -260,7 +224,7 @@ def _write_default_config(path):
             {
                 'serial':             'RR-SIM-002',
                 'ip':                 '127.0.0.1',
-                'port':               9986,
+                'port':               19902,
                 'relay_line':         1,
                 'sysid':              2,
                 'ibit_pass':          False,

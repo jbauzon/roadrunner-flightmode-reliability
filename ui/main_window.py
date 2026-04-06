@@ -35,9 +35,11 @@ class MultiUUTTestGUI(QMainWindow):
         super().__init__()
 
         # ── Directories ───────────────────────────────────────────────────
+        # script_dir is ui/ — project root is one level up
         self.script_dir    = os.path.dirname(os.path.abspath(__file__))
-        self.log_directory = os.path.join(self.script_dir, "..", "logs")
-        self.report_directory = os.path.join(self.script_dir, "..", "reports")
+        self.project_root  = os.path.abspath(os.path.join(self.script_dir, ".."))
+        self.log_directory = os.path.join(self.project_root, "logs")
+        self.report_directory = os.path.join(self.project_root, "reports")
         os.makedirs(self.log_directory, exist_ok=True)
         os.makedirs(self.report_directory, exist_ok=True)
 
@@ -747,7 +749,7 @@ class MultiUUTTestGUI(QMainWindow):
             'test_config':      self.test_config,
         }
         cfg.update(self.test_config_widget.get_all_settings())
-        path = os.path.join(self.script_dir, "..", "app_settings.json")
+        path = os.path.join(self.project_root, "app_settings.json")
         try:
             with open(path, 'w') as f:
                 json.dump(cfg, f, indent=2)
@@ -755,7 +757,8 @@ class MultiUUTTestGUI(QMainWindow):
             self.log(f"⚠ Could not save settings: {e}")
 
     def load_settings(self):
-        path = os.path.join(self.script_dir, "..", "app_settings.json")
+        """Load application settings"""
+        path = os.path.join(self.project_root, "app_settings.json")
         if not os.path.exists(path):
             return
         try:

@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-PandionVehicleSim — Real UDP MAVLink vehicle simulator.
+PandionVehicleSim -- Real UDP MAVLink vehicle simulator.
 
 Listens on a UDP port and responds with authentic Pandion MAVLink telemetry,
 driving the full state machine:
@@ -25,6 +26,15 @@ import math
 import random
 import threading
 import argparse
+
+# Force UTF-8 output on Windows
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 from pymavlink import mavutil
 
 # Add dialect directory so pymavlink can find the pre-generated .py dialect
@@ -212,10 +222,17 @@ class PandionVehicleSim:
 
     def start(self):
         """Start the simulator (blocking). Call from main thread."""
-        # Sim listens on PORT using udpin. Test software connects with udpout.
-        # run_sim.py patches connect_to_vehicle to use udpout instead of udpin.
-        connection_string = f"udpin:0.0.0.0:{self.port}"
-        print(f"[SIM:{self.sysid}] Listening on {connection_string}")
+        # The sim acts exactly like a real vehicle:
+        #   - Sends telemetry TO the GCS port using udpout
+        #   - pymavlink automatically receives replies on the same socket
+        #   - No patches to production connect_to_vehicle needed
+        #
+        # The test software uses udpin:127.0.0.1:PORT which binds on PORT.
+        # We use udpout:127.0.0.1:PORT which sends TO that PORT.
+        # pymavlink's UDP socket is bidirectional — commands sent by the GCS
+        # come back to our source (ephemeral) port on the same socket.
+        connection_string = f"udpout:127.0.0.1:{self.port}"
+        print(f"[SIM:{self.sysid}] Sending telemetry to {connection_string}")
 
         self.conn = mavutil.mavlink_connection(
             connection_string,

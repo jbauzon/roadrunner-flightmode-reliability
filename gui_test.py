@@ -75,32 +75,17 @@ def run_test(args):
     import hardware.daq as daq_module
     daq_module.SimpleDAQController = MockDAQController
 
-    # Patch connect_to_vehicle for sim
-    import vehicle.connection as conn_mod
-    from pymavlink import mavutil
-
-    def sim_connect(ip_address, port, timeout=10.0):
-        connection_string = f"udpout:{ip_address}:{port}"
-        master = mavutil.mavlink_connection(
-            connection_string,
-            dialect="pandion_vehicle_roadrunner",
-            source_system=255,
-            source_component=190,
-        )
-        hb = master.wait_heartbeat(timeout=timeout)
-        if not hb:
-            raise Exception(f"No heartbeat from {ip_address}:{port}")
-        return master
-
-    conn_mod.connect_to_vehicle = sim_connect
+    # No connect_to_vehicle patch needed — the sim uses udpout to send
+    # telemetry to the same port the test software listens on (udpin).
+    # This mirrors real vehicle behavior exactly.
 
     # ── Start vehicle sims ────────────────────────────────────────────────
-    # Use high ports (29985/29986) to avoid conflicts with other sim sessions
-    # that may be using the default 9985/9986 range.
+    # Sim ports use 19900-19999 range — completely separated from
+    # production vehicle ports (9985+) to prevent any conflict.
     from sim.vehicle import PandionVehicleSim
 
-    SIM_PORT_1 = 29985
-    SIM_PORT_2 = 29986
+    SIM_PORT_1 = 19901
+    SIM_PORT_2 = 19902
     scale = 0.25 if args.fast else 0.5
 
     sims = [
@@ -118,17 +103,6 @@ def run_test(args):
     ]
 
     for sim in sims:
-        # Verify port is free before starting
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.bind(("0.0.0.0", sim.port))
-            sock.close()
-        except OSError:
-            print(f"[TEST] ERROR: Port {sim.port} already in use — another sim session?")
-            print(f"[TEST] Aborting to avoid conflicts.")
-            sys.exit(1)
-
         t = threading.Thread(target=sim.start, daemon=True)
         t.start()
     time.sleep(2)

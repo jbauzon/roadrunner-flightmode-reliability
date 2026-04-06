@@ -1,50 +1,29 @@
-# Roadrunner Flight Test — Simulation Configuration
+# Roadrunner Flight Test -- Simulation Configuration
+#
+# IMPORTANT: Simulation uses port range 19900-19999 to avoid any
+# conflict with real vehicle connections (which use 9985+).
 #
 # Each entry under 'vehicles' spawns one simulated Pandion vehicle
-# listening on UDP localhost at the given port.
-#
+# that sends UDP MAVLink telemetry to 127.0.0.1:<port>.
 # The test software connects to 127.0.0.1:<port> exactly as it would
 # to a real vehicle over the umbilical Ethernet.
-#
-# Fields:
-#   serial            - UUT serial number shown in the GUI table
-#   ip                - IP the sim binds to (127.0.0.1 for localhost)
-#   port              - UDP port (must match UUT config in the GUI)
-#   relay_line        - DAQ relay line (0-7, must be unique per UUT)
-#   sysid             - MAVLink system ID (must be unique per vehicle)
-#   ibit_pass         - true  → IBIT completes with all surfaces passing
-#                       false → IBIT fails with mistracking_flags set
-#   mistracking_flags - Bitmask of failing surfaces (only used when ibit_pass=false)
-#                         1  = Upper Rudder
-#                         2  = Lower Rudder
-#                         4  = Left TVC Upper
-#                         8  = Left TVC Lower
-#                         16 = Right TVC Upper
-#                         32 = Right TVC Lower
-#                         64 = Left Elevon
-#                         128= Right Elevon
-#   boot_monitors     - Monitor IDs asserted on boot (cleared by the test software
-#                       during the ARM preparation sequence)
-#   ibit_duration_scale - Speed multiplier for IBIT phases:
-#                         1.0 = real timing (~30s total IBIT)
-#                         0.1 = 10x faster for rapid testing
 
 vehicles:
 
-  # Vehicle 1 — IBIT PASS
+  # Vehicle 1 -- IBIT PASS
   - serial: RR-SIM-001
     ip: 127.0.0.1
-    port: 9985
+    port: 19901
     relay_line: 0
     sysid: 1
     ibit_pass: true
     boot_monitors: [0, 1, 2, 3]
-    ibit_duration_scale: 0.5   # 2x faster for simulation
+    ibit_duration_scale: 0.5
 
-  # Vehicle 2 — IBIT FAIL (Left + Right Elevon mistracking)
+  # Vehicle 2 -- IBIT FAIL (Left + Right Elevon mistracking)
   - serial: RR-SIM-002
     ip: 127.0.0.1
-    port: 9986
+    port: 19902
     relay_line: 1
     sysid: 2
     ibit_pass: false
