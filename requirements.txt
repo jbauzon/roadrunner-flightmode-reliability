@@ -7,15 +7,5 @@ PyQt5>=5.15.0
 # NI-DAQmx Python bindings (optional - for DAQ hardware control)
 nidaqmx>=0.6.0
 
-# Standard library dependencies (included with Python, listed for documentation)
-# - datetime
-# - time
-# - json
-# - os
-# - csv
-# - shutil
-# - platform
-# - subprocess
-# - threading
-# - collections
-# - sys
+# YAML parsing (used by sim launcher)
+pyyaml>=6.0
