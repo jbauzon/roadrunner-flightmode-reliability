@@ -371,6 +371,11 @@ class UUTTestExecutor(QThread):
                 )
                 self.preparation.log_message.connect(self.log_message)
                 self.preparation.progress_update.connect(self.status_update)
+                # Forward preparation's vehicle status signals to GUI
+                self.preparation.armed_state_update.connect(self.armed_state_update)
+                self.preparation.mode_update.connect(self.mode_update)
+                self.preparation.connection_health_update.connect(self.connection_health_update)
+                self.preparation.actuator_feedback_update.connect(self.actuator_feedback_update)
                 
                 prep_ok, prep_msg = self.preparation.capture_initial_state()
                 if not prep_ok:

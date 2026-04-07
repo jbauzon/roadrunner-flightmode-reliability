@@ -50,8 +50,8 @@ class MultiUUTTestGUI(QMainWindow):
         # script_dir is ui/ — project root is one level up
         self.script_dir    = os.path.dirname(os.path.abspath(__file__))
         self.project_root  = os.path.abspath(os.path.join(self.script_dir, ".."))
-        self.log_directory = os.path.join(self.project_root, "logs")
-        self.report_directory = os.path.join(self.project_root, "reports")
+        self.log_directory = os.path.abspath(os.path.join(self.project_root, "logs"))
+        self.report_directory = os.path.abspath(os.path.join(self.project_root, "reports"))
         os.makedirs(self.log_directory, exist_ok=True)
         os.makedirs(self.report_directory, exist_ok=True)
 
@@ -512,6 +512,7 @@ class MultiUUTTestGUI(QMainWindow):
         ex.armed_state_update.connect(self.status_panel.set_armed_state)
         ex.mode_update.connect(self.status_panel.set_mode)
         ex.actuator_feedback_update.connect(self.actuator_display.update_feedback)
+        ex.status_update.connect(self._on_prep_status)
 
         if self.test_mode == 'ibit':
             ex.iteration_update.connect(self.progress_widget.set_iteration)
@@ -691,6 +692,23 @@ class MultiUUTTestGUI(QMainWindow):
     def _on_statistics(self, statistics):
         self.current_statistics = statistics
 
+    def _on_prep_status(self, status_text):
+        """Show preparation phase progress in the Test Status widget."""
+        # Map common preparation messages to short labels
+        text = status_text.strip()
+        if 'Connecting' in text:
+            self.ibit_display.set_substate('CONNECTING')
+        elif 'ARM' in text or 'Arming' in text:
+            self.ibit_display.set_substate('ARMING')
+        elif 'PLAYBACK' in text:
+            self.ibit_display.set_substate('PLAYBACK')
+        elif 'IBIT' in text:
+            self.ibit_display.set_substate('ENTERING IBIT')
+        elif 'monitor' in text.lower():
+            self.ibit_display.set_substate('CLEARING MONITORS')
+        elif 'Capturing' in text or 'capture' in text.lower():
+            self.ibit_display.set_substate('CAPTURING STATE')
+
     def show_alert(self, message):
         severity = 'critical' if 'CRITICAL' in message.upper() else 'warning'
         self.alert_banner.show_alert(message, severity=severity)
@@ -721,7 +739,11 @@ class MultiUUTTestGUI(QMainWindow):
         try:
             with open(path, 'w') as f:
                 json.dump(report, f, indent=2)
-            self.log(f"✓ Report: {os.path.basename(path)}")
+            self.log(f"✓ Report saved: {path}")
+            self.alert_banner.show_alert(
+                f"Batch report saved: {os.path.basename(path)}",
+                severity='info', auto_hide_ms=15000
+            )
         except Exception as e:
             self.log(f"✗ Report save failed: {e}")
 

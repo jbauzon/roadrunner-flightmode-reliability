@@ -24,6 +24,11 @@ class UUTPreparation(QObject):
     
     log_message = pyqtSignal(str)
     progress_update = pyqtSignal(str)
+    # Vehicle status signals for live UI updates during preparation
+    armed_state_update = pyqtSignal(bool, int)       # (armed, flight_regime)
+    mode_update = pyqtSignal(int)                     # actuation_state
+    connection_health_update = pyqtSignal(bool)       # is_connected
+    actuator_feedback_update = pyqtSignal(dict)       # feedback data dict
     
     def __init__(self, master, config=None, telemetry_logger=None):
         """
@@ -1484,6 +1489,9 @@ class UUTPreparation(QObject):
         All MAVLink recv calls MUST go through this method to prevent
         concurrent access from the telemetry worker thread.
 
+        Also emits vehicle status signals for live UI updates during
+        the preparation phase.
+
         Args:
             msg_type: Message type to wait for
             timeout: Timeout in seconds
@@ -1492,6 +1500,49 @@ class UUTPreparation(QObject):
             Message object or None if timeout
         """
         with self.master_lock:
-            return self.master.recv_match(
+            msg = self.master.recv_match(
                 type=msg_type, blocking=True, timeout=timeout
             )
+        if msg:
+            self._emit_status_from_message(msg)
+        return msg
+
+    def _emit_status_from_message(self, msg):
+        """Emit UI status signals from any received MAVLink message."""
+        try:
+            msg_type = msg.get_type()
+            if msg_type == 'PANDION_STATUS':
+                fr = msg.flight_regime
+                armed = (fr >= 1 and fr != 255)
+                self.armed_state_update.emit(armed, fr)
+                self.connection_health_update.emit(True)
+            elif msg_type == 'PANDION_RR_ACTUATION_SYS_STATUS':
+                self.mode_update.emit(msg.actuation_state)
+                self.connection_health_update.emit(True)
+                try:
+                    self.actuator_feedback_update.emit({
+                        'left_elevon_feedback_cdeg': msg.left_elevon_feedback_cdeg,
+                        'right_elevon_feedback_cdeg': msg.right_elevon_feedback_cdeg,
+                        'dorsal_rudder_feedback_cdeg': msg.dorsal_rudder_feedback_cdeg,
+                        'ventral_rudder_feedback_cdeg': msg.ventral_rudder_feedback_cdeg,
+                        'left_tvc_upper_feedback_cdeg': msg.left_tvc_upper_feedback_cdeg,
+                        'left_tvc_lower_feedback_cdeg': msg.left_tvc_lower_feedback_cdeg,
+                        'right_tvc_upper_feedback_cdeg': msg.right_tvc_upper_feedback_cdeg,
+                        'right_tvc_lower_feedback_cdeg': msg.right_tvc_lower_feedback_cdeg,
+                        'left_elevon_current_mA': msg.left_elevon_current_mA,
+                        'right_elevon_current_mA': msg.right_elevon_current_mA,
+                        'dorsal_rudder_current_mA': msg.dorsal_rudder_current_mA,
+                        'ventral_rudder_current_mA': msg.ventral_rudder_current_mA,
+                        'left_tvc_upper_current_mA': msg.left_tvc_upper_current_mA,
+                        'left_tvc_lower_current_mA': msg.left_tvc_lower_current_mA,
+                        'right_tvc_upper_current_mA': msg.right_tvc_upper_current_mA,
+                        'right_tvc_lower_current_mA': msg.right_tvc_lower_current_mA,
+                        'left_elevon_motor_temp_degC': msg.left_elevon_motor_temp_degC,
+                        'right_elevon_motor_temp_degC': msg.right_elevon_motor_temp_degC,
+                    })
+                except AttributeError:
+                    pass
+            elif msg_type == 'HEARTBEAT':
+                self.connection_health_update.emit(True)
+        except Exception:
+            pass

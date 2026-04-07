@@ -386,12 +386,19 @@ MODE_COLORS = {
 }
 
 IBIT_PHASE_COLORS = {
-    'BEGIN':          BLUE,
-    'WAIT_FOR_SETTLE': AMBER,
-    'ELEVONS':        AMBER,
-    'RUDDERS':        AMBER,
-    'TVC':            AMBER,
-    '✓ COMPLETE':     GREEN,
-    '✓ PASS':         GREEN,
-    '✗ FAIL':         RED,
+    'BEGIN':              BLUE,
+    'WAIT_FOR_SETTLE':    AMBER,
+    'ELEVONS':            AMBER,
+    'RUDDERS':            AMBER,
+    'TVC':                AMBER,
+    '✓ COMPLETE':         GREEN,
+    '✓ PASS':             GREEN,
+    '✗ FAIL':             RED,
+    # Preparation phases (shown during ARM sequence)
+    'CONNECTING':         BLUE,
+    'CAPTURING STATE':    BLUE,
+    'ARMING':             AMBER,
+    'CLEARING MONITORS':  AMBER,
+    'PLAYBACK':           PURPLE,
+    'ENTERING IBIT':      AMBER,
 }
