@@ -110,11 +110,16 @@ def run_tests(verbose=False):
 def _test_vehicle(label, port, expect_pass):
     section(label)
 
-    # Connect with production udpin
+    # Connect with udpout (sim uses udpin -- binds on port)
     conn = mavutil.mavlink_connection(
-        f'udpin:127.0.0.1:{port}',
+        f'udpout:127.0.0.1:{port}',
         dialect='pandion_vehicle_roadrunner',
         source_system=255, source_component=190)
+
+    # Send initial heartbeats so sim learns our return address
+    for _ in range(3):
+        conn.mav.heartbeat_send(6, 8, 0, 0, 4)
+        time.sleep(0.2)
 
     # ── Test 1: Heartbeat ─────────────────────────────────────────────
     hb = conn.wait_heartbeat(timeout=5)

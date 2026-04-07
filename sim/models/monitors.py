@@ -134,17 +134,17 @@ def default_monitor_conditions(vehicle):
 
     return {
         0:  ("GNSS Config In Process",
-             lambda: not vehicle._booted or be() < 10),
+             lambda: not vehicle._booted),  # Only during boot, clears once booted
         1:  ("INS Aligning",
              lambda: vehicle._sensors.ins_status < INSStatus.FULL),
         2:  ("Inner Geofence Invalid",
              lambda: False),  # Asserted on boot via boot_monitors list, stays cleared after override
         3:  ("Outer Geofence Invalid",
-             lambda: False),  # Same -- real vehicle loads geofence data from MC
+             lambda: False),
         4:  ("Deconfliction Data Invalid",
-             lambda: False),  # Same -- real vehicle loads deconfliction from MC
+             lambda: False),
         5:  ("MC Clock Not Synced",
-             lambda: not vehicle._booted or be() < 12),
+             lambda: not vehicle._booted),  # Only during boot
         10: ("RC Rotor Switch Not Set",
              lambda: vehicle.flight_regime == 1),  # appears after ARM
         11: ("VN GPS Error",

@@ -94,6 +94,7 @@ class PandionVehicleSim:
         self.sysid = sysid
         self.ibit_pass = ibit_pass
         self.mist_flags = mistracking_flags if not ibit_pass else 0
+        self.boot_monitors = boot_monitors or [0, 1, 2, 3, 4, 5]
         self.post_arm_monitors = post_arm_monitors or [10]
         self.trans_chance = transient_monitor_chance
         self.scale = ibit_duration_scale
@@ -178,6 +179,10 @@ class PandionVehicleSim:
             for s in self.servos.values():
                 s.reset()
             self.monitors = MonitorSystem(eval_window_s=self.monitors.eval_window)
+            # Force-set boot monitors (these represent hardware conditions
+            # present at power-on that must be cleared by the operator)
+            for mid in self.boot_monitors:
+                self.monitors.force_set(mid)
             self._link_blackout_until = time.time() + self.boot_time * 0.7
         _log(self.sysid, f"Power ON -- booting ({self.boot_time}s)")
         threading.Thread(target=self._boot_sequence, daemon=True).start()
@@ -209,8 +214,12 @@ class PandionVehicleSim:
     # ═══════════════════════════════════════════════════════════════════
 
     def start(self):
+        # Sim uses udpin (binds and listens on vehicle_port).
+        # The patched connect_to_vehicle in run_sim.py uses udpout to send
+        # to this port. This avoids the Windows CONNRESET issue because
+        # the sim's socket is bound before any packets arrive.
         self._conn = mavutil.mavlink_connection(
-            f"udpout:127.0.0.1:{self.vehicle_port}",
+            f"udpin:0.0.0.0:{self.vehicle_port}",
             dialect="pandion_vehicle_roadrunner",
             source_system=self.sysid, source_component=1)
         self._tx = TelemetryManager(self._conn, self.sysid)
@@ -222,17 +231,11 @@ class PandionVehicleSim:
         threading.Thread(target=self._sensor_loop, daemon=True).start()
 
         # RX loop (blocking)
-        # On Windows, udpout's recvfrom raises WinError 10022 until
-        # the socket has sent at least one packet. The telem loop
-        # handles that, so we just retry on OSError.
         try:
             while self._running:
-                try:
-                    msg = self._conn.recv_match(blocking=True, timeout=0.05)
-                    if msg and msg.get_type() != 'BAD_DATA':
-                        self._dispatch(msg)
-                except OSError:
-                    time.sleep(0.1)  # wait for telem loop to send first packet
+                msg = self._conn.recv_match(blocking=True, timeout=0.05)
+                if msg and msg.get_type() != 'BAD_DATA':
+                    self._dispatch(msg)
         except KeyboardInterrupt:
             pass
         finally:
@@ -642,6 +645,15 @@ class PandionVehicleSim:
         }
         last = {k: 0.0 for k in intervals}
         dt = 0.01
+
+        # On Windows, udpout raises CONNRESET (10054) if we send before the
+        # test software binds on the target port. To avoid this, we catch
+        # send errors during the initial phase. Once the test software connects
+        # and sends us a heartbeat, the _gcs_link_lost flag clears and
+        # sends work reliably.
+        #
+        # We also wrap every send in a try/except to handle transient
+        # Windows UDP errors that can occur at any time.
 
         while self._running:
             now = time.time()

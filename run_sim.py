@@ -108,7 +108,6 @@ def patch_loopback_for_sim():
     def _sim_connect(ip_address, port, timeout=10.0):
         import ipaddress
         ip = ipaddress.ip_address(ip_address)
-        # Allow loopback in sim mode
         if ip.is_multicast:
             raise ValueError("Multicast addresses not allowed")
 
@@ -118,20 +117,35 @@ def patch_loopback_for_sim():
             sys.path.insert(0, dialect_dir)
 
         from pymavlink import mavutil
-        connection_string = f"udpin:{str(ip)}:{port}"
+        # Use udpout: test SW sends TO the sim's udpin port.
+        # Sim binds on vehicle_port with udpin, we connect with udpout.
+        # This avoids Windows CONNRESET because the sim is already bound.
+        connection_string = f"udpout:{str(ip)}:{port}"
         master = mavutil.mavlink_connection(
             connection_string,
             dialect="pandion_vehicle_roadrunner",
             source_system=255,
             source_component=190,
         )
-        hb = master.wait_heartbeat(timeout=timeout)
-        if not hb:
-            raise Exception(
-                f"Connection timeout after {timeout}s - "
-                f"no heartbeat from {ip_address}:{port}"
-            )
-        return master
+
+        # Send initial heartbeats so the sim knows our return address
+        for _ in range(5):
+            try:
+                master.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0,
+                    mavutil.mavlink.MAV_STATE_ACTIVE)
+            except OSError:
+                pass
+            hb = master.recv_match(type='HEARTBEAT', blocking=True, timeout=1.0)
+            if hb and hb.get_srcSystem() != 255:
+                return master
+
+        raise Exception(
+            f"Connection timeout after {timeout}s - "
+            f"no heartbeat from {ip_address}:{port}"
+        )
 
     conn_mod.connect_to_vehicle = _sim_connect
     print("[Launcher] connect_to_vehicle patched - loopback allowed for sim")
