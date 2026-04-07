@@ -348,6 +348,8 @@ class PandionVehicleSim:
 
                 time.sleep(self.mode_delay * self.scale)
                 self.act_state = req
+                # Brief telemetry blackout during transition (1-2 frames at 20Hz)
+                self._mode_transition_blackout = time.time() + 0.05
                 _log(self.sysid, f"Mode: {N.get(cur, '?')} -> {N.get(req, '?')}")
                 self._tx.statustext(f"Mode: {N.get(req, str(req))}")
 
@@ -645,65 +647,94 @@ class PandionVehicleSim:
         }
         last = {k: 0.0 for k in intervals}
         dt = 0.01
-
-        # On Windows, udpout raises CONNRESET (10054) if we send before the
-        # test software binds on the target port. To avoid this, we catch
-        # send errors during the initial phase. Once the test software connects
-        # and sends us a heartbeat, the _gcs_link_lost flag clears and
-        # sends work reliably.
-        #
-        # We also wrap every send in a try/except to handle transient
-        # Windows UDP errors that can occur at any time.
+        self._mode_transition_blackout = 0.0
 
         while self._running:
             now = time.time()
 
+            # ── Gate 1: not powered or not booted ─────────────────────
             if not self._powered or not self._booted or now < self._link_blackout_until:
                 time.sleep(dt)
                 continue
 
-            # Step servos with coupling
-            with self._lock:
-                elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
-                for sname, servo in self.servos.items():
-                    coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
-                    servo.step(dt, now, coupling)
+            # ── Gate 2: no telemetry until GCS sends first heartbeat ──
+            # Real Pandion uses udpin -- it only knows where to send
+            # telemetry after receiving a packet from the GCS.
+            if self._last_gcs_hb == 0:
+                time.sleep(dt)
+                continue
 
-            drop = random.random() < self.drop_rate
+            # ── Gate 3: mode transition blackout (1-2 frames) ─────────
+            if now < self._mode_transition_blackout:
+                time.sleep(dt)
+                continue
 
+            # ── Step servos (only when actuation is active) ───────────
             with self._lock:
-                fr = self.flight_regime
                 act = self.act_state
+                fr = self.flight_regime
+
+                if act in (ActuationState.OPERATE, ActuationState.IBIT,
+                           ActuationState.PLAYBACK, ActuationState.MANUAL):
+                    # Servos are powered -- step dynamics with coupling
+                    elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                    for sname, servo in self.servos.items():
+                        coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                        servo.step(dt, now, coupling)
+                else:
+                    # OFF mode: servos unpowered, feedback drifts to trim
+                    for servo in self.servos.values():
+                        servo.fb += (servo._trim_offset - servo.fb) * 0.1 * dt
+                        servo.cur = random.gauss(5, 2)  # quiescent ~5mA
+                        servo.vel = 0.0
+
                 isub = self.ibit_substate
                 imon = self.ibit_mon_status
                 svs = self.servos
 
+            drop = random.random() < self.drop_rate
+
             if not drop:
+                # ── Heartbeat: always (even before GCS, but we gated above) ──
                 if now - last['hb'] >= intervals['hb']:
                     self._tx.heartbeat()
                     last['hb'] = now
+
+                # ── PANDION_STATUS: always after boot ─────────────────
                 if now - last['ps'] >= intervals['ps']:
                     self._tx.pandion_status(fr, self._sensors,
                                             self._sensors.eng1_mode, self._sensors.eng2_mode)
                     last['ps'] = now
+
+                # ── ACTUATION_SYS_STATUS: always, but content depends on mode ─
                 if now - last['act'] >= intervals['act']:
                     self._tx.actuation_sys_status(act, isub, imon, svs)
                     last['act'] = now
+
+                # ── MONITOR_CURRENT_STATUS: always ────────────────────
                 if now - last['mon'] >= intervals['mon']:
                     s, sg, o = self.monitors.get_state()
                     self._tx.monitor_current_status(s, sg, o)
                     last['mon'] = now
+
+                # ── ENGINE_STATUS: always, values depend on relay state ─
                 if now - last['eng'] >= intervals['eng']:
                     self._tx.engine_status(self._sensors, self._powered)
                     last['eng'] = now
+
+                # ── BMS: always ───────────────────────────────────────
                 if now - last['bms'] >= intervals['bms']:
                     self._tx.bms_data(self._bms)
                     last['bms'] = now
+
+                # ── WCA: always ───────────────────────────────────────
                 if now - last['wca'] >= intervals['wca']:
                     s, _, _ = self.monitors.get_state()
                     eid, ets, efl = self.monitors.get_event()
                     self._tx.wca_monitor_status(s, eid, ets, efl)
                     last['wca'] = now
+
+                # ── PDU + HW: low rate ────────────────────────────────
                 if now - last['pdu'] >= intervals['pdu']:
                     self._tx.pdu_telemetry(self._bms)
                     last['pdu'] = now
