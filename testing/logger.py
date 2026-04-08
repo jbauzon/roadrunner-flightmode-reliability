@@ -152,7 +152,10 @@ class TelemetryLogger(QObject):
                 
                 self.current_date = current_date
                 self.current_log_path = self.get_log_path_for_date(current_date)
-                
+
+                # Ensure log directory exists (handles relative paths, ui/ context)
+                os.makedirs(os.path.dirname(self.current_log_path), exist_ok=True)
+
                 file_exists = os.path.exists(self.current_log_path)
                 
                 self.log_file = open(
