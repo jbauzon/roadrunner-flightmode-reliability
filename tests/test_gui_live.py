@@ -15,10 +15,11 @@ if sys.platform == 'win32':
         pass
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+ROOT = os.path.dirname(_HERE)
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
-SHOTS = os.path.join(_HERE, 'screenshots')
+SHOTS = os.path.join(ROOT, 'screenshots')
 os.makedirs(SHOTS, exist_ok=True)
 
 from PyQt5.QtWidgets import QApplication

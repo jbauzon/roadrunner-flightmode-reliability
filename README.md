@@ -32,7 +32,7 @@ This launches the SITL simulator (2 simulated vehicles) and the GUI with a mock 
 ### Run Integration Tests
 
 ```bash
-python test_sitl.py
+python tests/test_sitl.py
 ```
 
 68 tests covering the full SITL: heartbeat, telemetry streams, ARM/DISARM, mode transitions, IBIT execution with pass/fail, monitor management, battery/engine/INS/GNSS telemetry.
@@ -91,12 +91,15 @@ sim/                         Software-In-The-Loop simulator
   models/monitors.py         Condition-based monitor evaluation
   models/sensors.py          INS/GNSS boot progression
 
-test_sitl.py                 68-test SITL integration suite
-test_permutations.py         Combinatorial scenario testing
-test_gui_live.py             Live GUI E2E test with screenshot capture
-gui_test.py                  Headless GUI screenshot capture
-click_start.py               TCP remote control client
-analyze_screenshots.py       Screenshot metadata tool
+tests/                       Test suites
+  test_sitl.py               68-test SITL integration suite
+  test_permutations.py       Combinatorial scenario testing
+  test_gui_live.py           Live GUI E2E test with screenshot capture
+
+tools/                       Utilities
+  gui_test.py                Headless GUI screenshot capture
+  click_start.py             TCP remote control client
+  analyze_screenshots.py     Screenshot metadata tool
 ```
 
 ## Test Modes

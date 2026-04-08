@@ -22,7 +22,7 @@ import argparse
 from datetime import datetime
 
 # ── Path setup ─────────────────────────────────────────────────────────────────
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 DIALECT_DIR = os.path.join(ROOT, "vehicle", "dialects")
