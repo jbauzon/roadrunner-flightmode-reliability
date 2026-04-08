@@ -1,24 +1,25 @@
+from __future__ import annotations
+
 """
 Main Window - Roadrunner Flight Test operator console.
 """
 import os
 import json
 import time
-import socket
-import threading
 import platform
 import subprocess
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QMessageBox, QFileDialog, QApplication, QScrollArea, QSizePolicy
+    QMessageBox, QFileDialog, QApplication, QScrollArea
 )
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QTimer, Qt
 
 from hardware.daq import SimpleDAQController
 from vehicle.connection import UUT
+from vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
+from version import __version__
 from testing.executor import UUTTestExecutor, PlaybackTestExecutor
 from . import theme as T
 from .widgets import (
@@ -28,23 +29,14 @@ from .widgets import (
     AlertBannerWidget, ProgressWidget, ControlButtonsWidget,
     LogWidget, AddUUTDialog
 )
+from .command_server import CommandServer
 
 
 class MultiUUTTestGUI(QMainWindow):
     """Roadrunner Flight Test operator console — multi-UUT IBIT and Playback."""
 
-    # Signal for executing commands from the command server thread
-    _remote_cmd = pyqtSignal(str, dict)
-
-    COMMAND_PORT = 18888
-
     def __init__(self):
         super().__init__()
-
-        # Remote command signal -> handler on GUI thread
-        self._remote_cmd.connect(self._execute_remote_command)
-        self._cmd_response = {}
-        self._cmd_event = threading.Event()
 
         # ── Directories ───────────────────────────────────────────────────
         # script_dir is ui/ — project root is one level up
@@ -66,7 +58,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.batch_end_time        = None
         self.testing_active        = False
         self.current_statistics    = None
-        self.test_mode             = 'ibit'
+        self.test_mode             = TestMode.IBIT
         self.playback_csv          = ''
         self.playback_type         = 'Actuation'
 
@@ -87,7 +79,7 @@ class MultiUUTTestGUI(QMainWindow):
 
         # ── Post-build wiring ─────────────────────────────────────────────
         self.daq_health_timer.timeout.connect(self.check_daq_health)
-        self.daq_health_timer.start(60_000)
+        self.daq_health_timer.start(DAQ_HEALTH_CHECK_INTERVAL)
 
         QTimer.singleShot(100, self.load_settings)
         QTimer.singleShot(500, self.detect_daq_devices)
@@ -95,15 +87,17 @@ class MultiUUTTestGUI(QMainWindow):
             self.test_config_widget.get_test_mode()
         ))
 
-        # Start command server for remote control (click_start.py, test scripts)
-        self._start_command_server()
+        # ── Command server ────────────────────────────────────────────────
+        self._cmd_server = CommandServer(parent=self)
+        self._cmd_server.start(self._handle_remote_command)
+        self.log(f"Command server listening on port {CommandServer.DEFAULT_PORT}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # UI construction
     # ═══════════════════════════════════════════════════════════════════════
 
     def _init_ui(self):
-        self.setWindowTitle("Roadrunner Flight Test  —  IBIT")
+        self.setWindowTitle(f"Roadrunner Flight Test v{__version__}  —  IBIT")
         self.setMinimumSize(1400, 820)
         self.resize(1800, 1000)
 
@@ -287,7 +281,7 @@ class MultiUUTTestGUI(QMainWindow):
             else:
                 self.log(f"✗ DAQ reconnection failed: {msg}")
                 self.alert_banner.show_alert(
-                    f"DAQ OFFLINE — {msg}", severity='critical'
+                    f"DAQ OFFLINE — {msg}", severity=AlertSeverity.CRITICAL
                 )
                 QMessageBox.critical(
                     self, "DAQ Connection Lost",
@@ -389,18 +383,18 @@ class MultiUUTTestGUI(QMainWindow):
         playback_csv = self.test_config_widget.get_playback_csv()
         playback_type = self.test_config_widget.get_playback_type()
 
-        if test_mode == 'playback' and not playback_csv:
+        if test_mode == TestMode.PLAYBACK and not playback_csv:
             QMessageBox.warning(self, "No Profile",
                 "Select a flight profile CSV before starting Playback mode.")
             return
-        if test_mode == 'playback' and not os.path.isfile(playback_csv):
+        if test_mode == TestMode.PLAYBACK and not os.path.isfile(playback_csv):
             QMessageBox.warning(self, "Profile Not Found",
                 f"The CSV file no longer exists:\n{playback_csv}\n\n"
                 "Please re-select the file.")
             return
 
         mode_label = (
-            "IBIT Test" if test_mode == 'ibit'
+            "IBIT Test" if test_mode == TestMode.IBIT
             else f"Flight Profile Playback  ({playback_type})"
         )
 
@@ -424,7 +418,7 @@ class MultiUUTTestGUI(QMainWindow):
 
         # Reset
         for uut in self.uuts:
-            uut.status = "Ready"
+            uut.status = UUTStatus.READY
             uut.iterations_completed = 0
         self.uut_table_widget.update_table(self.uuts)
 
@@ -468,12 +462,12 @@ class MultiUUTTestGUI(QMainWindow):
         if not hasattr(uut, 'consecutive_failures'):
             uut.consecutive_failures = 0
 
-        if uut.status == "Failed (3x)":
+        if uut.status == UUTStatus.FAILED_PERMANENT:
             self.log(f"  Skipping {uut.serial_number} (permanently failed)")
             QTimer.singleShot(100, self.start_next_uut)
             return
 
-        uut.status = "Testing"
+        uut.status = UUTStatus.TESTING
         self.uut_table_widget.update_table(self.uuts)
         self.progress_widget.set_current_uut(
             f"UUT {self.current_uut_index+1}/{len(self.uuts)}  —  {uut.serial_number}"
@@ -481,7 +475,7 @@ class MultiUUTTestGUI(QMainWindow):
 
         skip = self.test_config_widget.get_skip_state_management()
 
-        if self.test_mode == 'playback':
+        if self.test_mode == TestMode.PLAYBACK:
             self.current_test_executor = PlaybackTestExecutor(
                 uut, self.daq, self.batch_end_time,
                 self.test_config_widget.get_stabilization_delay(),
@@ -514,7 +508,7 @@ class MultiUUTTestGUI(QMainWindow):
         ex.actuator_feedback_update.connect(self.actuator_display.update_feedback)
         ex.status_update.connect(self._on_prep_status)
 
-        if self.test_mode == 'ibit':
+        if self.test_mode == TestMode.IBIT:
             ex.iteration_update.connect(self.progress_widget.set_iteration)
             ex.statistics_update.connect(self._on_statistics)
             ex.ibit_state_update.connect(self.ibit_display.set_substate)
@@ -529,13 +523,13 @@ class MultiUUTTestGUI(QMainWindow):
         if not success and "Batch time expired" not in message:
             uut.consecutive_failures = getattr(uut, 'consecutive_failures', 0) + 1
             if uut.consecutive_failures >= 3:
-                uut.status = "Failed (3x)"
+                uut.status = UUTStatus.FAILED_PERMANENT
                 self.log(f"⚠ {uut.serial_number} failed 3× — permanently skipping")
                 if self.daq:
                     ok, msg = self.daq.set_line(uut.relay_line, False)
                     self.log(f"  Relay D{uut.relay_line} {'disabled' if ok else 'ERROR: ' + msg}")
             else:
-                uut.status = "Retry"
+                uut.status = UUTStatus.RETRY
                 self.log(
                     f"⚠ {uut.serial_number} failed "
                     f"({uut.consecutive_failures}/3) — will retry"
@@ -543,7 +537,7 @@ class MultiUUTTestGUI(QMainWindow):
         else:
             uut.consecutive_failures = 0
             if success:
-                uut.status = "Complete"
+                uut.status = UUTStatus.COMPLETE
 
         self.log(f"{'✓' if success else '✗'}  {uut.serial_number}: {message}")
         self.uut_table_widget.update_table(self.uuts)
@@ -570,8 +564,8 @@ class MultiUUTTestGUI(QMainWindow):
                 self.log(f"  Final relay D{uut.relay_line} {'disabled' if ok else 'ERROR: '+msg}")
 
         for uut in self.uuts:
-            if uut.status in ("Testing", "Ready"):
-                uut.status = "Complete"
+            if uut.status in (UUTStatus.TESTING, UUTStatus.READY):
+                uut.status = UUTStatus.COMPLETE
         self.uut_table_widget.update_table(self.uuts)
 
         self.log("═" * 56)
@@ -636,7 +630,7 @@ class MultiUUTTestGUI(QMainWindow):
             if self.daq:
                 ok, msg = self.daq.set_line(uut.relay_line, False)
                 self.log(f"  Relay D{uut.relay_line} {'disabled' if ok else 'ERROR: '+msg}")
-            uut.status = "Stopped"
+            uut.status = UUTStatus.STOPPED
             self.uut_table_widget.update_table(self.uuts)
 
         self.control_buttons.set_testing_mode(False)
@@ -658,7 +652,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.elapsed_timer.stop()
         self.control_buttons.set_testing_mode(False)
         self.alert_banner.show_alert(
-            "EMERGENCY STOP — All relays disabled", severity='critical'
+            "EMERGENCY STOP — All relays disabled", severity=AlertSeverity.CRITICAL
         )
         QMessageBox.critical(
             self, "Emergency Stop",
@@ -676,8 +670,8 @@ class MultiUUTTestGUI(QMainWindow):
         self.control_buttons.set_test_mode_label(mode)
         self.progress_widget.set_test_mode(mode)
         self.header.set_mode(mode)
-        mode_str = "IBIT" if mode == 'ibit' else "Flight Profile Playback"
-        self.setWindowTitle(f"Roadrunner Flight Test  —  {mode_str}")
+        mode_str = "IBIT" if mode == TestMode.IBIT else "Flight Profile Playback"
+        self.setWindowTitle(f"Roadrunner Flight Test v{__version__}  —  {mode_str}")
         self.update_status_bar()
 
     def update_elapsed_time(self):
@@ -710,18 +704,18 @@ class MultiUUTTestGUI(QMainWindow):
             self.ibit_display.set_substate('CAPTURING STATE')
 
     def show_alert(self, message):
-        severity = 'critical' if 'CRITICAL' in message.upper() else 'warning'
+        severity = AlertSeverity.CRITICAL if 'CRITICAL' in message.upper() else AlertSeverity.WARNING
         self.alert_banner.show_alert(message, severity=severity)
 
     def generate_batch_report(self):
-        tag  = 'IBIT' if self.test_mode == 'ibit' else 'Playback'
+        tag  = 'IBIT' if self.test_mode == TestMode.IBIT else 'Playback'
         path = os.path.join(
             self.report_directory,
-            f"BatchTest_{tag}_v5.0_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            f"BatchTest_{tag}_v{__version__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         )
         report = {
-            'test_type':   f'{tag}_v5.0',
-            'version':     '5.0',
+            'test_type':   f'{tag}_v{__version__}',
+            'version':     __version__,
             'test_mode':   self.test_mode,
             'start':       self.batch_start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
             'end':         datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -742,7 +736,7 @@ class MultiUUTTestGUI(QMainWindow):
             self.log(f"✓ Report saved: {path}")
             self.alert_banner.show_alert(
                 f"Batch report saved: {os.path.basename(path)}",
-                severity='info', auto_hide_ms=15000
+                severity=AlertSeverity.INFO, auto_hide_ms=15000
             )
         except Exception as e:
             self.log(f"✗ Report save failed: {e}")
@@ -771,9 +765,9 @@ class MultiUUTTestGUI(QMainWindow):
         self.update_status_bar()
 
     def update_status_bar(self):
-        mode_str = "IBIT" if self.test_mode == 'ibit' else "Playback"
+        mode_str = "IBIT" if self.test_mode == TestMode.IBIT else "Playback"
         self.statusBar.showMessage(
-            f"Mode: {mode_str}   |   Logs: {self.log_directory}   |   v5.0"
+            f"Mode: {mode_str}   |   Logs: {self.log_directory}   |   v{__version__}"
         )
 
     def log(self, message):
@@ -810,118 +804,70 @@ class MultiUUTTestGUI(QMainWindow):
             self.log(f"⚠ Could not load settings: {e}")
 
     # ═══════════════════════════════════════════════════════════════════════
-    # Remote command server
+    # Remote command handler (called by CommandServer on GUI thread)
     # ═══════════════════════════════════════════════════════════════════════
 
-    def _start_command_server(self):
-        """Start a TCP command server on localhost for remote control."""
-        def _server():
-            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                srv.bind(('127.0.0.1', self.COMMAND_PORT))
-                srv.listen(1)
-                srv.settimeout(1.0)
-                self.log(f"Command server listening on port {self.COMMAND_PORT}")
-            except OSError as e:
-                self.log(f"Command server failed to start: {e}")
-                return
+    def _handle_remote_command(self, cmd, args):
+        """
+        Handle a remote command and return a response dict.
 
-            while True:
-                try:
-                    conn, addr = srv.accept()
-                    data = conn.recv(4096).decode('utf-8')
-                    if data:
-                        try:
-                            req = json.loads(data)
-                            cmd = req.get('cmd', '')
-                            args = req.get('args', {})
+        Called on the GUI thread by CommandServer._dispatch().
+        """
+        if cmd == 'start':
+            self._auto_start_test(int(args.get('seconds', 120)))
+            return {'ok': True, 'msg': 'Test started'}
 
-                            # Execute on GUI thread via signal
-                            self._cmd_event.clear()
-                            self._cmd_response = {}
-                            self._remote_cmd.emit(cmd, args)
+        elif cmd == 'stop':
+            self.testing_active = False
+            if self.current_test_executor:
+                self.current_test_executor.stop()
+            return {'ok': True, 'msg': 'Stop requested'}
 
-                            # Wait for GUI thread to process (up to 30s)
-                            self._cmd_event.wait(timeout=30.0)
-                            response = self._cmd_response
-                        except json.JSONDecodeError:
-                            response = {'error': 'Invalid JSON'}
+        elif cmd == 'emergency':
+            self.emergency_stop()
+            return {'ok': True, 'msg': 'Emergency stop'}
 
-                        conn.sendall(json.dumps(response).encode('utf-8'))
-                    conn.close()
-                except socket.timeout:
-                    continue
-                except Exception:
-                    break
+        elif cmd == 'status':
+            uut_statuses = [
+                {'serial': u.serial_number, 'status': u.status,
+                 'iterations': u.iterations_completed}
+                for u in self.uuts
+            ]
+            return {
+                'ok': True,
+                'testing': self.testing_active,
+                'mode': self.test_mode,
+                'uuts': uut_statuses,
+                'elapsed': time.time() - self.batch_start_datetime.timestamp()
+                if self.batch_start_datetime and self.testing_active else 0,
+            }
 
-        t = threading.Thread(target=_server, daemon=True)
-        t.start()
+        elif cmd == 'screenshot':
+            path = os.path.join(
+                self.project_root, 'screenshots',
+                f'remote_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
+            )
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            pixmap = self.grab()
+            pixmap.save(path, 'PNG')
+            return {'ok': True, 'path': path,
+                    'size': f'{pixmap.width()}x{pixmap.height()}'}
 
-    def _execute_remote_command(self, cmd, args):
-        """Execute a remote command on the GUI thread."""
-        try:
-            if cmd == 'start':
-                # Bypass QMessageBox confirmation
-                self._auto_start_test(int(args.get('seconds', 120)))
-                self._cmd_response = {'ok': True, 'msg': 'Test started'}
-
-            elif cmd == 'stop':
-                self.testing_active = False
-                if self.current_test_executor:
-                    self.current_test_executor.stop()
-                self._cmd_response = {'ok': True, 'msg': 'Stop requested'}
-
-            elif cmd == 'emergency':
-                self.emergency_stop()
-                self._cmd_response = {'ok': True, 'msg': 'Emergency stop'}
-
-            elif cmd == 'status':
-                uut_statuses = [
-                    {'serial': u.serial_number, 'status': u.status,
-                     'iterations': u.iterations_completed}
-                    for u in self.uuts
-                ]
-                self._cmd_response = {
-                    'ok': True,
-                    'testing': self.testing_active,
-                    'mode': self.test_mode,
-                    'uuts': uut_statuses,
-                    'elapsed': time.time() - self.batch_start_datetime.timestamp()
-                    if self.batch_start_datetime and self.testing_active else 0,
-                }
-
-            elif cmd == 'screenshot':
-                path = os.path.join(
-                    self.project_root, 'screenshots',
-                    f'remote_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
-                )
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                pixmap = self.grab()
-                pixmap.save(path, 'PNG')
-                self._cmd_response = {'ok': True, 'path': path,
-                                      'size': f'{pixmap.width()}x{pixmap.height()}'}
-
-            elif cmd == 'set_duration':
-                secs = int(args.get('seconds', 120))
-                if secs < 60:
-                    self.test_config_widget.duration_input.setValue(secs)
-                    self.test_config_widget.duration_unit_combo.setCurrentText("Seconds")
-                elif secs < 3600:
-                    self.test_config_widget.duration_input.setValue(secs // 60)
-                    self.test_config_widget.duration_unit_combo.setCurrentText("Minutes")
-                else:
-                    self.test_config_widget.duration_input.setValue(secs // 3600)
-                    self.test_config_widget.duration_unit_combo.setCurrentText("Hours")
-                self._cmd_response = {'ok': True, 'seconds': secs}
-
+        elif cmd == 'set_duration':
+            secs = int(args.get('seconds', 120))
+            if secs < 60:
+                self.test_config_widget.duration_input.setValue(secs)
+                self.test_config_widget.duration_unit_combo.setCurrentText("Seconds")
+            elif secs < 3600:
+                self.test_config_widget.duration_input.setValue(secs // 60)
+                self.test_config_widget.duration_unit_combo.setCurrentText("Minutes")
             else:
-                self._cmd_response = {'error': f'Unknown command: {cmd}'}
+                self.test_config_widget.duration_input.setValue(secs // 3600)
+                self.test_config_widget.duration_unit_combo.setCurrentText("Hours")
+            return {'ok': True, 'seconds': secs}
 
-        except Exception as e:
-            self._cmd_response = {'error': str(e)}
-        finally:
-            self._cmd_event.set()
+        else:
+            return {'error': f'Unknown command: {cmd}'}
 
     def _auto_start_test(self, duration_seconds=120):
         """Start the test programmatically without QMessageBox confirmation."""
@@ -940,7 +886,7 @@ class MultiUUTTestGUI(QMainWindow):
 
         # Reset UUTs
         for uut in self.uuts:
-            uut.status = "Ready"
+            uut.status = UUTStatus.READY
             uut.iterations_completed = 0
         self.uut_table_widget.update_table(self.uuts)
 
@@ -955,7 +901,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.test_config.update(self.test_config_widget.get_config())
         self.control_buttons.set_testing_mode(True)
 
-        mode_label = "IBIT" if test_mode == 'ibit' else f"Playback ({playback_type})"
+        mode_label = "IBIT" if test_mode == TestMode.IBIT else f"Playback ({playback_type})"
         self.log("=" * 56)
         self.log(f"  BATCH START  --  {mode_label}  ({duration_seconds}s)")
         self.log("=" * 56)

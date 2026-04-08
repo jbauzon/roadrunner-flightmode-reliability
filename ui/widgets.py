@@ -11,12 +11,16 @@ from PyQt5.QtWidgets import (
     QGridLayout, QHeaderView, QFrame, QFileDialog, QButtonGroup,
     QRadioButton, QSizePolicy, QScrollArea, QTabWidget
 )
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor, QFont, QFontMetrics
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer
+from PyQt5.QtGui import QColor, QFont
 from datetime import datetime
 import time
 
 from . import theme as T
+from vehicle.constants import (
+    TestMode, MODE_NAMES, FLIGHT_REGIME_SHORT_NAMES, UUTStatus, ActuationMode,
+    get_mode_name, get_flight_regime_short_name,
+)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -62,9 +66,11 @@ class StatusBadge(QLabel):
         self.set_color(T.BG_ELEVATED)
 
     def set_color(self, bg, text=T.WHITE):
+        """Set badge background and text colors."""
         self.setStyleSheet(T.badge_style(bg, text))
 
     def set_text_color(self, text, bg, fg=T.WHITE):
+        """Set text content and colors."""
         self.setText(text)
         self.set_color(bg, fg)
 
@@ -80,7 +86,7 @@ class LED(QLabel):
         self.set_state(None)
 
     def set_state(self, state):
-        """state: 'green', 'red', 'amber', 'blue', None (grey)"""
+        """Set LED state: 'green', 'red', 'amber', 'blue', or None (grey)."""
         colors = {
             'green': T.GREEN,
             'red':   T.RED,
@@ -145,7 +151,7 @@ class HeaderBanner(QWidget):
         self.clock_label.setText(datetime.now().strftime("%Y-%m-%d  %H:%M:%S"))
 
     def set_mode(self, mode):
-        if mode == 'playback':
+        if mode == TestMode.PLAYBACK:
             self.mode_badge.setText("PLAYBACK MODE")
             self.mode_badge.set_color(T.PURPLE_DIM, T.PURPLE)
         else:
@@ -391,7 +397,7 @@ class TestConfigWidget(QGroupBox):
 
     def _on_mode_changed(self, ibit_selected):
         self.playback_group.setVisible(not ibit_selected)
-        self.mode_changed.emit('ibit' if ibit_selected else 'playback')
+        self.mode_changed.emit(TestMode.IBIT if ibit_selected else TestMode.PLAYBACK)
 
     def _browse_playback_csv(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -420,7 +426,7 @@ class TestConfigWidget(QGroupBox):
     # ── Accessors ────────────────────────────────────────────────────────
 
     def get_test_mode(self):
-        return 'ibit' if self.mode_ibit_radio.isChecked() else 'playback'
+        return TestMode.IBIT if self.mode_ibit_radio.isChecked() else TestMode.PLAYBACK
 
     def get_playback_csv(self):
         return self.playback_csv_input.text()
@@ -481,7 +487,7 @@ class TestConfigWidget(QGroupBox):
         self.phase_timeout_input.setValue(settings.get('phase_timeout', 90))
         self.arm_timeout_input.setValue(settings.get('arm_timeout', 60))
         self.max_arm_iterations_input.setValue(settings.get('max_arm_iterations', 20))
-        if settings.get('test_mode', 'ibit') == 'playback':
+        if settings.get('test_mode', TestMode.IBIT) == TestMode.PLAYBACK:
             self.mode_playback_radio.setChecked(True)
         else:
             self.mode_ibit_radio.setChecked(True)
@@ -574,6 +580,7 @@ class UUTTableWidget(QGroupBox):
         layout.addWidget(self.table)
 
     def update_table(self, uuts):
+        """Refresh the table from a list of UUT objects."""
         self.table.setRowCount(len(uuts))
         for i, uut in enumerate(uuts):
             items = [
@@ -599,6 +606,7 @@ class UUTTableWidget(QGroupBox):
         self.table.resizeRowsToContents()
 
     def get_selected_row(self):
+        """Return the selected row index, or -1 if none."""
         selected = self.table.selectionModel().selectedRows()
         return selected[0].row() if selected else -1
 
@@ -641,6 +649,7 @@ class StatusPanelWidget(QGroupBox):
         layout.addWidget(self.mode_badge, 2, 1, 1, 2)
 
     def set_connection_health(self, is_healthy):
+        """Update the connection LED and label."""
         if is_healthy:
             self.connection_led.set_state('green')
             self.connection_label.set_text_color("CONNECTED", T.GREEN_DIM, T.GREEN)
@@ -649,12 +658,8 @@ class StatusPanelWidget(QGroupBox):
             self.connection_label.set_text_color("LINK LOST", T.RED_DIM, T.RED)
 
     def set_armed_state(self, armed, flight_regime):
-        regime_names = {
-            0: "DISARMED", 1: "ARMED", 2: "AUTO_TAKEOFF",
-            3: "HOVER", 4: "FWD_TRANS", 5: "CRUISE",
-            255: "INVALID"
-        }
-        regime_str = regime_names.get(flight_regime, f"REGIME {flight_regime}")
+        """Update the armed state LED and label."""
+        regime_str = get_flight_regime_short_name(flight_regime)
         if armed:
             self.armed_led.set_state('amber')
             self.armed_label.set_text_color(f"ARMED  {regime_str}", T.AMBER_DIM, T.AMBER)
@@ -663,20 +668,21 @@ class StatusPanelWidget(QGroupBox):
             self.armed_label.set_text_color(f"SAFE  {regime_str}", T.GREEN_DIM, T.GREEN)
 
     def set_mode(self, mode):
-        names  = {0:"OFF", 1:"IBIT", 2:"OPERATE", 3:"MANUAL", 4:"PLAYBACK", 5:"TRIM"}
+        """Update the actuation mode badge."""
+        name = get_mode_name(mode)
         colors = {
-            0: (T.BG_ELEVATED,  T.TEXT_DISABLED),
-            1: (T.AMBER_DIM,    T.AMBER),
-            2: (T.GREEN_DIM,    T.GREEN),
-            3: (T.BLUE_DIM,     T.BLUE),
-            4: (T.PURPLE_DIM,   T.PURPLE),
-            5: (T.BLUE_DIM,     T.TEAL),
+            ActuationMode.OFF:      (T.BG_ELEVATED, T.TEXT_DISABLED),
+            ActuationMode.IBIT:     (T.AMBER_DIM,   T.AMBER),
+            ActuationMode.OPERATE:  (T.GREEN_DIM,   T.GREEN),
+            ActuationMode.MANUAL:   (T.BLUE_DIM,    T.BLUE),
+            ActuationMode.PLAYBACK: (T.PURPLE_DIM,  T.PURPLE),
+            ActuationMode.TRIM:     (T.BG_ELEVATED, T.TEXT_SECONDARY),
         }
-        name = names.get(mode, f"MODE {mode}")
         bg, fg = colors.get(mode, (T.BG_ELEVATED, T.TEXT_DISABLED))
         self.mode_badge.set_text_color(name, bg, fg)
 
     def reset(self):
+        """Reset all indicators to idle/offline state."""
         self.connection_led.set_state(None)
         self.connection_label.set_text_color("OFFLINE", T.BG_ELEVATED, T.TEXT_DISABLED)
         self.armed_led.set_state(None)
@@ -786,7 +792,7 @@ class IBITDisplayWidget(QGroupBox):
 
     def set_mode(self, mode):
         self._mode = mode
-        is_pb = (mode == 'playback')
+        is_pb = (mode == TestMode.PLAYBACK)
         self._phase_container.setVisible(not is_pb)
         self._playback_container.setVisible(is_pb)
         self._mistracking_container.setVisible(is_pb)
@@ -798,6 +804,7 @@ class IBITDisplayWidget(QGroupBox):
         self.reset()
 
     def set_substate(self, substate_name):
+        """Update the IBIT phase display for the given substate name."""
         color = T.IBIT_PHASE_COLORS.get(substate_name, T.TEXT_DISABLED)
         bg_map = {
             T.GREEN: T.GREEN_DIM,
@@ -830,6 +837,7 @@ class IBITDisplayWidget(QGroupBox):
                 dot.setStyleSheet(f"background-color: {T.GREEN}; border-radius: 5px;")
 
     def set_playback_progress(self, percent):
+        """Update playback progress bar and percentage label."""
         self.playback_pct_label.setText(f"{percent}%")
         self.playback_bar.setValue(percent)
         color = T.GREEN if percent >= 100 else (T.PURPLE if percent >= 50 else T.BLUE)
@@ -850,10 +858,12 @@ class IBITDisplayWidget(QGroupBox):
             )
 
     def set_duration(self, duration):
+        """Update the test duration display (in seconds)."""
         m, s = divmod(int(duration), 60)
         self.duration_label.setText(f"{m:02d}:{s:02d}  ({duration:.1f}s)")
 
     def reset(self):
+        """Reset display to idle state."""
         self.state_badge.setText("IDLE")
         self.state_badge.setStyleSheet(
             f"background-color: {T.BG_ELEVATED}; color: {T.TEXT_DISABLED}; "
@@ -942,6 +952,7 @@ class ActuatorFeedbackWidget(QGroupBox):
         return T.RED
 
     def update_feedback(self, data):
+        """Update all surface rows from a feedback data dict."""
         try:
             keys = [
                 "left_elevon", "right_elevon",
@@ -987,6 +998,7 @@ class ActuatorFeedbackWidget(QGroupBox):
             pass
 
     def reset(self):
+        """Clear all surface data to '---'."""
         for row in self._rows.values():
             for w in row.values():
                 w.setText("---")
@@ -1038,6 +1050,7 @@ class AlertBannerWidget(QWidget):
         self._timer.timeout.connect(self.hide)
 
     def show_alert(self, message, severity='warning', auto_hide_ms=10000):
+        """Display an alert banner with the given message and severity."""
         colors = {
             'warning':  (T.AMBER_DIM, T.AMBER,  T.AMBER,  "⚠"),
             'error':    (T.RED_DIM,   T.RED,    T.RED,    "✗"),
@@ -1100,23 +1113,29 @@ class ProgressWidget(QGroupBox):
         layout.addWidget(self.progress_bar, 2, 0, 1, 4)
 
     def set_current_uut(self, text):
+        """Set the current UUT label text."""
         self.current_uut_label.setText(text)
 
     def set_test_mode(self, mode):
+        """Set iteration/frame label based on test mode."""
         self._iteration_title_label.setText(
-            "Iteration:" if mode == 'ibit' else "Frame:"
+            "Iteration:" if mode == TestMode.IBIT else "Frame:"
         )
 
     def set_iteration(self, iteration):
+        """Set the iteration counter."""
         self.iteration_label.setText(str(iteration))
 
     def set_elapsed(self, seconds):
+        """Set elapsed time display."""
         self.elapsed_label.setText(time.strftime('%H:%M:%S', time.gmtime(seconds)))
 
     def set_remaining(self, seconds):
+        """Set remaining time display."""
         self.remaining_label.setText(time.strftime('%H:%M:%S', time.gmtime(seconds)))
 
     def set_progress(self, percent):
+        """Set the progress bar percentage."""
         self.progress_bar.setValue(percent)
 
 
@@ -1157,16 +1176,19 @@ class ControlButtonsWidget(QWidget):
         layout.addWidget(self.emergency_btn, 2)
 
     def set_testing_mode(self, testing):
+        """Enable/disable buttons for testing state."""
         self.start_btn.setEnabled(not testing)
         self.stop_btn.setEnabled(testing)
 
     def set_test_mode_label(self, mode):
-        if mode == 'playback':
+        """Update the start button label for the current test mode."""
+        if mode == TestMode.PLAYBACK:
             self.start_btn.setText("▶  Start Playback Test")
         else:
             self.start_btn.setText("▶  Start IBIT Test")
 
     def set_enabled(self, start_enabled, stop_enabled):
+        """Explicitly set button enabled states."""
         self.start_btn.setEnabled(start_enabled)
         self.stop_btn.setEnabled(stop_enabled)
 
@@ -1205,6 +1227,7 @@ class LogWidget(QGroupBox):
         layout.addLayout(bar)
 
     def append(self, message):
+        """Append a timestamped, color-coded message to the log."""
         ts = datetime.now().strftime('%H:%M:%S')
 
         # Color-code by prefix
@@ -1304,6 +1327,7 @@ class AddUUTDialog(QDialog):
         self.relay_input.setValue(self.uut.relay_line)
 
     def get_uut(self):
+        """Return a new UUT from the dialog's field values."""
         from vehicle.connection import UUT
         return UUT(
             serial_number=self.serial_input.text(),

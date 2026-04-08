@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Telemetry Logger - Descriptive CSV logging for IBIT tests
 
@@ -9,9 +11,17 @@ This module provides human-readable CSV logging with complete test lifecycle:
 """
 import os
 import csv
+import sys
 import time
 from datetime import datetime
+from typing import Any, Optional
+
 from PyQt5.QtCore import QObject, pyqtSignal
+from vehicle.constants import (
+    TestMode, FLIGHT_REGIME_NAMES, ACTUATION_MODE_NAMES, SEVERITY_NAMES,
+    DEFAULT_ACTUATOR_POSITION_CDEG, IBITSubstate,
+    get_flight_regime_name, get_severity_name, is_armed,
+)
 
 
 class TelemetryLogger(QObject):
@@ -28,9 +38,9 @@ class TelemetryLogger(QObject):
     MODE_IBIT_FOCUSED = "ibit_focused"
     MODE_NONE = "none"
 
-    def __init__(self, log_directory, uut_serial, test_start_datetime,
-                 logging_mode=MODE_IBIT_FOCUSED, max_file_size_mb=100,
-                 test_mode='ibit'):
+    def __init__(self, log_directory: str, uut_serial: str, test_start_datetime: Any,
+                 logging_mode: str = MODE_IBIT_FOCUSED, max_file_size_mb: int = 100,
+                 test_mode: str = 'ibit') -> None:
         """
         Initialize telemetry logger.
 
@@ -103,7 +113,7 @@ class TelemetryLogger(QObject):
         self.current_actuation_mode = "UNKNOWN"
         self.iteration_number = 0
     
-    def get_log_path_for_date(self, date_obj):
+    def get_log_path_for_date(self, date_obj: Any) -> str:
         """
         Generate log file path for a specific date.
 
@@ -119,13 +129,13 @@ class TelemetryLogger(QObject):
         day_num = (date_obj - self.test_start_datetime.date()).days + 1
         day_str = f"day{day_num:02d}"
         date_str = date_obj.strftime('%Y%m%d')
-        mode_tag = "IBIT" if self.test_mode == 'ibit' else "Playback"
+        mode_tag = "IBIT" if self.test_mode == TestMode.IBIT else "Playback"
         filename = (
             f"UUT_{self.uut_serial}_{day_str}_{date_str}_{mode_tag}_Test.csv"
         )
         return os.path.join(self.log_directory, filename)
     
-    def open(self):
+    def open(self) -> bool:
         """
         Open log file for current date.
         
@@ -181,7 +191,7 @@ class TelemetryLogger(QObject):
             self.log_message.emit(f"Error opening log file: {e}")
             return False
     
-    def log_test_event(self, event_type, description):
+    def log_test_event(self, event_type: str, description: str) -> None:
         """
         Log a test lifecycle event.
         
@@ -214,7 +224,7 @@ class TelemetryLogger(QObject):
         except Exception as e:
             self.log_message.emit(f"Error logging test event: {e}")
     
-    def log_relay_state(self, relay_line, state):
+    def log_relay_state(self, relay_line: str, state: bool) -> None:
         """
         Log relay state change.
         
@@ -253,11 +263,11 @@ class TelemetryLogger(QObject):
         except Exception as e:
             self.log_message.emit(f"Error logging relay state: {e}")
     
-    def set_iteration_number(self, iteration):
+    def set_iteration_number(self, iteration: int) -> None:
         """Set current iteration number"""
         self.iteration_number = iteration
     
-    def update_ibit_phase(self, substate):
+    def update_ibit_phase(self, substate: int) -> None:
         """
         Update current IBIT phase.
         
@@ -265,12 +275,12 @@ class TelemetryLogger(QObject):
             substate: IBIT substate number (0-5)
         """
         phase_map = {
-            0: "BEGIN (Initializing)",
-            1: "WAIT_FOR_SETTLE (Waiting for stabilization)",
-            2: "ELEVONS (Testing wing controls)",
-            3: "RUDDERS (Testing tail controls)",
-            4: "TVC (Testing engine gimbals)",
-            5: "COMPLETE (All tests passed)"
+            IBITSubstate.BEGIN: "BEGIN (Initializing)",
+            IBITSubstate.WAIT_FOR_SETTLE: "WAIT_FOR_SETTLE (Waiting for stabilization)",
+            IBITSubstate.ELEVONS: "ELEVONS (Testing wing controls)",
+            IBITSubstate.RUDDERS: "RUDDERS (Testing tail controls)",
+            IBITSubstate.TVC: "TVC (Testing engine gimbals)",
+            IBITSubstate.COMPLETE: "COMPLETE (All tests passed)"
         }
         
         old_phase = self.current_ibit_phase
@@ -284,7 +294,7 @@ class TelemetryLogger(QObject):
                 f"{self.current_ibit_phase.split('(')[0].strip()}"
             )
     
-    def update_armed_state(self, armed, flight_regime):
+    def update_armed_state(self, armed: bool, flight_regime: int) -> None:
         """
         Update armed state and flight regime.
         
@@ -292,21 +302,10 @@ class TelemetryLogger(QObject):
             armed: True if vehicle is armed
             flight_regime: Flight regime number
         """
-        regime_names = {
-            0: "GROUND_DISARMED", 1: "GROUND_ARMED", 2: "AUTO_TAKEOFF",
-            3: "HOVER", 4: "FORWARD_TRANSITION", 5: "CRUISE",
-            6: "IN_AIR_RESTART", 7: "BACK_TRANSITION", 8: "EXTERNAL_GUIDANCE",
-            9: "TAKEOFF_ABORTED", 10: "POWERING_OFF", 11: "CUT_POWER",
-            12: "TERMINATE", 13: "SCUTTLE", 14: "NULL_ATTITUDE_AND_COLLECTIVE",
-            15: "NULL_ATTITUDE_FIXED_COLLECTIVE", 16: "LANDNOW_OL", 17: "LANDNOW_CL",
-            18: "PILOT_OVERRIDE", 19: "EMERGENCY_STOP", 20: "AUTO_RECOVERY",
-            21: "WAVE_OFF", 22: "TAXI", 255: "INVALID"
-        }
-        
         old_armed_state = self.current_armed_state
         self.current_armed_state = 'YES (ARMED!)' if armed else 'NO (Safe)'
         self.current_flight_regime = (
-            f"{flight_regime} ({regime_names.get(flight_regime, 'UNKNOWN')})"
+            f"{flight_regime} ({get_flight_regime_name(flight_regime)})"
         )
         
         # Log if armed state changed
@@ -317,7 +316,7 @@ class TelemetryLogger(QObject):
                 f"(Flight Regime: {self.current_flight_regime})"
             )
     
-    def log_telemetry(self, msg):
+    def log_telemetry(self, msg: Any) -> None:
         """
         Log telemetry with descriptive context.
         
@@ -355,13 +354,9 @@ class TelemetryLogger(QObject):
                 row['Relay_Status'] = self.current_relay_state
                 
                 # Actuation mode
-                mode_names = {
-                    0: "OFF (Disabled)",
-                    1: "IBIT (Self-test)",
-                    2: "OPERATE (Flight-ready)"
-                }
                 mode = msg.actuation_state
-                self.current_actuation_mode = mode_names.get(mode, f"UNKNOWN_{mode}")
+                mode_name = ACTUATION_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
+                self.current_actuation_mode = mode_name
                 row['Actuation_Mode'] = self.current_actuation_mode
                 
                 row['Vehicle_Armed'] = self.current_armed_state
@@ -369,28 +364,28 @@ class TelemetryLogger(QObject):
                 
                 # Actuator positions (centidegrees to degrees)
                 row['Left_Elevon_Position_deg'] = (
-                    f"{getattr(msg, 'left_elevon_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'left_elevon_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Right_Elevon_Position_deg'] = (
-                    f"{getattr(msg, 'right_elevon_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'right_elevon_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Dorsal_Rudder_Position_deg'] = (
-                    f"{getattr(msg, 'dorsal_rudder_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'dorsal_rudder_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Ventral_Rudder_Position_deg'] = (
-                    f"{getattr(msg, 'ventral_rudder_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'ventral_rudder_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Left_TVC_Upper_Position_deg'] = (
-                    f"{getattr(msg, 'left_tvc_upper_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'left_tvc_upper_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Left_TVC_Lower_Position_deg'] = (
-                    f"{getattr(msg, 'left_tvc_lower_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'left_tvc_lower_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Right_TVC_Upper_Position_deg'] = (
-                    f"{getattr(msg, 'right_tvc_upper_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'right_tvc_upper_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 row['Right_TVC_Lower_Position_deg'] = (
-                    f"{getattr(msg, 'right_tvc_lower_feedback_cdeg', -5500) / 100.0:.2f}"
+                    f"{getattr(msg, 'right_tvc_lower_feedback_cdeg', DEFAULT_ACTUATOR_POSITION_CDEG) / 100.0:.2f}"
                 )
                 
                 # Currents
@@ -419,7 +414,7 @@ class TelemetryLogger(QObject):
             # Log PANDION_STATUS for armed status and flight regime
             elif msg_type == 'PANDION_STATUS':
                 flight_regime = msg.flight_regime
-                armed = (flight_regime >= 1 and flight_regime != 255)
+                armed = is_armed(flight_regime)
                 
                 # Update internal state
                 old_armed = self.current_armed_state
@@ -491,11 +486,7 @@ class TelemetryLogger(QObject):
                 row['Flight_Regime'] = self.current_flight_regime
                 row['Actuation_Mode'] = self.current_actuation_mode
                 
-                severity_names = {
-                    0: "EMERGENCY", 1: "ALERT", 2: "CRITICAL", 3: "ERROR",
-                    4: "WARNING", 5: "NOTICE", 6: "INFO", 7: "DEBUG"
-                }
-                severity = severity_names.get(msg.severity, f"SEV{msg.severity}")
+                severity = get_severity_name(msg.severity)
                 row['Event_Description'] = f"[{severity}] {msg.text}"
                 
                 self._write_row(row)
@@ -509,7 +500,7 @@ class TelemetryLogger(QObject):
         except Exception as e:
             self.log_message.emit(f"Error logging telemetry: {e}")
     
-    def _write_row(self, row_dict):
+    def _write_row(self, row_dict: dict) -> None:
         """
         Write a row to CSV.
         
@@ -520,7 +511,7 @@ class TelemetryLogger(QObject):
         self.csv_writer.writerow(row)
         self.current_file_size = self.log_file.tell()
     
-    def _count_set_monitors(self, byte_array):
+    def _count_set_monitors(self, byte_array: Any) -> int:
         """
         Count how many monitors are SET.
 
@@ -535,7 +526,7 @@ class TelemetryLogger(QObject):
         """
         return sum(bin(b).count('1') for b in byte_array)
     
-    def close(self):
+    def close(self) -> None:
         """Close log file with proper error handling and logging"""
         if self.log_file:
             errors = []
@@ -547,7 +538,6 @@ class TelemetryLogger(QObject):
                 error_msg = f"Failed to flush log file: {type(e).__name__}: {str(e)}"
                 errors.append(error_msg)
                 # Log to stderr since we can't log to the file
-                import sys
                 print(f"ERROR: {error_msg}", file=sys.stderr)
             
             # Step 2: Close the file handle
@@ -556,7 +546,6 @@ class TelemetryLogger(QObject):
             except Exception as e:
                 error_msg = f"Failed to close log file: {type(e).__name__}: {str(e)}"
                 errors.append(error_msg)
-                import sys
                 print(f"ERROR: {error_msg}", file=sys.stderr)
             finally:
                 # Always clear reference even if close failed
@@ -569,9 +558,9 @@ class TelemetryLogger(QObject):
                     self.log_message.emit(
                         f"⚠ Log close completed with errors: {'; '.join(errors)}"
                     )
-                except:
+                except Exception:
                     pass
     
-    def get_current_log_path(self):
+    def get_current_log_path(self) -> Optional[str]:
         """Get path to current log file"""
         return self.current_log_path

@@ -13,7 +13,7 @@ Simulates Pandion's monitor evaluation pipeline:
 import time
 import threading
 
-from ..config.defaults import SAFETY_CRITICAL_MONITOR_IDS, INSStatus, GNSSFix
+from ..config.defaults import SAFETY_CRITICAL_MONITOR_IDS, INSStatus, GNSSFix, FlightRegime
 
 
 class MonitorSystem:
@@ -146,7 +146,7 @@ def default_monitor_conditions(vehicle):
         5:  ("MC Clock Not Synced",
              lambda: not vehicle._booted),  # Only during boot
         10: ("RC Rotor Switch Not Set",
-             lambda: vehicle.flight_regime == 1),  # appears after ARM
+             lambda: vehicle.flight_regime == FlightRegime.ARMED),  # appears after ARM
         11: ("VN GPS Error",
              lambda: vehicle._sensors.gnss_fix[0] < GNSSFix.FIX_3D),
         12: ("VN Degraded Nav",

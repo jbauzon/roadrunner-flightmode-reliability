@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Roadrunner Flight Test — Entry Point
-Version 5.0
 """
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFont
 from ui.main_window import MultiUUTTestGUI
 from ui import theme as T
+from version import __version__
 
 
 def main():

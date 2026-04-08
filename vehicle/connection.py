@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Vehicle Connection - MAVLink communication and state management
 This module handles low-level MAVLink communication with flight controllers.
@@ -6,7 +8,10 @@ Includes UUT definition and state capture classes.
 import sys
 import os
 import ipaddress
+from typing import Any, Dict, List, Optional
+
 from pymavlink import mavutil
+from .constants import UUTStatus, USE_NEST_ENABLED, get_mode_name, get_flight_regime_name
 
 class UUT:
     """
@@ -17,7 +22,7 @@ class UUT:
     
     MAX_RELAY_LINES = 32  # System maximum relay lines
     
-    def __init__(self, serial_number="", ip_address="", port=9985, relay_line=0):
+    def __init__(self, serial_number: str = "", ip_address: str = "", port: int = 9985, relay_line: int = 0) -> None:
         """
         Initialize UUT with validation.
         
@@ -62,13 +67,13 @@ class UUT:
         self.ip_address = ip_address
         self.port = port
         self.relay_line = relay_line
-        self.status = "Ready"
+        self.status = UUTStatus.READY
         self.test_start_time = None
         self.test_end_time = None
         self.iterations_completed = 0
         self.log_file = None
     
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for saving"""
         return {
             'serial_number': self.serial_number,
@@ -77,8 +82,11 @@ class UUT:
             'relay_line': self.relay_line
         }
     
+    def __repr__(self) -> str:
+        return f"UUT({self.serial_number!r}, {self.ip_address}:{self.port}, relay={self.relay_line})"
+    
     @staticmethod
-    def from_dict(data):
+    def from_dict(data: Dict[str, Any]) -> UUT:
         """Create from dictionary"""
         return UUT(
             serial_number=data.get('serial_number', ''),
@@ -95,7 +103,7 @@ class UUTState:
     returns to original configuration after testing.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize empty state"""
         self.timestamp = None
         self.use_nest = None
@@ -106,7 +114,7 @@ class UUTState:
         self.overridden_monitors = []
         self.captured = False
     
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for logging"""
         return {
             'timestamp': self.timestamp,
@@ -118,32 +126,22 @@ class UUTState:
             'overridden_monitors': self.overridden_monitors.copy()
         }
     
-    def format_display(self):
+    def __repr__(self) -> str:
+        return f"UUTState(mode={self.actuation_mode}, armed={self.armed}, regime={self.flight_regime}, captured={self.captured})"
+    
+    def format_display(self) -> str:
         """
         Format for console display.
         
         Returns:
             Multi-line string with formatted state
         """
-        mode_names = {
-            0: "OFF", 1: "IBIT", 2: "OPERATE", 
-            3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-        }
-        mode_str = mode_names.get(self.actuation_mode, f"UNKNOWN({self.actuation_mode})")
-        
-        regime_names = {
-            0: "GROUND_DISARMED", 1: "GROUND_ARMED", 2: "AUTO_TAKEOFF",
-            3: "HOVER", 4: "FORWARD_TRANSITION", 5: "CRUISE",
-            255: "INVALID"
-        }
-        regime_str = regime_names.get(
-            self.flight_regime, 
-            f"REGIME_{self.flight_regime}"
-        ) if self.flight_regime is not None else "UNKNOWN"
+        mode_str = get_mode_name(self.actuation_mode) if self.actuation_mode is not None else "UNKNOWN"
+        regime_str = get_flight_regime_name(self.flight_regime) if self.flight_regime is not None else "UNKNOWN"
         
         return (
             "┌────────────────────────────────────────┐\n"
-            f"│ USE_NEST:        {self.use_nest} ({'ENABLED' if self.use_nest == 1 else 'DISABLED'})       │\n"
+            f"│ USE_NEST:        {self.use_nest} ({'ENABLED' if self.use_nest == USE_NEST_ENABLED else 'DISABLED'})       │\n"
             f"│ Armed:           {self.armed}                       │\n"
             f"│ Flight Regime:   {self.flight_regime} ({regime_str})      │\n"
             f"│ Actuation Mode:  {self.actuation_mode} ({mode_str})      │\n"
@@ -152,7 +150,7 @@ class UUTState:
             "└────────────────────────────────────────┘"
         )
     
-    def matches(self, other):
+    def matches(self, other: UUTState) -> bool:
         """
         Check if this state matches another.
         
@@ -173,7 +171,7 @@ class UUTState:
             set(self.overridden_monitors) == set(other.overridden_monitors)
         )
     
-    def get_differences(self, other):
+    def get_differences(self, other: UUTState) -> List[str]:
         """
         Get list of differences between this state and another.
         
@@ -212,7 +210,7 @@ class UUTState:
         
         return diffs
 
-def connect_to_vehicle(ip_address, port, timeout=10.0):
+def connect_to_vehicle(ip_address: str, port: int, timeout: float = 10.0) -> Any:
     """
     Connect to vehicle via MAVLink UDP with input validation.
     

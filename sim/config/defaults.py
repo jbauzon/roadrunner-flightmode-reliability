@@ -6,28 +6,48 @@ Single source of truth for all magic numbers, state enums, IBIT profiles,
 monitor definitions, and tuning parameters used across the simulator.
 """
 
+# Import production enums as the canonical source of truth
+from vehicle.constants import (
+    ActuationMode as _ActuationMode,
+    IBITSubstate as _IBITSubstate,
+    FlightRegime as _FlightRegime,
+    MONITOR_OVERRIDE_CLEAR,
+    MONITOR_OVERRIDE_SET,
+    MONITOR_OVERRIDE_CLEAR_SPECIFIC,
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# State enums
+# State enums — sim aliases mapping to production enums
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class FlightRegime:
-    DISARMED = 0
-    ARMED    = 1
+    """Flight regime aliases for sim compatibility."""
+    DISARMED = _FlightRegime.GROUND_DISARMED
+    ARMED    = _FlightRegime.GROUND_ARMED
 
 
 class ActuationState:
-    OFF       = 0
-    IBIT      = 1
-    OPERATE   = 2
-    MANUAL    = 3
-    PLAYBACK  = 4
-    TRIM      = 5
-    POS_CHECK = 6   # From firmware: position check before OPERATE (Tau Mk2)
-    TERMINAL  = 7   # From firmware: unrecoverable error, requires power cycle
+    """Actuation state aliases for sim compatibility."""
+    OFF       = _ActuationMode.OFF
+    OPERATE   = _ActuationMode.OPERATE
+    PLAYBACK  = _ActuationMode.PLAYBACK
+    IBIT      = _ActuationMode.IBIT
+    MANUAL    = _ActuationMode.MANUAL
+    TRIM      = _ActuationMode.TRIM
+    POS_CHECK = _ActuationMode.POSITION_CHECK
+    TERMINAL  = _ActuationMode.TERMINAL
 
-    NAMES = {0: "OFF", 1: "IBIT", 2: "OPERATE", 3: "MANUAL", 4: "PLAYBACK",
-             5: "TRIM", 6: "POS_CHECK", 7: "TERMINAL"}
+    NAMES = {
+        _ActuationMode.OFF: "OFF",
+        _ActuationMode.IBIT: "IBIT",
+        _ActuationMode.OPERATE: "OPERATE",
+        _ActuationMode.MANUAL: "MANUAL",
+        _ActuationMode.PLAYBACK: "PLAYBACK",
+        _ActuationMode.TRIM: "TRIM",
+        _ActuationMode.POSITION_CHECK: "POS_CHECK",
+        _ActuationMode.TERMINAL: "TERMINAL",
+    }
 
     # Valid transitions: (from, to)
     VALID_TRANSITIONS = {
@@ -40,14 +60,22 @@ class ActuationState:
 
 
 class IBITSubstate:
-    BEGIN   = 0
-    SETTLE  = 1
-    ELEVON  = 2
-    RUDDERS = 3
-    TVC     = 4
-    DONE    = 5
+    """IBIT substate aliases for sim compatibility."""
+    BEGIN   = _IBITSubstate.BEGIN
+    SETTLE  = _IBITSubstate.WAIT_FOR_SETTLE
+    ELEVON  = _IBITSubstate.ELEVONS
+    RUDDERS = _IBITSubstate.RUDDERS
+    TVC     = _IBITSubstate.TVC
+    DONE    = _IBITSubstate.COMPLETE
 
-    NAMES = {0: "BEGIN", 1: "SETTLE", 2: "ELEVON", 3: "RUDDERS", 4: "TVC", 5: "DONE"}
+    NAMES = {
+        _IBITSubstate.BEGIN: "BEGIN",
+        _IBITSubstate.WAIT_FOR_SETTLE: "SETTLE",
+        _IBITSubstate.ELEVONS: "ELEVON",
+        _IBITSubstate.RUDDERS: "RUDDERS",
+        _IBITSubstate.TVC: "TVC",
+        _IBITSubstate.COMPLETE: "DONE",
+    }
     SEQUENCE = [BEGIN, SETTLE, ELEVON, RUDDERS, TVC, DONE]
 
 

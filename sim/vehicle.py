@@ -60,7 +60,9 @@ from .config.defaults import (
     RATE_HEARTBEAT, RATE_PANDION_STATUS, RATE_ACTUATION,
     RATE_MONITORS, RATE_ENGINE, RATE_BMS, RATE_WCA, RATE_PDU,
     RATE_HW_SELECTOR,
+    MONITOR_OVERRIDE_CLEAR, MONITOR_OVERRIDE_SET, MONITOR_OVERRIDE_CLEAR_SPECIFIC,
 )
+from version import __version__
 from .models.servo import Servo
 from .models.battery import BatteryModel
 from .models.monitors import MonitorSystem, default_monitor_conditions
@@ -151,7 +153,7 @@ class PandionVehicleSim:
         self._running = False
         self._lock = threading.Lock()
 
-        _log(sysid, f"Sim v4  port={vehicle_port}  "
+        _log(sysid, f"Sim v{__version__}  port={vehicle_port}  "
              f"ibit={'PASS' if ibit_pass else 'FAIL(0x%02X)' % self.mist_flags}  "
              f"cycles={ibit_cycles}  boot={boot_time_s}s")
 
@@ -360,11 +362,11 @@ class PandionVehicleSim:
                 _log(self.sysid, f"Mode REJECTED: {N.get(cur, '?')} -> {N.get(req, '?')}")
 
     def _handle_monitor_override(self, msg):
-        if msg.override_cmd == 2:
+        if msg.override_cmd == MONITOR_OVERRIDE_CLEAR_SPECIFIC:
             self.monitors.clear(msg.monitor_id)
-        elif msg.override_cmd == 0:
+        elif msg.override_cmd == MONITOR_OVERRIDE_CLEAR:
             self.monitors.cancel_override(msg.monitor_id)
-        elif msg.override_cmd == 1:
+        elif msg.override_cmd == MONITOR_OVERRIDE_SET:
             self.monitors.force_set(msg.monitor_id)
 
     def _handle_playback_command(self, msg):

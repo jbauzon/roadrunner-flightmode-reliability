@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 DAQ Controller - Hardware abstraction for NI-DAQmx digital output control
 
@@ -6,6 +8,7 @@ Each line controls one relay, which powers one UUT.
 """
 import time
 import threading
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import nidaqmx
@@ -25,7 +28,7 @@ class SimpleDAQController:
     Automatically detects available lines on device.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize controller (device not connected yet)"""
         self.do_task = None
         self.device_name = None
@@ -33,7 +36,7 @@ class SimpleDAQController:
         self._output_states = []  # Cached output states
         self._state_lock = threading.Lock()  # Thread safety for relay operations
     
-    def initialize(self, device_name="Dev1", num_lines=8):
+    def initialize(self, device_name: str = "Dev1", num_lines: int = 8) -> Tuple[bool, str]:
         """
         Initialize digital output task with auto-detection of available lines.
         
@@ -90,12 +93,12 @@ class SimpleDAQController:
             if self.do_task:
                 try:
                     self.do_task.close()
-                except:
+                except Exception:
                     pass
                 self.do_task = None
             return False, f"DAQ initialization error: {str(e)}"
     
-    def set_line(self, line_num, state):
+    def set_line(self, line_num: int, state: bool) -> Tuple[bool, str]:
         """
         Set a single digital output line with thread safety and verification.
         
@@ -183,7 +186,7 @@ class SimpleDAQController:
             except Exception as e:
                 return False, f"Error setting line: {type(e).__name__}: {str(e)}"
     
-    def set_all_low(self):
+    def set_all_low(self) -> Tuple[bool, str]:
         """
         Set all outputs to LOW (safety function).
         
@@ -199,7 +202,7 @@ class SimpleDAQController:
         except Exception as e:
             return False, f"Error: {str(e)}"
     
-    def close(self):
+    def close(self) -> Tuple[bool, str]:
         """
         Close the DAQ task safely with proper error handling.
         
@@ -252,7 +255,7 @@ class SimpleDAQController:
             return True, "DAQ closed successfully"
     
     @staticmethod
-    def detect_devices():
+    def detect_devices() -> List[str]:
         """
         Detect available DAQ devices.
         
@@ -265,11 +268,11 @@ class SimpleDAQController:
         try:
             system = nidaqmx.system.System.local()
             return [dev.name for dev in system.devices]
-        except:
+        except Exception:
             return []
     
     @staticmethod
-    def get_device_info(device_name):
+    def get_device_info(device_name: str) -> Optional[Dict[str, Any]]:
         """
         Get information about a specific device.
         
@@ -296,20 +299,20 @@ class SimpleDAQController:
             try:
                 do_ports = device.do_ports
                 info['do_ports'] = [port.name for port in do_ports]
-            except:
+            except Exception:
                 pass
             
             try:
                 do_lines = device.do_lines
                 info['do_lines'] = [line.name for line in do_lines]
-            except:
+            except Exception:
                 pass
             
             return info
         except Exception as e:
             return {'error': str(e)}
     
-    def verify_connection(self):
+    def verify_connection(self) -> bool:
         """
         Verify DAQ is still connected and responsive.
         
@@ -323,10 +326,10 @@ class SimpleDAQController:
             # Try to read current state
             self.do_task.read(number_of_samples_per_channel=1)
             return True
-        except:
+        except Exception:
             return False
     
-    def reconnect(self):
+    def reconnect(self) -> Tuple[bool, str]:
         """
         Attempt to reconnect DAQ after connection loss.
         

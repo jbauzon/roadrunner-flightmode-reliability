@@ -77,9 +77,9 @@ class UDPBridge:
     def stop(self):
         self._running = False
         try: self._sw_sock.close()
-        except: pass
+        except Exception: pass
         try: self._sim_sock.close()
-        except: pass
+        except Exception: pass
 
     def _forward_sw_to_sim(self):
         """Forward packets from test software to sim."""

@@ -1,5 +1,18 @@
 # Multi-UUT Test System Configuration
 # Version 5.0
+#
+# NOTE: This file is a REFERENCE ONLY. It is NOT loaded by the application.
+#
+# Actual runtime configuration is persisted in:
+#   app_settings.json   (created/updated by the GUI on exit)
+#
+# Default values for all parameters are defined in:
+#   vehicle/constants.py  (DEFAULT_* constants)
+#
+# To change defaults, either:
+#   1. Edit the GUI Advanced Settings panel and restart, or
+#   2. Edit app_settings.json directly.
+#
 
 # Test Mode
 # Options: ibit | playback

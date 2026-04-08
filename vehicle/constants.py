@@ -1,36 +1,35 @@
-"""
-Vehicle Constants - Centralized definitions for modes, states, and enums
+from __future__ import annotations
 
-This module defines all the magic numbers used throughout the system to
-ensure consistency and type safety.
 """
+Vehicle Constants - Centralized definitions for modes, states, and enums.
+
+This module is the **single source of truth** for all magic numbers, display
+names, and lookup tables used throughout the production test system.  Every
+other module imports from here rather than defining its own inline dicts.
+"""
+from typing import List
+
 from enum import IntEnum
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vehicle enums (from Pandion firmware)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class ActuationMode(IntEnum):
-    """
-    Actuation system modes.
-    
-    These control the flight control actuators (elevons, rudders, TVC).
-    """
-    OFF = 0          # Actuators disabled, no power
-    IBIT = 1         # Initiated Built-In Test (self-test mode)
-    OPERATE = 2      # Normal flight-ready operation
-    MANUAL = 3       # Manual control mode
-    PLAYBACK = 4     # Playback recorded commands
-    TRIM = 5         # Trim calibration mode
-    POSITION_CHECK = 6  # Position verification
-    TERMINAL = 7     # Terminal/shutdown mode
+    """Actuation system modes — control the flight actuators."""
+    OFF = 0            # Actuators disabled, no power
+    IBIT = 1           # Initiated Built-In Test (self-test mode)
+    OPERATE = 2        # Normal flight-ready operation
+    MANUAL = 3         # Manual control mode
+    PLAYBACK = 4       # Playback recorded commands
+    TRIM = 5           # Trim calibration mode
+    POSITION_CHECK = 6 # Position verification
+    TERMINAL = 7       # Terminal/shutdown mode
 
 
 class IBITSubstate(IntEnum):
-    """
-    IBIT test sequence substates.
-    
-    The IBIT test progresses through these phases sequentially.
-    Completion is detected by mode transition IBIT → OPERATE, not by
-    reaching COMPLETE substate (vehicle may run multiple IBIT cycles).
-    """
+    """IBIT test sequence substates (progresses sequentially)."""
     BEGIN = 0              # Initialization
     WAIT_FOR_SETTLE = 1    # Waiting for stabilization
     ELEVONS = 2            # Testing wing control surfaces
@@ -40,68 +39,101 @@ class IBITSubstate(IntEnum):
 
 
 class FlightRegime(IntEnum):
-    """
-    Vehicle flight regime states.
-    
-    Defines the operational state of the vehicle from ground to flight.
-    """
-    GROUND_DISARMED = 0           # On ground, motors safe
-    GROUND_ARMED = 1              # On ground, motors can spin (ARMED!)
-    AUTO_TAKEOFF = 2              # Autonomous takeoff sequence
-    HOVER = 3                     # Hovering in place
-    FORWARD_TRANSITION = 4        # Transitioning to forward flight
-    CRUISE = 5                    # Cruise flight mode
-    IN_AIR_RESTART = 6            # Restarting systems in air
-    BACK_TRANSITION = 7           # Transitioning back to hover
-    EXTERNAL_GUIDANCE = 8         # External guidance control
-    TAKEOFF_ABORTED = 9           # Takeoff abort procedure
-    POWERING_OFF = 10             # Powering down sequence
-    CUT_POWER = 11                # Emergency power cut
-    TERMINATE = 12                # Termination mode
-    SCUTTLE = 13                  # Scuttle sequence
-    NULL_ATTITUDE_AND_COLLECTIVE = 14      # Null attitude control
-    NULL_ATTITUDE_FIXED_COLLECTIVE = 15    # Fixed collective control
-    LANDNOW_OL = 16               # Land now open-loop
-    LANDNOW_CL = 17               # Land now closed-loop
-    PILOT_OVERRIDE = 18           # Pilot override active
-    EMERGENCY_STOP = 19           # Emergency stop engaged
-    AUTO_RECOVERY = 20            # Automatic recovery mode
-    WAVE_OFF = 21                 # Wave-off procedure
-    TAXI = 22                     # Ground taxi mode
-    INVALID = 255                 # Invalid/unknown regime
+    """Vehicle flight regime states — ground to flight."""
+    GROUND_DISARMED = 0
+    GROUND_ARMED = 1
+    AUTO_TAKEOFF = 2
+    HOVER = 3
+    FORWARD_TRANSITION = 4
+    CRUISE = 5
+    IN_AIR_RESTART = 6
+    BACK_TRANSITION = 7
+    EXTERNAL_GUIDANCE = 8
+    TAKEOFF_ABORTED = 9
+    POWERING_OFF = 10
+    CUT_POWER = 11
+    TERMINATE = 12
+    SCUTTLE = 13
+    NULL_ATTITUDE_AND_COLLECTIVE = 14
+    NULL_ATTITUDE_FIXED_COLLECTIVE = 15
+    LANDNOW_OL = 16
+    LANDNOW_CL = 17
+    PILOT_OVERRIDE = 18
+    EMERGENCY_STOP = 19
+    AUTO_RECOVERY = 20
+    WAVE_OFF = 21
+    TAXI = 22
+    INVALID = 255
 
 
 class CommandResult(IntEnum):
-    """
-    MAVLink command acknowledgment results.
-    
-    Standard MAV_RESULT enum values.
-    """
-    ACCEPTED = 0              # Command executed successfully
-    TEMPORARILY_REJECTED = 1  # Command temporarily rejected, retry
-    DENIED = 2                # Command permanently denied
-    UNSUPPORTED = 3           # Command not supported
-    FAILED = 4                # Command failed during execution
-    IN_PROGRESS = 5           # Command still executing
+    """MAVLink command acknowledgment results (MAV_RESULT)."""
+    ACCEPTED = 0
+    TEMPORARILY_REJECTED = 1
+    DENIED = 2
+    UNSUPPORTED = 3
+    FAILED = 4
+    IN_PROGRESS = 5
 
 
 class StatusTextSeverity(IntEnum):
-    """
-    Status text message severity levels.
-    
-    Standard syslog-style severity levels.
-    """
-    EMERGENCY = 0    # System unusable
-    ALERT = 1        # Action must be taken immediately
-    CRITICAL = 2     # Critical conditions
-    ERROR = 3        # Error conditions
-    WARNING = 4      # Warning conditions
-    NOTICE = 5       # Normal but significant
-    INFO = 6         # Informational messages
-    DEBUG = 7        # Debug-level messages
+    """Status text message severity levels (syslog)."""
+    EMERGENCY = 0
+    ALERT = 1
+    CRITICAL = 2
+    ERROR = 3
+    WARNING = 4
+    NOTICE = 5
+    INFO = 6
+    DEBUG = 7
 
 
-# Display name mappings for enums
+# ═══════════════════════════════════════════════════════════════════════════════
+# Application-level enums (not from firmware)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestMode:
+    """Test mode identifiers — used as string constants throughout the UI."""
+    IBIT = 'ibit'
+    PLAYBACK = 'playback'
+
+
+class UUTStatus:
+    """UUT status values — used as string constants in the UUT table."""
+    READY = "Ready"
+    TESTING = "Testing"
+    COMPLETE = "Complete"
+    FAILED = "Failed"
+    FAILED_PERMANENT = "Failed (3x)"
+    RETRY = "Retry"
+    STOPPED = "Stopped"
+
+
+class AlertSeverity:
+    """Alert banner severity levels."""
+    WARNING = 'warning'
+    ERROR = 'error'
+    CRITICAL = 'critical'
+    INFO = 'info'
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Display name mappings
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Short mode names for log messages and status display
+MODE_NAMES = {
+    ActuationMode.OFF: "OFF",
+    ActuationMode.IBIT: "IBIT",
+    ActuationMode.OPERATE: "OPERATE",
+    ActuationMode.MANUAL: "MANUAL",
+    ActuationMode.PLAYBACK: "PLAYBACK",
+    ActuationMode.TRIM: "TRIM",
+    ActuationMode.POSITION_CHECK: "POSITION_CHECK",
+    ActuationMode.TERMINAL: "TERMINAL",
+}
+
+# Verbose mode names (with descriptions) for detailed display
 ACTUATION_MODE_NAMES = {
     ActuationMode.OFF: "OFF (Disabled)",
     ActuationMode.IBIT: "IBIT (Self-test)",
@@ -114,12 +146,22 @@ ACTUATION_MODE_NAMES = {
 }
 
 IBIT_SUBSTATE_NAMES = {
-    IBITSubstate.BEGIN: "BEGIN (Initializing)",
-    IBITSubstate.WAIT_FOR_SETTLE: "WAIT_FOR_SETTLE (Stabilizing)",
-    IBITSubstate.ELEVONS: "ELEVONS (Wing controls)",
-    IBITSubstate.RUDDERS: "RUDDERS (Tail controls)",
-    IBITSubstate.TVC: "TVC (Engine gimbals)",
-    IBITSubstate.COMPLETE: "COMPLETE (All tests passed)",
+    IBITSubstate.BEGIN: "BEGIN",
+    IBITSubstate.WAIT_FOR_SETTLE: "WAIT_FOR_SETTLE",
+    IBITSubstate.ELEVONS: "ELEVONS",
+    IBITSubstate.RUDDERS: "RUDDERS",
+    IBITSubstate.TVC: "TVC",
+    IBITSubstate.COMPLETE: "COMPLETE",
+}
+
+# GUI display names for IBIT substates (with checkmark on COMPLETE)
+IBIT_SUBSTATE_DISPLAY_NAMES = {
+    IBITSubstate.BEGIN: "BEGIN",
+    IBITSubstate.WAIT_FOR_SETTLE: "WAIT_FOR_SETTLE",
+    IBITSubstate.ELEVONS: "ELEVONS",
+    IBITSubstate.RUDDERS: "RUDDERS",
+    IBITSubstate.TVC: "TVC",
+    IBITSubstate.COMPLETE: "\u2713 COMPLETE",
 }
 
 FLIGHT_REGIME_NAMES = {
@@ -149,6 +191,17 @@ FLIGHT_REGIME_NAMES = {
     FlightRegime.INVALID: "INVALID",
 }
 
+# Short regime names for compact UI display (StatusPanelWidget)
+FLIGHT_REGIME_SHORT_NAMES = {
+    FlightRegime.GROUND_DISARMED: "DISARMED",
+    FlightRegime.GROUND_ARMED: "ARMED",
+    FlightRegime.AUTO_TAKEOFF: "AUTO_TAKEOFF",
+    FlightRegime.HOVER: "HOVER",
+    FlightRegime.FORWARD_TRANSITION: "FWD_TRANS",
+    FlightRegime.CRUISE: "CRUISE",
+    FlightRegime.INVALID: "INVALID",
+}
+
 COMMAND_RESULT_NAMES = {
     CommandResult.ACCEPTED: "ACCEPTED",
     CommandResult.TEMPORARILY_REJECTED: "TEMPORARILY_REJECTED",
@@ -169,7 +222,46 @@ SEVERITY_NAMES = {
     StatusTextSeverity.DEBUG: "DEBUG",
 }
 
-# Default values for sensor readings
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mistracking flags — PANDION_RR_IBIT_MON_STATUS bitmask
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MISTRACKING_FLAG_NAMES = {
+    1:   'Upper Rudder',
+    2:   'Lower Rudder',
+    4:   'Left TVC Upper',
+    8:   'Left TVC Lower',
+    16:  'Right TVC Upper',
+    32:  'Right TVC Lower',
+    64:  'Left Elevon',
+    128: 'Right Elevon',
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAVLink message type strings (single source of truth)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MsgType:
+    """MAVLink message type strings used throughout the codebase."""
+    HEARTBEAT = 'HEARTBEAT'
+    PANDION_STATUS = 'PANDION_STATUS'
+    ACTUATION_SYS_STATUS = 'PANDION_RR_ACTUATION_SYS_STATUS'
+    MONITOR_STATUS = 'PANDION_MONITOR_CURRENT_STATUS'
+    COMMAND_ACK = 'COMMAND_ACK'
+    PARAM_VALUE = 'PARAM_VALUE'
+    STATUSTEXT = 'STATUSTEXT'
+    ENGINE_STATUS = 'PANDION_RR_ENGINE_STATUS'
+    BMS_DATA = 'PANDION_RR_BMS_DATA'
+    WCA_STATUS = 'PANDION_WCA_MONITOR_STATUS'
+    PDU_POWER = 'PANDION_RR_PDU_TELEMETRY_POWER'
+    HW_SELECTOR = 'PANDION_RR_HARDWARE_SELECTOR_STATUS'
+    PLAYBACK_COMMAND = 'PANDION_RR_PLAYBACK_COMMAND'
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Default values
+# ═══════════════════════════════════════════════════════════════════════════════
+
 DEFAULT_ACTUATOR_POSITION_CDEG = -5500  # Centidegrees (invalid sensor reading)
 DEFAULT_ACTUATOR_POSITION_DEG = -55.0   # Degrees
 
@@ -181,27 +273,53 @@ DEFAULT_STATE_QUERY_TIMEOUT = 5.0      # seconds
 DEFAULT_IBIT_TIMEOUT = 300.0           # seconds
 DEFAULT_PHASE_TIMEOUT = 90.0           # seconds
 DEFAULT_ARM_TIMEOUT = 60.0             # seconds
+DEFAULT_STABILIZATION_DELAY = 2.0      # seconds
+DEFAULT_MAX_ARM_ITERATIONS = 20
+DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
+
+# Relay safety
+RELAY_DISABLE_MAX_ATTEMPTS = 5
+RELAY_DISABLE_RETRY_DELAY = 0.5        # seconds
+
+# Telemetry worker
+MAX_CONSECUTIVE_TELEMETRY_ERRORS = 10
+
+# IBIT monitor
+OPERATE_WAIT_TIMEOUT = 10.0            # seconds after IBIT completion
 
 # Heartbeat configuration
 HEARTBEAT_INTERVAL = 1.0               # seconds (1 Hz)
 HEARTBEAT_INITIAL_BURST = 3            # Number of initial heartbeats
+HEARTBEAT_BURST_INTERVAL = 0.1         # seconds between burst heartbeats
+
+# Log monitoring
+LOG_SIZE_CHECK_INTERVAL = 30.0         # seconds
+STATS_UPDATE_INTERVAL = 2.0            # seconds
+
+# DAQ health
+DAQ_HEALTH_CHECK_INTERVAL = 60000      # milliseconds (1 minute)
 
 # Monitor override commands
 MONITOR_OVERRIDE_CLEAR = 0             # Clear override
 MONITOR_OVERRIDE_SET = 1               # Set override
 MONITOR_OVERRIDE_CLEAR_SPECIFIC = 2    # Clear specific monitor
 
+# USE_NEST parameter values
+USE_NEST_ENABLED = 1
+USE_NEST_DISABLED = 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Lookup helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_mode_name(mode: int) -> str:
+    """Get short mode name (e.g. 'OPERATE') for an actuation mode number."""
+    return MODE_NAMES.get(mode, f"UNKNOWN({mode})")
+
 
 def get_actuation_mode_name(mode: int) -> str:
-    """
-    Get human-readable name for actuation mode.
-    
-    Args:
-        mode: Actuation mode number
-    
-    Returns:
-        Mode name string
-    """
+    """Get verbose mode name (e.g. 'OPERATE (Flight-ready)') for display."""
     try:
         return ACTUATION_MODE_NAMES.get(ActuationMode(mode), f"UNKNOWN({mode})")
     except ValueError:
@@ -209,45 +327,38 @@ def get_actuation_mode_name(mode: int) -> str:
 
 
 def get_ibit_substate_name(substate: int) -> str:
-    """
-    Get human-readable name for IBIT substate.
-    
-    Args:
-        substate: IBIT substate number
-    
-    Returns:
-        Substate name string
-    """
-    try:
-        return IBIT_SUBSTATE_NAMES.get(IBITSubstate(substate), f"UNKNOWN({substate})")
-    except ValueError:
-        return f"UNKNOWN({substate})"
+    """Get IBIT substate name."""
+    return IBIT_SUBSTATE_NAMES.get(substate, f"UNKNOWN({substate})")
 
 
 def get_flight_regime_name(regime: int) -> str:
-    """
-    Get human-readable name for flight regime.
-    
-    Args:
-        regime: Flight regime number
-    
-    Returns:
-        Regime name string
-    """
-    try:
-        return FLIGHT_REGIME_NAMES.get(FlightRegime(regime), f"REGIME_{regime}")
-    except ValueError:
-        return f"REGIME_{regime}"
+    """Get flight regime name."""
+    return FLIGHT_REGIME_NAMES.get(regime, f"REGIME_{regime}")
+
+
+def get_flight_regime_short_name(regime: int) -> str:
+    """Get short regime name for compact display."""
+    return FLIGHT_REGIME_SHORT_NAMES.get(regime, f"REGIME {regime}")
+
+
+def get_command_result_name(result: int) -> str:
+    """Get command result name."""
+    return COMMAND_RESULT_NAMES.get(result, f"UNKNOWN({result})")
+
+
+def get_severity_name(severity: int) -> str:
+    """Get severity level name."""
+    return SEVERITY_NAMES.get(severity, f"SEV{severity}")
+
+
+def get_failed_surfaces(mistracking_flags: int) -> List[str]:
+    """Get list of surface names from a mistracking bitmask."""
+    return [
+        name for bit, name in MISTRACKING_FLAG_NAMES.items()
+        if mistracking_flags & bit
+    ]
 
 
 def is_armed(flight_regime: int) -> bool:
-    """
-    Determine if vehicle is armed based on flight regime.
-    
-    Args:
-        flight_regime: Flight regime number
-    
-    Returns:
-        True if vehicle is armed (motors can spin)
-    """
+    """True if vehicle is armed (motors can spin)."""
     return flight_regime >= FlightRegime.GROUND_ARMED and flight_regime != FlightRegime.INVALID

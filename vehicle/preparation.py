@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Vehicle Preparation - State capture and restoration
 
@@ -9,9 +11,16 @@ This module manages the complete vehicle preparation sequence:
 """
 import time
 import threading
+from typing import Any, List, Optional, Tuple
+
 from pymavlink import mavutil
 from PyQt5.QtCore import QObject, pyqtSignal
 from .connection import UUTState
+from .constants import (
+    ActuationMode, FlightRegime, CommandResult, MsgType, USE_NEST_ENABLED,
+    MONITOR_OVERRIDE_CLEAR, MONITOR_OVERRIDE_CLEAR_SPECIFIC,
+    get_mode_name, get_flight_regime_name, get_command_result_name, is_armed,
+)
 
 
 class UUTPreparation(QObject):
@@ -30,7 +39,7 @@ class UUTPreparation(QObject):
     connection_health_update = pyqtSignal(bool)       # is_connected
     actuator_feedback_update = pyqtSignal(dict)       # feedback data dict
     
-    def __init__(self, master, config=None, telemetry_logger=None):
+    def __init__(self, master: Any, config: Optional[dict] = None, telemetry_logger: Optional[Any] = None) -> None:
         """
         Initialize preparation manager.
         
@@ -47,7 +56,7 @@ class UUTPreparation(QObject):
         self.use_nest_cache = None
         self.master_lock = threading.Lock()
     
-    def capture_initial_state(self):
+    def capture_initial_state(self) -> Tuple[bool, str]:
         """
         Capture the initial state of the UUT.
         
@@ -86,13 +95,13 @@ class UUTPreparation(QObject):
                 self.initial_state.use_nest = use_nest
                 self.log_message.emit(
                     f"  ✓ USE_NEST = {use_nest} "
-                    f"({'ENABLED' if use_nest == 1 else 'DISABLED'})"
+                    f"({'ENABLED' if use_nest == USE_NEST_ENABLED else 'DISABLED'})"
                 )
             
             # Query actuation status
             self.progress_update.emit("Querying actuation status...")
             actuation_msg = self._wait_for_message(
-                'PANDION_RR_ACTUATION_SYS_STATUS', 
+                MsgType.ACTUATION_SYS_STATUS, 
                 timeout=5.0
             )
             
@@ -106,29 +115,24 @@ class UUTPreparation(QObject):
             
             # Query armed state from PANDION_STATUS
             self.progress_update.emit("Querying armed state...")
-            pandion_status = self._wait_for_message('PANDION_STATUS', timeout=5.0)
+            pandion_status = self._wait_for_message(MsgType.PANDION_STATUS, timeout=5.0)
             
             if not pandion_status:
                 raise Exception("Failed to receive PANDION_STATUS")
             
             flight_regime = pandion_status.flight_regime
             self.initial_state.flight_regime = flight_regime
-            self.initial_state.armed = (flight_regime >= 1 and flight_regime != 255)
+            self.initial_state.armed = is_armed(flight_regime)
             
             # Log with flight regime name
-            regime_names = {
-                0: "GROUND_DISARMED", 1: "GROUND_ARMED", 2: "AUTO_TAKEOFF",
-                3: "HOVER", 4: "FORWARD_TRANSITION", 5: "CRUISE",
-                255: "INVALID"
-            }
-            regime_name = regime_names.get(flight_regime, f"REGIME_{flight_regime}")
+            regime_name = get_flight_regime_name(flight_regime)
             self.log_message.emit(f"  ✓ Flight Regime = {flight_regime} ({regime_name})")
             self.log_message.emit(f"  ✓ Armed = {self.initial_state.armed}")
             
             # Query monitor status
             self.progress_update.emit("Querying monitor status...")
             monitor_msg = self._wait_for_message(
-                'PANDION_MONITOR_CURRENT_STATUS',
+                MsgType.MONITOR_STATUS,
                 timeout=5.0
             )
             
@@ -163,7 +167,7 @@ class UUTPreparation(QObject):
         except Exception as e:
             return False, f"State capture failed: {str(e)}"
     
-    def prepare_for_playback(self, power_cycle_fn):
+    def prepare_for_playback(self, power_cycle_fn: Any) -> Tuple[bool, str]:
         """
         Prepare UUT for flight profile playback.
 
@@ -229,9 +233,9 @@ class UUTPreparation(QObject):
             in_operate = False
             while time.time() - operate_start < operate_timeout:
                 mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS', timeout=1.0
+                    MsgType.ACTUATION_SYS_STATUS, timeout=1.0
                 )
-                if mode_msg and mode_msg.actuation_state == 2:
+                if mode_msg and mode_msg.actuation_state == ActuationMode.OPERATE:
                     self.log_message.emit("  ✓ Vehicle in OPERATE mode")
                     in_operate = True
                     break
@@ -250,16 +254,16 @@ class UUTPreparation(QObject):
             self.log_message.emit("\n→ Requesting PLAYBACK mode...")
             with self.master_lock:
                 self.master.mav.pandion_rr_actuation_request_mode_send(
-                    requested_mode=4
+                    requested_mode=int(ActuationMode.PLAYBACK)
                 )
 
             playback_timeout = 10.0
             playback_start = time.time()
             while time.time() - playback_start < playback_timeout:
                 mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS', timeout=0.5
+                    MsgType.ACTUATION_SYS_STATUS, timeout=0.5
                 )
-                if mode_msg and mode_msg.actuation_state == 4:
+                if mode_msg and mode_msg.actuation_state == ActuationMode.PLAYBACK:
                     self.log_message.emit("  ✓ Vehicle in PLAYBACK mode")
                     break
                 time.sleep(0.1)
@@ -276,7 +280,7 @@ class UUTPreparation(QObject):
             self.log_message.emit(f"\n✗ Playback preparation FAILED: {e}")
             return False, str(e)
 
-    def _set_param(self, param_name, value):
+    def _set_param(self, param_name: str, value: Any) -> Tuple[bool, str]:
         """
         Set a Pandion parameter by name with verification.
 
@@ -297,7 +301,7 @@ class UUTPreparation(QObject):
                     self.master.target_component,
                     param_bytes,
                     float(value),
-                    9  # MAV_PARAM_TYPE_UINT8
+                    mavutil.mavlink.MAV_PARAM_TYPE_UINT8
                 )
 
             time.sleep(1.0)
@@ -314,7 +318,7 @@ class UUTPreparation(QObject):
             timeout = 5.0
             start = time.time()
             while time.time() - start < timeout:
-                msg = self._wait_for_message('PARAM_VALUE', timeout=0.1)
+                msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
                 if msg:
                     name = (
                         msg.param_id.decode('utf-8').rstrip('\x00')
@@ -336,14 +340,14 @@ class UUTPreparation(QObject):
         except Exception as e:
             return False, f"Error setting {param_name}: {str(e)}"
 
-    def prepare_for_test(self):
+    def prepare_for_test(self) -> Tuple[bool, str]:
         """
         Prepare UUT for testing.
         
-        Full sequence: ARM → OPERATE → clear monitors → PLAYBACK → IBIT
+        Full sequence: ARM -> OPERATE -> clear monitors -> PLAYBACK -> IBIT
         
-        Why PLAYBACK? Vehicle firmware requires OPERATE → PLAYBACK → IBIT.
-        Direct OPERATE → IBIT is not permitted.
+        Why PLAYBACK? Vehicle firmware requires OPERATE -> PLAYBACK -> IBIT.
+        Direct OPERATE -> IBIT is not permitted.
         
         Returns:
             (success: bool, message: str)
@@ -354,383 +358,47 @@ class UUTPreparation(QObject):
         
         try:
             # Step 1: Disable USE_NEST if needed
-            if self.initial_state.use_nest is not None:
-                if self.initial_state.use_nest != 0:
-                    self.progress_update.emit("Disabling USE_NEST...")
-                    self.log_message.emit("→ Setting USE_NEST = 0 (DISABLE)")
-                    
-                    if self.telemetry_logger:
-                        self.telemetry_logger.log_test_event(
-                            'USE_NEST_DISABLE',
-                            'Setting USE_NEST parameter to 0 (DISABLED)'
-                        )
-                    
-                    success, msg = self._set_use_nest(0)
-                    if not success:
-                        self.log_message.emit(f"  ⚠ Could not disable USE_NEST: {msg}")
-                    else:
-                        self.log_message.emit(f"  ✓ {msg}")
-                else:
-                    self.log_message.emit("✓ USE_NEST already disabled, skipping")
-            else:
-                self.log_message.emit("✓ USE_NEST not available on this vehicle, skipping")
-            
+            self._disable_use_nest_if_needed()
+
             # Step 2: ARM vehicle if needed
-            if not self.initial_state.armed:
-                success, msg = self._arm_with_monitor_management()
-                if not success:
-                    skip_arm = self.config.get('skip_arm_for_ibit', False)
-                    if skip_arm:
-                        self.log_message.emit(
-                            f"\n⚠ ARM failed but 'skip_arm_for_ibit' enabled"
-                        )
-                        self.log_message.emit(
-                            f"  → Proceeding to IBIT without ARM (may fail)"
-                        )
-                    else:
-                        raise Exception(f"Failed to ARM: {msg}")
-                else:
-                    self.log_message.emit(f"\n✓ {msg}")
-            else:
-                self.log_message.emit("✓ Vehicle already armed, skipping")
-            
+            self._arm_vehicle_if_needed()
+
             # Step 3: Wait for automatic transition to OPERATE mode
-            self.log_message.emit("\n→ Waiting for vehicle to enter OPERATE mode...")
-            self.progress_update.emit("Waiting for OPERATE mode...")
-            
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'MODE_TRANSITION_WAIT',
-                    'Waiting for automatic transition to OPERATE mode'
-                )
-            
-            operate_timeout = 5.0
-            operate_start = time.time()
-            in_operate = False
-            
-            while time.time() - operate_start < operate_timeout:
-                mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=1.0
-                )
-                
-                if mode_msg:
-                    current_mode = mode_msg.actuation_state
-                    if current_mode == 2:  # OPERATE
-                        in_operate = True
-                        self.log_message.emit(f"  ✓ Vehicle entered OPERATE mode")
-                        
-                        if self.telemetry_logger:
-                            self.telemetry_logger.log_test_event(
-                                'MODE_CHANGE',
-                                'Vehicle automatically transitioned to OPERATE mode'
-                            )
-                        break
-                    else:
-                        mode_names = {
-                            0: "OFF", 1: "IBIT", 2: "OPERATE",
-                            3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                        }
-                        self.log_message.emit(
-                            f"  Current mode: {current_mode} "
-                            f"({mode_names.get(current_mode, 'UNKNOWN')})"
-                        )
-                
-                time.sleep(0.5)
-            
-            if not in_operate:
-                self.log_message.emit(
-                    f"  ⚠ Vehicle did not enter OPERATE mode within {operate_timeout}s"
-                )
-                self.log_message.emit(f"  → Proceeding to clear monitors anyway...")
-            
+            self._wait_for_operate(timeout=5.0)
+
             # Step 4: Continuously clear monitors before PLAYBACK
-            self.log_message.emit(
-                "\n→ Continuously clearing monitors before PLAYBACK transition..."
+            self._clear_monitors_timed(
+                duration=5.0,
+                label='before PLAYBACK',
+                event_type='MONITOR_CONTINUOUS_CLEAR',
             )
-            self.progress_update.emit("Clearing monitors...")
-            
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'MONITOR_CONTINUOUS_CLEAR',
-                    'Starting continuous monitor clearing before PLAYBACK'
-                )
-            
-            monitor_clear_duration = 5.0
-            monitor_clear_start = time.time()
-            clear_count = 0
-            
-            while time.time() - monitor_clear_start < monitor_clear_duration:
-                current_set = self._get_current_set_monitors()
-                
-                if len(current_set) > 0:
-                    clear_count += 1
-                    self.log_message.emit(
-                        f"  [{clear_count}] Clearing {len(current_set)} "
-                        f"SET monitors: {current_set}"
-                    )
-                    all_cleared, remaining = self._clear_specific_monitors(current_set)
-                    
-                    if not all_cleared:
-                        self.log_message.emit(
-                            f"    ⚠ {len(remaining)} monitors couldn't be cleared"
-                        )
-                else:
-                    self.log_message.emit(f"  ✓ No SET monitors detected")
-                
-                time.sleep(0.5)
-            
-            self.log_message.emit(
-                f"  ✓ Monitor clearing complete ({clear_count} clear operations)"
+
+            # Step 5: Enter PLAYBACK mode
+            self._enter_mode(
+                target=ActuationMode.PLAYBACK,
+                timeout=10.0,
+                event_request='PLAYBACK_REQUEST',
+                event_entered='PLAYBACK_ENTERED',
+                event_failed='PLAYBACK_FAILED',
+                log_interval=2,
             )
-            
-            # Final monitor check
-            final_set_monitors = self._get_current_set_monitors()
-            if final_set_monitors:
-                self.log_message.emit(
-                    f"  ⚠ Warning: {len(final_set_monitors)} monitors still SET: "
-                    f"{final_set_monitors}"
-                )
-            else:
-                self.log_message.emit(f"  ✓ All monitors clear")
-            
-            # Step 5: Request transition to PLAYBACK mode
-            self.log_message.emit("\n→ Requesting transition: OPERATE → PLAYBACK...")
-            self.progress_update.emit("Entering PLAYBACK mode...")
-            
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'PLAYBACK_REQUEST',
-                    'Requesting transition from OPERATE to PLAYBACK mode'
-                )
-            
-            self.log_message.emit(f"  Sending PLAYBACK mode request (mode 4)...")
-            with self.master_lock:
-                self.master.mav.pandion_rr_actuation_request_mode_send(requested_mode=4)
-            
-            # Monitor for PLAYBACK mode entry
-            playback_timeout = 10.0
-            playback_start = time.time()
-            entered_playback = False
-            
-            self.log_message.emit(
-                f"  Monitoring mode for up to {playback_timeout:.0f} seconds..."
+
+            # Step 6: Clear monitors in PLAYBACK
+            self._clear_monitors_timed(
+                duration=3.0,
+                label='in PLAYBACK before IBIT',
+                event_type='MONITOR_PLAYBACK_CLEAR',
             )
-            
-            while time.time() - playback_start < playback_timeout:
-                mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=0.5
-                )
-                
-                if mode_msg:
-                    current_mode = mode_msg.actuation_state
-                    mode_names = {
-                        0: "OFF", 1: "IBIT", 2: "OPERATE",
-                        3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                    }
-                    
-                    if current_mode == 4:  # PLAYBACK
-                        elapsed = time.time() - playback_start
-                        self.log_message.emit(
-                            f"  ✓ Vehicle entered PLAYBACK mode after {elapsed:.1f} seconds"
-                        )
-                        
-                        if self.telemetry_logger:
-                            self.telemetry_logger.log_test_event(
-                                'PLAYBACK_ENTERED',
-                                f'Vehicle entered PLAYBACK mode successfully '
-                                f'after {elapsed:.1f} seconds'
-                            )
-                        
-                        entered_playback = True
-                        break
-                    else:
-                        elapsed = time.time() - playback_start
-                        if int(elapsed) % 2 == 0 and elapsed > 0:
-                            mode_str = mode_names.get(
-                                current_mode,
-                                f"UNKNOWN({current_mode})"
-                            )
-                            self.log_message.emit(
-                                f"    [{elapsed:.0f}s] Current mode: {mode_str}, "
-                                f"waiting for PLAYBACK..."
-                            )
-                
-                time.sleep(0.1)
-            
-            if not entered_playback:
-                final_mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=2.0
-                )
-                final_mode = final_mode_msg.actuation_state if final_mode_msg else -1
-                mode_names = {
-                    0: "OFF", 1: "IBIT", 2: "OPERATE",
-                    3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                }
-                final_mode_str = mode_names.get(final_mode, f"UNKNOWN({final_mode})")
-                
-                if self.telemetry_logger:
-                    self.telemetry_logger.log_test_event(
-                        'PLAYBACK_FAILED',
-                        f'Failed to enter PLAYBACK mode - stuck in {final_mode_str}'
-                    )
-                
-                raise Exception(
-                    f"Failed to enter PLAYBACK mode after {playback_timeout:.0f} seconds.\n"
-                    f"  Current mode: {final_mode} ({final_mode_str})\n"
-                    f"  Expected: 4 (PLAYBACK)\n"
-                    f"  The vehicle may have conditions preventing PLAYBACK mode entry."
-                )
-            
-            # Step 6: Continue clearing monitors in PLAYBACK
-            self.log_message.emit(
-                "\n→ Continuously clearing monitors in PLAYBACK before IBIT..."
+
+            # Step 7: Enter IBIT mode
+            self._enter_mode(
+                target=ActuationMode.IBIT,
+                timeout=30.0,
+                event_request='IBIT_REQUEST',
+                event_entered='IBIT_ENTERED',
+                event_failed='IBIT_FAILED',
+                log_interval=5,
             )
-            self.progress_update.emit("Clearing monitors in PLAYBACK...")
-            
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'MONITOR_PLAYBACK_CLEAR',
-                    'Clearing monitors in PLAYBACK mode before IBIT'
-                )
-            
-            playback_monitor_clear_duration = 3.0
-            playback_clear_start = time.time()
-            playback_clear_count = 0
-            
-            while time.time() - playback_clear_start < playback_monitor_clear_duration:
-                current_set = self._get_current_set_monitors()
-                
-                if len(current_set) > 0:
-                    playback_clear_count += 1
-                    self.log_message.emit(
-                        f"  [PLAYBACK-{playback_clear_count}] Clearing "
-                        f"{len(current_set)} SET monitors: {current_set}"
-                    )
-                    all_cleared, remaining = self._clear_specific_monitors(current_set)
-                    
-                    if not all_cleared:
-                        self.log_message.emit(
-                            f"    ⚠ {len(remaining)} monitors couldn't be cleared"
-                        )
-                else:
-                    self.log_message.emit(f"  ✓ No SET monitors in PLAYBACK")
-                
-                time.sleep(0.5)
-            
-            self.log_message.emit(
-                f"  ✓ PLAYBACK monitor clearing complete "
-                f"({playback_clear_count} clear operations)"
-            )
-            
-            # Final monitor check before IBIT
-            final_set_before_ibit = self._get_current_set_monitors()
-            if final_set_before_ibit:
-                self.log_message.emit(
-                    f"  ⚠ Warning: {len(final_set_before_ibit)} monitors still SET "
-                    f"before IBIT: {final_set_before_ibit}"
-                )
-                
-                if self.telemetry_logger:
-                    self.telemetry_logger.log_test_event(
-                        'MONITOR_WARNING',
-                        f'{len(final_set_before_ibit)} monitors still SET before IBIT: '
-                        f'{final_set_before_ibit}'
-                    )
-            else:
-                self.log_message.emit(f"  ✓ All monitors clear before IBIT")
-            
-            # Step 7: Request transition from PLAYBACK to IBIT
-            self.log_message.emit("\n→ Requesting transition: PLAYBACK → IBIT...")
-            self.progress_update.emit("Entering IBIT mode...")
-            
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'IBIT_REQUEST',
-                    'Requesting transition from PLAYBACK to IBIT mode'
-                )
-            
-            # Send the request ONCE
-            self.log_message.emit(f"  Sending IBIT mode request (mode 1)...")
-            with self.master_lock:
-                self.master.mav.pandion_rr_actuation_request_mode_send(requested_mode=1)
-            
-            # Monitor for IBIT mode entry
-            timeout = 30.0
-            check_interval = 0.5
-            start_time = time.time()
-            entered_ibit = False
-            
-            self.log_message.emit(f"  Monitoring mode for up to {timeout:.0f} seconds...")
-            
-            while time.time() - start_time < timeout:
-                mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=check_interval
-                )
-                
-                if mode_msg:
-                    current_mode = mode_msg.actuation_state
-                    mode_names = {
-                        0: "OFF", 1: "IBIT", 2: "OPERATE",
-                        3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                    }
-                    
-                    if current_mode == 1:  # IBIT
-                        elapsed = time.time() - start_time
-                        self.log_message.emit(
-                            f"  ✓ Vehicle entered IBIT mode after {elapsed:.1f} seconds"
-                        )
-                        
-                        if self.telemetry_logger:
-                            self.telemetry_logger.log_test_event(
-                                'IBIT_ENTERED',
-                                f'Vehicle entered IBIT mode successfully '
-                                f'after {elapsed:.1f} seconds'
-                            )
-                        
-                        entered_ibit = True
-                        break
-                    else:
-                        elapsed = time.time() - start_time
-                        if int(elapsed) % 5 == 0 and elapsed > 0:
-                            mode_str = mode_names.get(
-                                current_mode,
-                                f"UNKNOWN({current_mode})"
-                            )
-                            self.log_message.emit(
-                                f"    [{elapsed:.0f}s] Current mode: {mode_str}, "
-                                f"waiting for IBIT..."
-                            )
-                
-                time.sleep(0.1)
-            
-            if not entered_ibit:
-                final_mode_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=2.0
-                )
-                final_mode = final_mode_msg.actuation_state if final_mode_msg else -1
-                mode_names = {
-                    0: "OFF", 1: "IBIT", 2: "OPERATE",
-                    3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                }
-                final_mode_str = mode_names.get(final_mode, f"UNKNOWN({final_mode})")
-                
-                if self.telemetry_logger:
-                    self.telemetry_logger.log_test_event(
-                        'IBIT_FAILED',
-                        f'Failed to enter IBIT mode - stuck in {final_mode_str}'
-                    )
-                
-                raise Exception(
-                    f"Failed to enter IBIT mode after {timeout:.0f} seconds.\n"
-                    f"  Current mode: {final_mode} ({final_mode_str})\n"
-                    f"  Expected: 1 (IBIT)\n"
-                    f"  The vehicle may have conditions preventing IBIT mode entry."
-                )
             
             self.log_message.emit("\n✓ Pre-flight preparation complete")
             self.log_message.emit(
@@ -743,8 +411,210 @@ class UUTPreparation(QObject):
         except Exception as e:
             self.log_message.emit(f"\n✗ Pre-flight preparation FAILED: {e}")
             return False, str(e)
+
+    # ── prepare_for_test sub-steps ──────────────────────────────────────
+
+    def _disable_use_nest_if_needed(self) -> None:
+        """Step 1: Disable USE_NEST if it is currently enabled."""
+        if self.initial_state.use_nest is not None:
+            if self.initial_state.use_nest != 0:
+                self.progress_update.emit("Disabling USE_NEST...")
+                self.log_message.emit("→ Setting USE_NEST = 0 (DISABLE)")
+                if self.telemetry_logger:
+                    self.telemetry_logger.log_test_event(
+                        'USE_NEST_DISABLE',
+                        'Setting USE_NEST parameter to 0 (DISABLED)'
+                    )
+                success, msg = self._set_use_nest(0)
+                if not success:
+                    self.log_message.emit(f"  ⚠ Could not disable USE_NEST: {msg}")
+                else:
+                    self.log_message.emit(f"  ✓ {msg}")
+            else:
+                self.log_message.emit("✓ USE_NEST already disabled, skipping")
+        else:
+            self.log_message.emit("✓ USE_NEST not available on this vehicle, skipping")
+
+    def _arm_vehicle_if_needed(self) -> None:
+        """Step 2: ARM the vehicle with iterative monitor management."""
+        if not self.initial_state.armed:
+            success, msg = self._arm_with_monitor_management()
+            if not success:
+                skip_arm = self.config.get('skip_arm_for_ibit', False)
+                if skip_arm:
+                    self.log_message.emit(
+                        f"\n⚠ ARM failed but 'skip_arm_for_ibit' enabled"
+                    )
+                    self.log_message.emit(
+                        f"  → Proceeding to IBIT without ARM (may fail)"
+                    )
+                else:
+                    raise Exception(f"Failed to ARM: {msg}")
+            else:
+                self.log_message.emit(f"\n✓ {msg}")
+        else:
+            self.log_message.emit("✓ Vehicle already armed, skipping")
+
+    def _wait_for_operate(self, timeout: float = 5.0) -> None:
+        """Step 3: Wait for automatic transition to OPERATE mode after ARM."""
+        self.log_message.emit("\n→ Waiting for vehicle to enter OPERATE mode...")
+        self.progress_update.emit("Waiting for OPERATE mode...")
+        if self.telemetry_logger:
+            self.telemetry_logger.log_test_event(
+                'MODE_TRANSITION_WAIT',
+                'Waiting for automatic transition to OPERATE mode'
+            )
+        start = time.time()
+        while time.time() - start < timeout:
+            mode_msg = self._wait_for_message(
+                MsgType.ACTUATION_SYS_STATUS, timeout=1.0
+            )
+            if mode_msg:
+                current_mode = mode_msg.actuation_state
+                if current_mode == ActuationMode.OPERATE:
+                    self.log_message.emit(f"  ✓ Vehicle entered OPERATE mode")
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            'MODE_CHANGE',
+                            'Vehicle automatically transitioned to OPERATE mode'
+                        )
+                    return
+                else:
+                    self.log_message.emit(
+                        f"  Current mode: {current_mode} "
+                        f"({get_mode_name(current_mode)})"
+                    )
+            time.sleep(0.5)
+        self.log_message.emit(
+            f"  ⚠ Vehicle did not enter OPERATE mode within {timeout}s"
+        )
+        self.log_message.emit(f"  → Proceeding to clear monitors anyway...")
+
+    def _clear_monitors_timed(self, duration: float, label: str, event_type: str) -> None:
+        """Clear SET monitors for a fixed duration, logging progress."""
+        self.log_message.emit(
+            f"\n→ Continuously clearing monitors {label}..."
+        )
+        self.progress_update.emit("Clearing monitors...")
+        if self.telemetry_logger:
+            self.telemetry_logger.log_test_event(
+                event_type, f'Starting continuous monitor clearing {label}'
+            )
+        start = time.time()
+        clear_count = 0
+        while time.time() - start < duration:
+            current_set = self._get_current_set_monitors()
+            if current_set:
+                clear_count += 1
+                self.log_message.emit(
+                    f"  [{clear_count}] Clearing {len(current_set)} "
+                    f"SET monitors: {current_set}"
+                )
+                all_cleared, remaining = self._clear_specific_monitors(current_set)
+                if not all_cleared:
+                    self.log_message.emit(
+                        f"    ⚠ {len(remaining)} monitors couldn't be cleared"
+                    )
+            else:
+                self.log_message.emit(f"  ✓ No SET monitors detected")
+            time.sleep(0.5)
+        self.log_message.emit(
+            f"  ✓ Monitor clearing complete ({clear_count} clear operations)"
+        )
+        # Final check
+        final_set = self._get_current_set_monitors()
+        if final_set:
+            self.log_message.emit(
+                f"  ⚠ Warning: {len(final_set)} monitors still SET: {final_set}"
+            )
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'MONITOR_WARNING',
+                    f'{len(final_set)} monitors still SET {label}: {final_set}'
+                )
+        else:
+            self.log_message.emit(f"  ✓ All monitors clear")
+
+    def _enter_mode(self, target: int, timeout: float, event_request: str, event_entered: str,
+                    event_failed: str, log_interval: int = 2) -> None:
+        """
+        Request a mode transition and wait for confirmation.
+
+        Args:
+            target: ActuationMode to enter
+            timeout: Max seconds to wait
+            event_request / event_entered / event_failed: telemetry event names
+            log_interval: How often (seconds) to log "still waiting"
+        """
+        target_name = get_mode_name(target)
+        self.log_message.emit(
+            f"\n→ Requesting transition → {target_name}..."
+        )
+        self.progress_update.emit(f"Entering {target_name} mode...")
+        if self.telemetry_logger:
+            self.telemetry_logger.log_test_event(
+                event_request,
+                f'Requesting transition to {target_name} mode'
+            )
+        self.log_message.emit(
+            f"  Sending {target_name} mode request (mode {int(target)})..."
+        )
+        with self.master_lock:
+            self.master.mav.pandion_rr_actuation_request_mode_send(
+                requested_mode=int(target)
+            )
+        self.log_message.emit(
+            f"  Monitoring mode for up to {timeout:.0f} seconds..."
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            mode_msg = self._wait_for_message(
+                MsgType.ACTUATION_SYS_STATUS, timeout=0.5
+            )
+            if mode_msg:
+                current_mode = mode_msg.actuation_state
+                if current_mode == target:
+                    elapsed = time.time() - start
+                    self.log_message.emit(
+                        f"  ✓ Vehicle entered {target_name} mode "
+                        f"after {elapsed:.1f} seconds"
+                    )
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            event_entered,
+                            f'Vehicle entered {target_name} mode '
+                            f'after {elapsed:.1f} seconds'
+                        )
+                    return
+                else:
+                    elapsed = time.time() - start
+                    if int(elapsed) % log_interval == 0 and elapsed > 0:
+                        self.log_message.emit(
+                            f"    [{elapsed:.0f}s] Current mode: "
+                            f"{get_mode_name(current_mode)}, "
+                            f"waiting for {target_name}..."
+                        )
+            time.sleep(0.1)
+
+        # Failed
+        final_msg = self._wait_for_message(
+            MsgType.ACTUATION_SYS_STATUS, timeout=2.0
+        )
+        final_mode = final_msg.actuation_state if final_msg else -1
+        final_str = get_mode_name(final_mode)
+        if self.telemetry_logger:
+            self.telemetry_logger.log_test_event(
+                event_failed,
+                f'Failed to enter {target_name} mode - stuck in {final_str}'
+            )
+        raise Exception(
+            f"Failed to enter {target_name} mode after {timeout:.0f} seconds.\n"
+            f"  Current mode: {final_mode} ({final_str})\n"
+            f"  Expected: {int(target)} ({target_name})\n"
+            f"  The vehicle may have conditions preventing {target_name} mode entry."
+        )
     
-    def restore_original_state(self):
+    def restore_original_state(self) -> Tuple[bool, str]:
         """
         Restore UUT to original state.
         
@@ -776,157 +646,164 @@ class UUTPreparation(QObject):
             self.log_message.emit(f"  {line}")
         
         try:
-            # Step 1: Ensure we're in OPERATE mode first
-            current_mode_msg = self._wait_for_message(
-                'PANDION_RR_ACTUATION_SYS_STATUS',
-                timeout=3.0
-            )
-            current_mode = current_mode_msg.actuation_state if current_mode_msg else -1
-            
-            if current_mode == 1:  # Still in IBIT
-                self.log_message.emit(
-                    f"⚠ Still in IBIT mode, requesting OPERATE first..."
-                )
-                with self.master_lock:
-                    self.master.mav.pandion_rr_actuation_request_mode_send(
-                        requested_mode=2
-                    )
-                time.sleep(3.0)
-                
-                verify_msg = self._wait_for_message(
-                    'PANDION_RR_ACTUATION_SYS_STATUS',
-                    timeout=3.0
-                )
-                if verify_msg and verify_msg.actuation_state == 2:
-                    self.log_message.emit(f"  ✓ Vehicle in OPERATE mode")
-                else:
-                    self.log_message.emit(f"  ⚠ Could not transition to OPERATE")
-            
-            elif current_mode == 2:
-                self.log_message.emit(f"✓ Vehicle already in OPERATE mode")
-            else:
-                self.log_message.emit(f"⚠ Unexpected mode: {current_mode}")
-            
-            time.sleep(1.0)
-            
-            # Step 2: Clear overridden monitors BEFORE disarming
-            self.log_message.emit("\n→ Clearing overridden monitors BEFORE disarm...")
-            current_overridden = self._get_current_overridden_monitors()
-            
-            if current_overridden:
-                self.log_message.emit(
-                    f"  Found {len(current_overridden)} overridden monitors: "
-                    f"{current_overridden}"
-                )
-                
-                if self.telemetry_logger:
-                    self.telemetry_logger.log_test_event(
-                        'MONITOR_RESTORE_PRE_DISARM',
-                        f'Clearing {len(current_overridden)} overridden monitors '
-                        f'BEFORE disarm: {current_overridden}'
-                    )
-                
-                with self.master_lock:
-                    for mid in current_overridden:
-                        self.master.mav.pandion_monitor_override_cmd_send(0, mid)
-                        time.sleep(0.01)
-                
-                time.sleep(2.0)
-                
-                verify_overridden = self._get_current_overridden_monitors()
-                if verify_overridden:
-                    self.log_message.emit(
-                        f"  ⚠ {len(verify_overridden)} monitors still overridden: "
-                        f"{verify_overridden}"
-                    )
-                else:
-                    self.log_message.emit(f"  ✓ All monitors cleared before disarm")
-            else:
-                self.log_message.emit(f"  ✓ No overridden monitors to clear")
-            
-            # Step 3: Disarm if needed
-            if not self.initial_state.armed:
-                pandion_status = self._wait_for_message('PANDION_STATUS', timeout=3.0)
-                
-                if pandion_status:
-                    flight_regime = pandion_status.flight_regime
-                    is_armed = (flight_regime >= 1 and flight_regime != 255)
-                    
-                    if is_armed:
-                        self.log_message.emit(
-                            f"\n→ Disarming vehicle (current flight regime: "
-                            f"{flight_regime})..."
-                        )
-                        
-                        if self.telemetry_logger:
-                            self.telemetry_logger.log_test_event(
-                                'DISARM_REQUEST',
-                                'Sending DISARM command with improved retry'
-                            )
-                        
-                        success, message = self._disarm_with_improved_retry(
-                            max_attempts=5
-                        )
-                        
-                        if success:
-                            self.log_message.emit(f"  ✓ {message}")
-                        else:
-                            self.log_message.emit(f"  ⚠ {message}")
-                            if self.telemetry_logger:
-                                self.telemetry_logger.log_test_event(
-                                    'DISARM_FAILED',
-                                    message
-                                )
-                    else:
-                        self.log_message.emit(f"✓ Vehicle already disarmed")
-            
-            time.sleep(2.0)
-            
-            # Step 4: Transition to OFF mode
-            self.log_message.emit("\n→ Requesting transition to OFF mode...")
-            with self.master_lock:
-                self.master.mav.pandion_rr_actuation_request_mode_send(requested_mode=0)
-            
-            time.sleep(3.0)
-            
-            final_mode_msg = self._wait_for_message(
-                'PANDION_RR_ACTUATION_SYS_STATUS',
-                timeout=3.0
-            )
-            
-            if final_mode_msg:
-                final_mode = final_mode_msg.actuation_state
-                mode_names = {
-                    0: "OFF", 1: "IBIT", 2: "OPERATE",
-                    3: "MANUAL", 4: "PLAYBACK", 5: "TRIM"
-                }
-                mode_str = mode_names.get(final_mode, f"UNKNOWN({final_mode})")
-                
-                if final_mode == 0:
-                    self.log_message.emit(
-                        f"✓ Final actuation mode: {final_mode} ({mode_str}) ✓"
-                    )
-                else:
-                    self.log_message.emit(
-                        f"⚠ Final actuation mode: {final_mode} ({mode_str}) - "
-                        f"expected OFF"
-                    )
-                
-                if self.telemetry_logger:
-                    self.telemetry_logger.log_test_event(
-                        'MODE_CHECK',
-                        f'Final mode after restoration: {mode_str}'
-                    )
-            else:
-                self.log_message.emit(f"⚠ Could not verify final mode")
+            self._ensure_operate_mode()
+            self._clear_overrides_before_disarm()
+            self._disarm_if_needed()
+            self._transition_to_off()
             
             return True, "Restoration complete"
             
         except Exception as e:
             self.log_message.emit(f"✗ Restoration error: {e}")
             return False, str(e)
+
+    # ── restore_original_state sub-steps ────────────────────────────────
+
+    def _ensure_operate_mode(self):
+        """If vehicle is in IBIT, transition to OPERATE before restoration."""
+        current_mode_msg = self._wait_for_message(
+            MsgType.ACTUATION_SYS_STATUS,
+            timeout=3.0
+        )
+        current_mode = current_mode_msg.actuation_state if current_mode_msg else -1
+        
+        if current_mode == ActuationMode.IBIT:  # Still in IBIT
+            self.log_message.emit(
+                f"⚠ Still in IBIT mode, requesting OPERATE first..."
+            )
+            with self.master_lock:
+                self.master.mav.pandion_rr_actuation_request_mode_send(
+                    requested_mode=ActuationMode.OPERATE
+                )
+            time.sleep(3.0)
+            
+            verify_msg = self._wait_for_message(
+                MsgType.ACTUATION_SYS_STATUS,
+                timeout=3.0
+            )
+            if verify_msg and verify_msg.actuation_state == ActuationMode.OPERATE:
+                self.log_message.emit(f"  ✓ Vehicle in OPERATE mode")
+            else:
+                self.log_message.emit(f"  ⚠ Could not transition to OPERATE")
+        
+        elif current_mode == ActuationMode.OPERATE:
+            self.log_message.emit(f"✓ Vehicle already in OPERATE mode")
+        else:
+            self.log_message.emit(f"⚠ Unexpected mode: {current_mode}")
+        
+        time.sleep(1.0)
+
+    def _clear_overrides_before_disarm(self):
+        """Clear any monitor overrides set during test before disarming."""
+        self.log_message.emit("\n→ Clearing overridden monitors BEFORE disarm...")
+        current_overridden = self._get_current_overridden_monitors()
+        
+        if current_overridden:
+            self.log_message.emit(
+                f"  Found {len(current_overridden)} overridden monitors: "
+                f"{current_overridden}"
+            )
+            
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'MONITOR_RESTORE_PRE_DISARM',
+                    f'Clearing {len(current_overridden)} overridden monitors '
+                    f'BEFORE disarm: {current_overridden}'
+                )
+            
+            with self.master_lock:
+                for mid in current_overridden:
+                    self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_CLEAR, mid)
+                    time.sleep(0.01)
+            
+            time.sleep(2.0)
+            
+            verify_overridden = self._get_current_overridden_monitors()
+            if verify_overridden:
+                self.log_message.emit(
+                    f"  ⚠ {len(verify_overridden)} monitors still overridden: "
+                    f"{verify_overridden}"
+                )
+            else:
+                self.log_message.emit(f"  ✓ All monitors cleared before disarm")
+        else:
+            self.log_message.emit(f"  ✓ No overridden monitors to clear")
+
+    def _disarm_if_needed(self):
+        """Disarm the vehicle if it wasn't originally armed."""
+        if not self.initial_state.armed:
+            pandion_status = self._wait_for_message(MsgType.PANDION_STATUS, timeout=3.0)
+            
+            if pandion_status:
+                flight_regime = pandion_status.flight_regime
+                is_vehicle_armed = is_armed(flight_regime)
+                
+                if is_vehicle_armed:
+                    self.log_message.emit(
+                        f"\n→ Disarming vehicle (current flight regime: "
+                        f"{flight_regime})..."
+                    )
+                    
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            'DISARM_REQUEST',
+                            'Sending DISARM command with improved retry'
+                        )
+                    
+                    success, message = self._disarm_with_improved_retry(
+                        max_attempts=5
+                    )
+                    
+                    if success:
+                        self.log_message.emit(f"  ✓ {message}")
+                    else:
+                        self.log_message.emit(f"  ⚠ {message}")
+                        if self.telemetry_logger:
+                            self.telemetry_logger.log_test_event(
+                                'DISARM_FAILED',
+                                message
+                            )
+                else:
+                    self.log_message.emit(f"✓ Vehicle already disarmed")
+        
+        time.sleep(2.0)
+
+    def _transition_to_off(self):
+        """Request transition to OFF mode and verify."""
+        self.log_message.emit("\n→ Requesting transition to OFF mode...")
+        with self.master_lock:
+            self.master.mav.pandion_rr_actuation_request_mode_send(requested_mode=int(ActuationMode.OFF))
+        
+        time.sleep(3.0)
+        
+        final_mode_msg = self._wait_for_message(
+            MsgType.ACTUATION_SYS_STATUS,
+            timeout=3.0
+        )
+        
+        if final_mode_msg:
+            final_mode = final_mode_msg.actuation_state
+            mode_str = get_mode_name(final_mode)
+            
+            if final_mode == ActuationMode.OFF:
+                self.log_message.emit(
+                    f"✓ Final actuation mode: {final_mode} ({mode_str}) ✓"
+                )
+            else:
+                self.log_message.emit(
+                    f"⚠ Final actuation mode: {final_mode} ({mode_str}) - "
+                    f"expected OFF"
+                )
+            
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'MODE_CHECK',
+                    f'Final mode after restoration: {mode_str}'
+                )
+        else:
+            self.log_message.emit(f"⚠ Could not verify final mode")
     
-    def verify_final_state(self, relay_was_disabled=False):
+    def verify_final_state(self, relay_was_disabled: bool = False) -> None:
         """
         Capture and verify final state matches initial.
         
@@ -984,7 +861,7 @@ class UUTPreparation(QObject):
     
     # ========== HELPER METHODS ==========
     
-    def _arm_with_monitor_management(self):
+    def _arm_with_monitor_management(self) -> Tuple[bool, str]:
         """
         ARM vehicle: check monitors → clear → try ARM → repeat until success.
         
@@ -1088,7 +965,7 @@ class UUTPreparation(QObject):
             self.log_message.emit(f"  Final status: No monitors SET, but ARM still failed")
             return False, "ARM failed - no monitors SET but vehicle refuses to ARM"
     
-    def _try_arm_once(self):
+    def _try_arm_once(self) -> Tuple[bool, str]:
         """
         Try to ARM vehicle once.
         
@@ -1103,25 +980,19 @@ class UUTPreparation(QObject):
             )
         
         # Wait for ACK
-        ack = self._wait_for_message('COMMAND_ACK', timeout=2.0)
+        ack = self._wait_for_message(MsgType.COMMAND_ACK, timeout=2.0)
         
         if ack and ack.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
-            result_names = {
-                0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
-                3: "UNSUPPORTED", 4: "FAILED", 5: "IN_PROGRESS"
-            }
-            result_str = result_names.get(ack.result, f"UNKNOWN({ack.result})")
+            result_str = get_command_result_name(ack.result)
             
-            if ack.result == 0:  # ACCEPTED
+            if ack.result == CommandResult.ACCEPTED:
                 time.sleep(0.3)
                 
                 # Verify with PANDION_STATUS
-                pandion_status = self._wait_for_message('PANDION_STATUS', timeout=2.0)
+                pandion_status = self._wait_for_message(MsgType.PANDION_STATUS, timeout=2.0)
                 if pandion_status:
                     flight_regime = pandion_status.flight_regime
-                    is_armed = (flight_regime >= 1 and flight_regime != 255)
-                    
-                    if is_armed:
+                    if is_armed(flight_regime):
                         return True, "ARMED"
                     else:
                         return False, (
@@ -1132,7 +1003,7 @@ class UUTPreparation(QObject):
         else:
             return False, "No ACK received"
     
-    def _disarm_with_improved_retry(self, max_attempts=5):
+    def _disarm_with_improved_retry(self, max_attempts: int = 5) -> Tuple[bool, str]:
         """
         Improved disarm with better ACK handling and longer timeouts.
         
@@ -1158,12 +1029,12 @@ class UUTPreparation(QObject):
             ack_received = False
             
             while time.time() - start_time < timeout:
-                ack = self._wait_for_message('COMMAND_ACK', timeout=0.5)
+                ack = self._wait_for_message(MsgType.COMMAND_ACK, timeout=0.5)
                 
                 if ack and ack.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
                     ack_received = True
                     
-                    if ack.result == 0:  # ACCEPTED
+                    if ack.result == CommandResult.ACCEPTED:
                         self.log_message.emit(f"    ✓ DISARM command accepted")
                         
                         # Wait for actual disarm (vehicle takes time)
@@ -1171,9 +1042,9 @@ class UUTPreparation(QObject):
                         
                         # Verify with multiple checks
                         for verify_attempt in range(5):
-                            ps = self._wait_for_message('PANDION_STATUS', timeout=1.0)
+                            ps = self._wait_for_message(MsgType.PANDION_STATUS, timeout=1.0)
                             if ps:
-                                if ps.flight_regime == 0:
+                                if ps.flight_regime == FlightRegime.GROUND_DISARMED:
                                     self.log_message.emit(
                                         f"    ✓ DISARMED verified (flight regime 0)"
                                     )
@@ -1201,11 +1072,7 @@ class UUTPreparation(QObject):
                             f"    ✗ DISARM accepted but verification failed"
                         )
                     else:
-                        result_names = {
-                            0: "ACCEPTED", 1: "TEMPORARILY_REJECTED", 2: "DENIED",
-                            3: "UNSUPPORTED", 4: "FAILED", 5: "IN_PROGRESS"
-                        }
-                        result_str = result_names.get(ack.result, f"UNKNOWN({ack.result})")
+                        result_str = get_command_result_name(ack.result)
                         self.log_message.emit(f"    ✗ DISARM rejected: {result_str}")
                     
                     break
@@ -1223,7 +1090,7 @@ class UUTPreparation(QObject):
         
         return False, f"DISARM failed after {max_attempts} attempts"
     
-    def _clear_specific_monitors(self, monitor_ids):
+    def _clear_specific_monitors(self, monitor_ids: List[int]) -> Tuple[bool, List[int]]:
         """
         Clear only the specific monitors that are SET.
         
@@ -1248,14 +1115,14 @@ class UUTPreparation(QObject):
         
         with self.master_lock:
             for monitor_id in monitor_ids:
-                self.master.mav.pandion_monitor_override_cmd_send(2, monitor_id)
+                self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_CLEAR_SPECIFIC, monitor_id)
                 time.sleep(0.01)
         
         time.sleep(1.5)
         
         # Verify
         verify_msg = self._wait_for_message(
-            'PANDION_MONITOR_CURRENT_STATUS',
+            MsgType.MONITOR_STATUS,
             timeout=2.0
         )
         
@@ -1279,10 +1146,10 @@ class UUTPreparation(QObject):
         
         return len(still_set) == 0, still_set
     
-    def _get_current_set_monitors(self):
+    def _get_current_set_monitors(self) -> List[int]:
         """Get list of currently SET monitors"""
         monitor_msg = self._wait_for_message(
-            'PANDION_MONITOR_CURRENT_STATUS',
+            MsgType.MONITOR_STATUS,
             timeout=2.0
         )
         
@@ -1291,10 +1158,10 @@ class UUTPreparation(QObject):
         
         return self._extract_monitors_from_msg(monitor_msg.currently_set)
     
-    def _get_current_overridden_monitors(self):
+    def _get_current_overridden_monitors(self) -> List[int]:
         """Get list of currently overridden monitors"""
         monitor_msg = self._wait_for_message(
-            'PANDION_MONITOR_CURRENT_STATUS',
+            MsgType.MONITOR_STATUS,
             timeout=3.0
         )
         
@@ -1302,7 +1169,7 @@ class UUTPreparation(QObject):
             monitor_msg.currently_overridden
         ) if monitor_msg else []
     
-    def _extract_monitors_from_msg(self, byte_array):
+    def _extract_monitors_from_msg(self, byte_array: Any) -> List[int]:
         """Extract monitor IDs from byte array"""
         monitors = []
         for byte_idx, byte_val in enumerate(byte_array):
@@ -1311,7 +1178,7 @@ class UUTPreparation(QObject):
                     monitors.append(byte_idx * 8 + bit)
         return monitors
     
-    def _query_use_nest(self):
+    def _query_use_nest(self) -> Optional[int]:
         """Query USE_NEST parameter with caching"""
         if self.use_nest_cache is not None:
             return self.use_nest_cache
@@ -1321,7 +1188,7 @@ class UUTPreparation(QObject):
             while True:
                 with self.master_lock:
                     msg = self.master.recv_match(
-                        type='PARAM_VALUE', blocking=False, timeout=0.01
+                        type=MsgType.PARAM_VALUE, blocking=False, timeout=0.01
                     )
                 if not msg:
                     break
@@ -1340,7 +1207,7 @@ class UUTPreparation(QObject):
             start_time = time.time()
 
             while time.time() - start_time < timeout:
-                msg = self._wait_for_message('PARAM_VALUE', timeout=0.1)
+                msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
 
                 if msg:
                     param_name = (
@@ -1362,7 +1229,7 @@ class UUTPreparation(QObject):
             self.log_message.emit(f"  ⚠ Error querying USE_NEST: {e}")
             return None
     
-    def _set_use_nest(self, value):
+    def _set_use_nest(self, value: int) -> Tuple[bool, str]:
         """Set USE_NEST parameter with verification"""
         try:
             param_id_bytes = b'USE_NEST' + b'\x00' * (16 - len(b'USE_NEST'))
@@ -1396,7 +1263,7 @@ class UUTPreparation(QObject):
         except Exception as e:
             return False, f"Error setting USE_NEST: {str(e)}"
     
-    def _clear_monitors_until_clean(self, timeout=20.0):
+    def _clear_monitors_until_clean(self, timeout: float = 20.0) -> bool:
         """
         Poll and clear SET monitors until none remain or timeout expires.
 
@@ -1439,7 +1306,7 @@ class UUTPreparation(QObject):
             return False
         return True
 
-    def _capture_current_state(self, state_obj):
+    def _capture_current_state(self, state_obj: UUTState) -> Tuple[bool, str]:
         """Helper to capture the current state into a state object"""
         state_obj.timestamp = time.time()
 
@@ -1447,24 +1314,24 @@ class UUTPreparation(QObject):
             state_obj.use_nest = self._query_use_nest()
 
             actuation_msg = self._wait_for_message(
-                'PANDION_RR_ACTUATION_SYS_STATUS',
+                MsgType.ACTUATION_SYS_STATUS,
                 timeout=2.0
             )
             state_obj.actuation_mode = (
                 actuation_msg.actuation_state if actuation_msg else -1
             )
 
-            pandion_status = self._wait_for_message('PANDION_STATUS', timeout=2.0)
+            pandion_status = self._wait_for_message(MsgType.PANDION_STATUS, timeout=2.0)
             if pandion_status:
                 flight_regime = pandion_status.flight_regime
                 state_obj.flight_regime = flight_regime
-                state_obj.armed = (flight_regime >= 1 and flight_regime != 255)
+                state_obj.armed = is_armed(flight_regime)
             else:
                 state_obj.armed = None
                 state_obj.flight_regime = None
 
             monitor_msg = self._wait_for_message(
-                'PANDION_MONITOR_CURRENT_STATUS',
+                MsgType.MONITOR_STATUS,
                 timeout=2.0
             )
             if monitor_msg:
@@ -1481,7 +1348,7 @@ class UUTPreparation(QObject):
         except Exception as e:
             return False, f"Failed to capture state: {type(e).__name__}: {e}"
     
-    def _wait_for_message(self, msg_type, timeout=5.0):
+    def _wait_for_message(self, msg_type: str, timeout: float = 5.0) -> Optional[Any]:
         """
         Wait for a specific message type.
 
@@ -1507,16 +1374,16 @@ class UUTPreparation(QObject):
             self._emit_status_from_message(msg)
         return msg
 
-    def _emit_status_from_message(self, msg):
+    def _emit_status_from_message(self, msg: Any) -> None:
         """Emit UI status signals from any received MAVLink message."""
         try:
             msg_type = msg.get_type()
-            if msg_type == 'PANDION_STATUS':
+            if msg_type == MsgType.PANDION_STATUS:
                 fr = msg.flight_regime
-                armed = (fr >= 1 and fr != 255)
+                armed = is_armed(fr)
                 self.armed_state_update.emit(armed, fr)
                 self.connection_health_update.emit(True)
-            elif msg_type == 'PANDION_RR_ACTUATION_SYS_STATUS':
+            elif msg_type == MsgType.ACTUATION_SYS_STATUS:
                 self.mode_update.emit(msg.actuation_state)
                 self.connection_health_update.emit(True)
                 try:
