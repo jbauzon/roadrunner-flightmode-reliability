@@ -9,6 +9,7 @@ from .executor import (
     IBITFailureDiagnostic,
 )
 from .logger import TelemetryLogger
+from .callbacks import ExecutorCallbacks, PreparationCallbacks
 
 __all__ = [
     'UUTTestExecutor',
@@ -17,4 +18,6 @@ __all__ = [
     'TestStatistics',
     'IBITFailureDiagnostic',
     'TelemetryLogger',
+    'ExecutorCallbacks',
+    'PreparationCallbacks',
 ]

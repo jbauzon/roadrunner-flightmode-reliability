@@ -10,6 +10,9 @@ import random
 import time
 
 
+from .config.defaults import MAV_TYPE_VTOL_DUOROTOR
+
+
 class TelemetryManager:
     """Manages all MAVLink telemetry TX for a vehicle sim."""
 
@@ -24,7 +27,7 @@ class TelemetryManager:
     def heartbeat(self):
         try:
             self._conn.mav.heartbeat_send(
-                self._mavutil.mavlink.MAV_TYPE_FIXED_WING,
+                MAV_TYPE_VTOL_DUOROTOR,
                 self._mavutil.mavlink.MAV_AUTOPILOT_GENERIC,
                 0, 0, self._mavutil.mavlink.MAV_STATE_ACTIVE)
         except Exception:
@@ -97,25 +100,25 @@ class TelemetryManager:
         eng_running_2 = sensors.eng2_rpm > 0
         try:
             self._conn.mav.pandion_rr_engine_status_send(
-                eng_1_fuel_pump_curr_mA=int(random.gauss(450, 20)) if eng_running_1 else 0,
+                eng_1_fuel_pump_curr_mA=int(sensors.fuel_pump_current_mA) if eng_running_1 else 0,
                 eng_1_fuel_pump_speed_rpm=int(sensors.eng1_rpm * 0.8),
-                eng_1_fuel_consumption_l=0.0,
+                eng_1_fuel_consumption_l=float(getattr(sensors, 'fuel_consumed_l', 0.0)),
                 eng_1_intake_temp_degC=int(random.gauss(35, 2)) if eng_running_1 else int(random.gauss(25, 1)),
                 eng_1_egt_temp_degC=int(sensors.eng1_egt),
                 eng_1_speed_vs_nominal_pct=100 if eng_running_1 else 0,
                 eng_1_speed=int(sensors.eng1_rpm),
-                eng_1_required_speed=0,
+                eng_1_required_speed=int(sensors.eng1_rpm) if eng_running_1 else 0,
                 eng_1_mode=sensors.eng1_mode,
                 eng_1_EED=0,
                 eng_1_relay_state=1 if powered else 0,
-                eng_2_fuel_pump_curr_mA=int(random.gauss(450, 20)) if eng_running_2 else 0,
+                eng_2_fuel_pump_curr_mA=int(sensors.fuel_pump_current_mA) if eng_running_2 else 0,
                 eng_2_fuel_pump_speed_rpm=int(sensors.eng2_rpm * 0.8),
-                eng_2_fuel_consumption_l=0.0,
+                eng_2_fuel_consumption_l=float(getattr(sensors, 'fuel_consumed_l', 0.0)),
                 eng_2_intake_temp_degC=int(random.gauss(35, 2)) if eng_running_2 else int(random.gauss(25, 1)),
                 eng_2_egt_temp_degC=int(sensors.eng2_egt),
                 eng_2_speed_vs_nominal_pct=100 if eng_running_2 else 0,
                 eng_2_speed=int(sensors.eng2_rpm),
-                eng_2_required_speed=0,
+                eng_2_required_speed=int(sensors.eng2_rpm) if eng_running_2 else 0,
                 eng_2_mode=sensors.eng2_mode,
                 eng_2_EED=0,
                 eng_2_relay_state=1 if powered else 0,
@@ -144,7 +147,7 @@ class TelemetryManager:
                 balancer_temp_centiC=260,
                 load_switch_temp_centiC=280,
                 remaining_capacity_mAh=int(bms.remaining),
-                state_of_charge_percent=bms.soc,
+                state_of_charge_percent=int(bms.soc),
                 state=bms.state, balancing=0,
                 min_pack_output_voltage_mV=bms.pack_voltage - 200,
                 max_pack_output_voltage_mV=bms.pack_voltage + 200,

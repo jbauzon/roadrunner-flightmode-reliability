@@ -172,38 +172,50 @@ class DAQSetupWidget(QGroupBox):
         self._init_ui()
 
     def _init_ui(self):
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 16, 12, 10)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
-        layout.addWidget(_label("DAQ Device:", T.TEXT_SECONDARY))
-
+        # Row 1: Device selector
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        row1.addWidget(_label("DAQ Device:", T.TEXT_SECONDARY))
         self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(160)
+        self.device_combo.setMinimumWidth(120)
         self.device_combo.setToolTip("NI-DAQmx device that controls relay lines")
-        layout.addWidget(self.device_combo)
+        row1.addWidget(self.device_combo, 1)
+        layout.addLayout(row1)
 
+        # Row 2: Buttons
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
         self.detect_btn = QPushButton("Detect")
-        self.detect_btn.setToolTip("Scan for connected NI-DAQmx devices")
+        self.detect_btn.setMinimumWidth(70)
+        self.detect_btn.setToolTip("Scan for connected NI-DAQmx devices (F5)")
         self.detect_btn.clicked.connect(self.detect_clicked)
-        layout.addWidget(self.detect_btn)
+        row2.addWidget(self.detect_btn)
 
         self.init_btn = QPushButton("Initialize")
+        self.init_btn.setMinimumWidth(80)
         self.init_btn.setToolTip("Initialize selected DAQ device")
         self.init_btn.clicked.connect(self.initialize_clicked)
-        layout.addWidget(self.init_btn)
+        row2.addWidget(self.init_btn)
+        row2.addStretch()
+        layout.addLayout(row2)
 
-        layout.addSpacing(16)
-
-        self.status_led  = LED()
-        layout.addWidget(self.status_led)
-
+        # Row 3: Status
+        row3 = QHBoxLayout()
+        row3.setSpacing(8)
+        self.status_led = LED()
+        self.status_led.set_state('amber')
+        row3.addWidget(self.status_led)
         self.status_label = QLabel("Not Initialized")
         self.status_label.setStyleSheet(
-            f"color: {T.TEXT_DISABLED}; font-weight: bold; background: transparent;"
+            f"color: {T.AMBER}; font-weight: bold; background: transparent;"
         )
-        layout.addWidget(self.status_label)
-        layout.addStretch()
+        row3.addWidget(self.status_label)
+        row3.addStretch()
+        layout.addLayout(row3)
 
     def set_devices(self, devices):
         self.device_combo.clear()
@@ -321,6 +333,10 @@ class TestConfigWidget(QGroupBox):
         self.log_dir_input = QLineEdit()
         self.log_dir_input.setReadOnly(True)
         self.log_dir_input.setText(self.log_directory)
+        self.log_dir_input.setToolTip(self.log_directory)
+        self.log_dir_input.setCursorPosition(len(self.log_directory))
+        # Show the end of the path so the user sees the folder name, not "C:\And..."
+        self.log_dir_input.setAlignment(Qt.AlignRight)
         dir_row.addWidget(self.log_dir_input)
         browse_dir_btn = QPushButton("Browse")
         browse_dir_btn.clicked.connect(self.browse_clicked)
@@ -349,7 +365,7 @@ class TestConfigWidget(QGroupBox):
 
         # Advanced (collapsible via button)
         self._adv_visible = False
-        self._adv_toggle_btn = QPushButton("Advanced Settings  ▾")
+        self._adv_toggle_btn = QPushButton("Advanced Settings  \u25be  (timeouts, ARM retries)")
         self._adv_toggle_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {T.TEXT_SECONDARY}; "
             f"border: none; font-size: {T.FONT_SIZE_SM}; text-align: left; padding: 2px 0; }}"
@@ -371,6 +387,11 @@ class TestConfigWidget(QGroupBox):
             ("ARM Timeout",         "arm_timeout_input",         QSpinBox, (10, 300,  60, " s")),
             ("Max ARM Iterations",  "max_arm_iterations_input",  QSpinBox, (1,  100,  20, "")),
         ]
+        tooltips_map = {
+            "Connection Timeout": "Seconds to wait for initial MAVLink connection",
+            "Stabilization Delay": "Seconds to wait after enabling relay before testing",
+            "Max ARM Iterations": "Maximum ARM attempts with monitor clearing before giving up",
+        }
         for i, (lbl_text, attr, widget_cls, args) in enumerate(params):
             adv_layout.addWidget(_label(lbl_text + ":", T.TEXT_SECONDARY), i, 0)
             w = widget_cls()
@@ -379,6 +400,9 @@ class TestConfigWidget(QGroupBox):
             w.setValue(val)
             if suffix:
                 w.setSuffix(suffix)
+            tip = tooltips_map.get(lbl_text)
+            if tip:
+                w.setToolTip(tip)
             setattr(self, attr, w)
             adv_layout.addWidget(w, i, 1)
 
@@ -392,7 +416,8 @@ class TestConfigWidget(QGroupBox):
         self._adv_visible = not self._adv_visible
         self._adv_widget.setVisible(self._adv_visible)
         self._adv_toggle_btn.setText(
-            "Advanced Settings  ▴" if self._adv_visible else "Advanced Settings  ▾"
+            "Advanced Settings  \u25b4" if self._adv_visible
+            else "Advanced Settings  \u25be  (timeouts, ARM retries)"
         )
 
     def _on_mode_changed(self, ibit_selected):
@@ -437,6 +462,10 @@ class TestConfigWidget(QGroupBox):
     def set_log_directory(self, directory):
         self.log_directory = directory
         self.log_dir_input.setText(directory)
+        self.log_dir_input.setToolTip(directory)
+        self.log_dir_input.setCursorPosition(len(directory))
+        # Show the end of the path so the user sees the folder name, not "C:\And..."
+        self.log_dir_input.setAlignment(Qt.AlignRight)
         self.log_dir_changed.emit(directory)
 
     def get_duration(self):
@@ -561,15 +590,41 @@ class UUTTableWidget(QGroupBox):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
+        # Fleet summary
+        self._fleet_summary = QLabel()
+        self._fleet_summary.setAlignment(Qt.AlignCenter)
+        self._fleet_summary.setStyleSheet(
+            f"color: {T.TEXT_SECONDARY}; font-size: {T.FONT_SIZE_SM}; "
+            f"padding: 6px 12px; background: {T.BG_ELEVATED}; "
+            f"border: 1px solid {T.BORDER}; "
+            f"border-radius: 4px; font-family: {T.FONT_MONO};"
+        )
+        layout.addWidget(self._fleet_summary)
+
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(["#", "Serial", "IP Address", "Port", "Relay", "Iterations", "Status"])
+        header = self.table.horizontalHeader()
+        tooltips = {
+            0: "Row number",
+            1: "Vehicle serial number",
+            2: "Vehicle MAVLink IP address",
+            3: "Vehicle MAVLink UDP port",
+            4: "NI-DAQmx digital output line controlling this vehicle's power relay",
+            5: "Number of completed IBIT/Playback test iterations",
+            6: "Current test status (Ready, Testing, Complete, Failed, Retry)",
+        }
+        for col, tip in tooltips.items():
+            item = self.table.horizontalHeaderItem(col)
+            if item:
+                item.setToolTip(tip)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setMinimumHeight(120)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setStyleSheet(
@@ -604,6 +659,27 @@ class UUTTableWidget(QGroupBox):
                     item.setFont(f)
                 self.table.setItem(i, j, item)
         self.table.resizeRowsToContents()
+
+        # Fleet summary
+        counts = {}
+        for uut in uuts:
+            counts[uut.status] = counts.get(uut.status, 0) + 1
+
+        parts = []
+        for status, color in [
+            (UUTStatus.COMPLETE,          T.GREEN),
+            (UUTStatus.FAILED,            T.RED),
+            (UUTStatus.FAILED_PERMANENT,  T.RED),
+            (UUTStatus.TESTING,           T.AMBER),
+            (UUTStatus.READY,             T.BLUE),
+            (UUTStatus.RETRY,             T.AMBER),
+            (UUTStatus.STOPPED,           T.TEXT_DISABLED),
+        ]:
+            count = counts.get(status, 0)
+            if count > 0:
+                parts.append(f'<span style="color:{color};">{count} {status}</span>')
+
+        self._fleet_summary.setText(' | '.join(parts) if parts else 'No UUTs')
 
     def get_selected_row(self):
         """Return the selected row index, or -1 if none."""
@@ -728,8 +804,8 @@ class IBITDisplayWidget(QGroupBox):
         self._phase_dots = []
         for name in self._IBIT_PHASES:
             dot = QWidget()
-            dot.setFixedSize(10, 10)
-            dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 5px;")
+            dot.setFixedSize(12, 12)
+            dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 6px; border: 1px solid {T.BORDER};")
             dot.setToolTip(name)
             self._phase_dots.append(dot)
             phase_row.addWidget(dot)
@@ -784,7 +860,7 @@ class IBITDisplayWidget(QGroupBox):
         # Hint
         self.hint_label = _label(
             "Phases: BEGIN → SETTLE → ELEVONS → RUDDERS → TVC",
-            T.TEXT_DISABLED, size=T.FONT_SIZE_SM
+            T.TEXT_SECONDARY, size=T.FONT_SIZE
         )
         layout.addWidget(self.hint_label)
 
@@ -827,14 +903,14 @@ class IBITDisplayWidget(QGroupBox):
         current_idx = phase_map.get(substate_name, -1)
         for i, dot in enumerate(self._phase_dots):
             if i < current_idx:
-                dot.setStyleSheet(f"background-color: {T.GREEN}; border-radius: 5px;")
+                dot.setStyleSheet(f"background-color: {T.GREEN}; border-radius: 6px;")
             elif i == current_idx:
-                dot.setStyleSheet(f"background-color: {T.AMBER}; border-radius: 5px;")
+                dot.setStyleSheet(f"background-color: {T.AMBER}; border-radius: 6px;")
             else:
-                dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 5px;")
+                dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 6px; border: 1px solid {T.BORDER};")
         if substate_name == "✓ COMPLETE":
             for dot in self._phase_dots:
-                dot.setStyleSheet(f"background-color: {T.GREEN}; border-radius: 5px;")
+                dot.setStyleSheet(f"background-color: {T.GREEN}; border-radius: 6px;")
 
     def set_playback_progress(self, percent):
         """Update playback progress bar and percentage label."""
@@ -871,7 +947,7 @@ class IBITDisplayWidget(QGroupBox):
             f"font-size: {T.FONT_SIZE_XL}; font-weight: bold; letter-spacing: 2px;"
         )
         for dot in self._phase_dots:
-            dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 5px;")
+            dot.setStyleSheet(f"background-color: {T.BG_ELEVATED}; border-radius: 6px; border: 1px solid {T.BORDER};")
         self.playback_bar.setValue(0)
         self.playback_pct_label.setText("0%")
         self.duration_label.setText("00:00  (0.0s)")
@@ -885,6 +961,11 @@ class IBITDisplayWidget(QGroupBox):
 class ActuatorFeedbackWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Actuator Feedback", parent)
+        self._feedback_cache = {}  # serial_number -> {data dict}
+        self._current_serial = None
+        self._is_stale = False
+        self._last_data = None
+        self._last_update_time = None
         self._init_ui()
 
     def _init_ui(self):
@@ -895,10 +976,7 @@ class ActuatorFeedbackWidget(QGroupBox):
         # Header
         hdr = QGridLayout()
         hdr.setSpacing(4)
-        for i, (txt, col) in enumerate([
-            ("Surface", 0), ("Cmd °", 1), ("Fdbk °", 2),
-            ("Δ °", 3), ("mA", 4), ("°C", 5)
-        ]):
+        for i, txt in enumerate(["Surface", "Feedback (°)", "Current (mA)", "Temp (°C)"]):
             lbl = _label(txt, T.TEXT_DISABLED, size=T.FONT_SIZE_SM)
             lbl.setAlignment(Qt.AlignCenter)
             hdr.addWidget(lbl, 0, i)
@@ -925,34 +1003,26 @@ class ActuatorFeedbackWidget(QGroupBox):
             lbl = _label(display, T.TEXT_SECONDARY, size=T.FONT_SIZE_SM)
             self._grid.addWidget(lbl, row_idx, 0)
 
-            cmd   = _label("---", mono=True, size=T.FONT_SIZE_SM)
-            fb    = _label("---", mono=True, size=T.FONT_SIZE_SM)
-            delta = _label("---", mono=True, size=T.FONT_SIZE_SM)
-            curr  = _label("---", mono=True, size=T.FONT_SIZE_SM)
-            temp  = _label("---", mono=True, size=T.FONT_SIZE_SM)
+            fb   = _label("---", mono=True, size=T.FONT_SIZE_SM)
+            curr = _label("---", mono=True, size=T.FONT_SIZE_SM)
+            temp = _label("---", mono=True, size=T.FONT_SIZE_SM)
 
-            for col_idx, w in enumerate([cmd, fb, delta, curr, temp], start=1):
+            for col_idx, w in enumerate([fb, curr, temp], start=1):
                 w.setAlignment(Qt.AlignCenter)
                 self._grid.addWidget(w, row_idx, col_idx)
 
-            self._rows[key] = {
-                'cmd': cmd, 'fb': fb, 'delta': delta, 'curr': curr, 'temp': temp
-            }
+            self._rows[key] = {'fb': fb, 'curr': curr, 'temp': temp}
 
         layout.addLayout(self._grid)
 
         self.last_update_label = _label("Last update: —", T.TEXT_DISABLED, size=T.FONT_SIZE_SM)
         layout.addWidget(self.last_update_label)
 
-    def _delta_color(self, d):
-        if d < 0.5:
-            return T.GREEN
-        elif d < 1.0:
-            return T.AMBER
-        return T.RED
-
     def update_feedback(self, data):
         """Update all surface rows from a feedback data dict."""
+        self._is_stale = False
+        self._last_data = data
+        self._last_update_time = datetime.now().strftime('%H:%M:%S.%f')[:-4]
         try:
             keys = [
                 "left_elevon", "right_elevon",
@@ -962,37 +1032,21 @@ class ActuatorFeedbackWidget(QGroupBox):
             ]
             for key in keys:
                 row = self._rows[key]
-                fb_raw  = data.get(f"{key}_feedback_cdeg")
-                cmd_raw = data.get(f"{key}_cmd_cdeg")
-                curr    = data.get(f"{key}_current_mA")
-                temp    = data.get(f"{key}_motor_temp_degC")
+                fb_raw = data.get(f"{key}_feedback_cdeg")
+                curr   = data.get(f"{key}_current_mA")
+                temp   = data.get(f"{key}_motor_temp_degC")
 
-                fb_deg  = fb_raw  / 100.0 if fb_raw  is not None else None
-                cmd_deg = cmd_raw / 100.0 if cmd_raw is not None else None
+                fb_deg = fb_raw / 100.0 if fb_raw is not None else None
 
-                row['cmd'].setText( f"{cmd_deg:.1f}" if cmd_deg is not None else "---")
-                row['fb'].setText(  f"{fb_deg:.1f}"  if fb_deg  is not None else "---")
-
-                if cmd_deg is not None and fb_deg is not None:
-                    d = abs(cmd_deg - fb_deg)
-                    color = self._delta_color(d)
-                    row['delta'].setText(f"{d:.1f}")
-                    row['delta'].setStyleSheet(
-                        f"color: {color}; font-family: {T.FONT_MONO}; "
-                        f"font-size: {T.FONT_SIZE_SM}; background: transparent; font-weight: bold;"
-                    )
-                else:
-                    row['delta'].setText("---")
-                    row['delta'].setStyleSheet(
-                        f"color: {T.TEXT_DISABLED}; font-family: {T.FONT_MONO}; "
-                        f"font-size: {T.FONT_SIZE_SM}; background: transparent;"
-                    )
-
+                row['fb'].setText(f"{fb_deg:.1f}" if fb_deg is not None else "---")
                 row['curr'].setText(str(curr) if curr is not None else "---")
                 row['temp'].setText(str(temp) if temp is not None else "---")
 
             self.last_update_label.setText(
-                f"Last update: {datetime.now().strftime('%H:%M:%S.%f')[:-4]}"
+                f"Last update: {self._last_update_time}"
+            )
+            self.last_update_label.setStyleSheet(
+                f"color: {T.TEXT_DISABLED}; font-size: {T.FONT_SIZE_SM};"
             )
         except Exception:
             pass
@@ -1007,6 +1061,48 @@ class ActuatorFeedbackWidget(QGroupBox):
                     f"font-size: {T.FONT_SIZE_SM}; background: transparent;"
                 )
         self.last_update_label.setText("Last update: —")
+        self.last_update_label.setStyleSheet(
+            f"color: {T.TEXT_DISABLED}; font-size: {T.FONT_SIZE_SM};"
+        )
+
+    def set_current_uut(self, serial_number):
+        """Switch to showing data for a specific UUT."""
+        # Save current data to cache
+        if self._current_serial and not self._is_stale and self._last_data:
+            self._feedback_cache[self._current_serial] = self._last_data
+
+        self._current_serial = serial_number
+
+        # Load cached data for the new UUT
+        cached = self._feedback_cache.get(serial_number)
+        if cached:
+            self._show_stale(cached)
+        else:
+            self.reset()
+
+    def _show_stale(self, data):
+        """Show cached data with stale indicator."""
+        self._is_stale = True
+        self.update_feedback(data)
+        # Re-set stale flag (update_feedback clears it)
+        self._is_stale = True
+        # Dim all values and add stale indicator
+        for row in self._rows.values():
+            for w in row.values():
+                current_style = w.styleSheet()
+                w.setStyleSheet(current_style.replace(
+                    f"color: {T.GREEN}", f"color: {T.TEXT_DISABLED}"
+                ).replace(
+                    f"color: {T.AMBER}", f"color: {T.TEXT_DISABLED}"
+                ).replace(
+                    f"color: {T.RED}", f"color: {T.TEXT_DISABLED}"
+                ))
+        self.last_update_label.setText(
+            f"Last update: {self._last_update_time} (stale)"
+        )
+        self.last_update_label.setStyleSheet(
+            f"color: {T.AMBER}; font-size: {T.FONT_SIZE_SM}; font-style: italic;"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1159,21 +1255,23 @@ class ControlButtonsWidget(QWidget):
 
         self.start_btn = QPushButton("▶  Start IBIT Test")
         self.start_btn.setStyleSheet(T.btn_primary())
-        self.start_btn.setMinimumHeight(52)
+        self.start_btn.setMinimumHeight(48)
         self.start_btn.clicked.connect(self.start_clicked)
-        layout.addWidget(self.start_btn, 3)
+        layout.addWidget(self.start_btn, 2)
 
         self.stop_btn = QPushButton("⏹  Stop")
         self.stop_btn.setStyleSheet(T.btn_danger())
-        self.stop_btn.setMinimumHeight(52)
+        self.stop_btn.setMinimumHeight(48)
+        self.stop_btn.setMinimumWidth(120)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_clicked)
         layout.addWidget(self.stop_btn, 1)
 
         self.emergency_btn = QPushButton("⚡  EMERGENCY STOP")
         self.emergency_btn.setStyleSheet(T.btn_emergency())
+        self.emergency_btn.setMinimumHeight(48)
         self.emergency_btn.clicked.connect(self.emergency_clicked)
-        layout.addWidget(self.emergency_btn, 2)
+        layout.addWidget(self.emergency_btn, 1)
 
     def set_testing_mode(self, testing):
         """Enable/disable buttons for testing state."""
@@ -1207,6 +1305,50 @@ class LogWidget(QGroupBox):
         layout.setContentsMargins(12, 16, 12, 10)
         layout.setSpacing(6)
 
+        # Filter bar
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(4)
+
+        self._filter_buttons = {}
+        self._active_filters = {'ALL'}
+        self._all_entries = []  # Store all (html, level, raw_text) tuples
+
+        for level_name, color in [
+            ('ALL', T.TEXT_PRIMARY), ('INFO', T.GREEN), ('WARN', T.AMBER),
+            ('ERROR', T.RED), ('PASS', T.GREEN), ('FAIL', T.RED),
+        ]:
+            btn = QPushButton(level_name)
+            btn.setCheckable(True)
+            btn.setChecked(level_name == 'ALL')
+            btn.setFixedHeight(24)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: {T.BG_ELEVATED}; color: {T.TEXT_SECONDARY}; "
+                f"border: 1px solid {T.BORDER}; border-radius: 3px; "
+                f"padding: 2px 8px; font-size: {T.FONT_SIZE_SM}; }}"
+                f"QPushButton:checked {{ background: {color}; color: {T.BG_BASE}; "
+                f"border-color: {color}; font-weight: bold; }}"
+            )
+            btn.clicked.connect(lambda checked, name=level_name: self._toggle_filter(name))
+            filter_bar.addWidget(btn)
+            self._filter_buttons[level_name] = btn
+
+        filter_bar.addStretch()
+
+        # Search box
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search log...")
+        self._search.setFixedHeight(24)
+        self._search.setStyleSheet(
+            f"QLineEdit {{ background: {T.BG_BASE}; color: {T.TEXT_PRIMARY}; "
+            f"border: 1px solid {T.BORDER}; border-radius: 3px; "
+            f"padding: 2px 8px; font-size: {T.FONT_SIZE_SM}; "
+            f"font-family: {T.FONT_MONO}; }}"
+        )
+        self._search.textChanged.connect(self._apply_filters)
+        filter_bar.addWidget(self._search)
+
+        layout.addLayout(filter_bar)
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMinimumHeight(220)
@@ -1222,33 +1364,96 @@ class LogWidget(QGroupBox):
             f"padding: 3px 10px; font-size: {T.FONT_SIZE_SM}; }}"
             f"QPushButton:hover {{ color: {T.TEXT_PRIMARY}; }}"
         )
-        clear_btn.clicked.connect(self.log_text.clear)
+        clear_btn.clicked.connect(self._clear_log)
         bar.addWidget(clear_btn)
         layout.addLayout(bar)
+
+    def _classify_level(self, message):
+        """Classify a log message into a filter level."""
+        upper = message.upper()
+        if 'PASS' in upper and ('IBIT PASS' in upper or '\u2713' in message):
+            return 'PASS'
+        if 'FAIL' in upper or '\u2717' in message:
+            return 'FAIL'
+        if 'ERROR' in upper:
+            return 'ERROR'
+        if '\u26a0' in message or 'WARNING' in upper:
+            return 'WARN'
+        return 'INFO'
+
+    def _toggle_filter(self, name):
+        if name == 'ALL':
+            # If ALL is toggled on, deselect others
+            if self._filter_buttons['ALL'].isChecked():
+                self._active_filters = {'ALL'}
+                for n, btn in self._filter_buttons.items():
+                    btn.setChecked(n == 'ALL')
+            else:
+                self._filter_buttons['ALL'].setChecked(True)  # Can't deselect ALL alone
+        else:
+            # Deselect ALL, toggle this filter
+            self._filter_buttons['ALL'].setChecked(False)
+            self._active_filters.discard('ALL')
+            if name in self._active_filters:
+                self._active_filters.discard(name)
+            else:
+                self._active_filters.add(name)
+
+            # If nothing selected, re-select ALL
+            if not self._active_filters:
+                self._active_filters = {'ALL'}
+                self._filter_buttons['ALL'].setChecked(True)
+
+        self._apply_filters()
+
+    def _apply_filters(self):
+        """Re-render the log with current filters."""
+        search_text = self._search.text().lower()
+        self.log_text.clear()
+        for html, level, raw_text in self._all_entries:
+            # Level filter
+            if 'ALL' not in self._active_filters and level not in self._active_filters:
+                continue
+            # Search filter
+            if search_text and search_text not in raw_text.lower():
+                continue
+            self.log_text.append(html)
+        sb = self.log_text.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _clear_log(self):
+        self._all_entries.clear()
+        self.log_text.clear()
 
     def append(self, message):
         """Append a timestamped, color-coded message to the log."""
         ts = datetime.now().strftime('%H:%M:%S')
+        level = self._classify_level(message)
 
-        # Color-code by prefix
-        if '✓' in message or 'PASS' in message.upper():
-            color = T.GREEN
-        elif '✗' in message or 'FAIL' in message.upper() or 'ERROR' in message.upper():
-            color = T.RED
-        elif '⚠' in message or 'WARNING' in message.upper():
-            color = T.AMBER
-        elif message.startswith('═') or message.startswith('='):
+        # Color-code by level
+        color_map = {
+            'PASS': T.GREEN, 'FAIL': T.RED, 'ERROR': T.RED,
+            'WARN': T.AMBER, 'INFO': T.GREEN,
+        }
+        color = color_map.get(level, T.GREEN)
+        if message.startswith('\u2550') or message.startswith('='):
             color = T.TEXT_SECONDARY
-        else:
-            color = T.GREEN
 
         html = (
             f'<span style="color:{T.TEXT_DISABLED};">[{ts}] </span>'
             f'<span style="color:{color};">{message}</span>'
         )
-        self.log_text.append(html)
-        sb = self.log_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
+
+        # Store for filtering
+        self._all_entries.append((html, level, message))
+
+        # Only display if passes current filters
+        search_text = self._search.text().lower() if hasattr(self, '_search') else ''
+        if ('ALL' in self._active_filters or level in self._active_filters):
+            if not search_text or search_text in message.lower():
+                self.log_text.append(html)
+                sb = self.log_text.verticalScrollBar()
+                sb.setValue(sb.maximum())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

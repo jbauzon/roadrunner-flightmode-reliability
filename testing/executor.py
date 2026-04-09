@@ -20,7 +20,7 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from .callbacks import ExecutorCallbacks, PreparationCallbacks
 from pymavlink import mavutil
 from vehicle.connection import connect_to_vehicle
 from vehicle.preparation import UUTPreparation
@@ -272,15 +272,15 @@ class _ExecutorMixin:
     Provides: heartbeat worker, emergency relay disable, wait-for-message,
     MAVLink connection setup, stop, and resource cleanup helpers.
 
-    Subclasses must define pyqtSignal attributes: log_message, alert_update,
-    connection_health_update, armed_state_update, mode_update,
-    actuator_feedback_update, test_duration_update.
+    Subclasses must set ``self.cb`` to an :class:`ExecutorCallbacks` instance
+    before calling any mixin methods.
     """
 
     def _init_executor(self, uut: Any, daq_controller: Any, batch_end_time: float,
                        stabilization_delay: float, connection_timeout: float,
                        log_directory: str, test_start_datetime: Any, config: Optional[dict]) -> None:
         """Common field initialization — call from subclass __init__."""
+        self.cb: ExecutorCallbacks = None  # set by subclass __init__
         self.uut = uut
         self.daq = daq_controller
         self.batch_end_time = batch_end_time
@@ -302,20 +302,20 @@ class _ExecutorMixin:
 
     def _connect_and_start_heartbeat(self) -> None:
         """Connect to the vehicle and start the GCS heartbeat thread."""
-        self.status_update.emit("Connecting to UUT (no load)...")
+        self.cb.on_status("Connecting to UUT (no load)...")
         self.master = connect_to_vehicle(
             self.uut.ip_address, self.uut.port, self.connection_timeout
         )
-        self.log_message.emit(
+        self.cb.on_log(
             f"\u2713 Connected to {self.uut.ip_address}:{self.uut.port}"
         )
 
-        self.log_message.emit("\u2192 Starting GCS heartbeat sender...")
+        self.cb.on_log("\u2192 Starting GCS heartbeat sender...")
         self.heartbeat_thread = threading.Thread(
             target=self._heartbeat_worker, daemon=True
         )
         self.heartbeat_thread.start()
-        self.log_message.emit(
+        self.cb.on_log(
             "  Waiting for vehicle to stabilize with GCS heartbeats..."
         )
         time.sleep(2.0)
@@ -328,34 +328,31 @@ class _ExecutorMixin:
             self.test_start_datetime,
             logging_mode=TelemetryLogger.MODE_IBIT_FOCUSED,
             test_mode=test_mode,
+            on_log=self.cb.on_log,
         )
-        self.telemetry_logger.log_message.connect(self.log_message)
         if not self.telemetry_logger.open():
             raise Exception("Failed to open log file")
         self.uut.log_file = self.telemetry_logger.get_current_log_path()
 
     def _create_preparation(self) -> None:
-        """Instantiate UUTPreparation and wire its signals."""
+        """Instantiate UUTPreparation and wire its callbacks."""
+        prep_cb = PreparationCallbacks()
+        prep_cb.on_log = self.cb.on_log
+        prep_cb.on_progress = self.cb.on_status
+        prep_cb.on_armed_state = self.cb.on_armed_state
+        prep_cb.on_mode = self.cb.on_mode
+        prep_cb.on_connection_health = self.cb.on_connection_health
+        prep_cb.on_actuator_feedback = self.cb.on_actuator_feedback
         self.preparation = UUTPreparation(
-            self.master, self.config, self.telemetry_logger
-        )
-        self.preparation.log_message.connect(self.log_message)
-        self.preparation.progress_update.connect(self.status_update)
-        self.preparation.armed_state_update.connect(self.armed_state_update)
-        self.preparation.mode_update.connect(self.mode_update)
-        self.preparation.connection_health_update.connect(
-            self.connection_health_update
-        )
-        self.preparation.actuator_feedback_update.connect(
-            self.actuator_feedback_update
+            self.master, self.config, self.telemetry_logger, callbacks=prep_cb
         )
 
     def _enable_relay(self, label: str = "test") -> None:
         """Enable the load relay with stabilization and heartbeat check."""
-        self.status_update.emit(f"Enabling load relay for {label}...")
-        self.log_message.emit("\n" + "=" * 60)
-        self.log_message.emit("ENABLING LOAD RELAY")
-        self.log_message.emit("=" * 60)
+        self.cb.on_status(f"Enabling load relay for {label}...")
+        self.cb.on_log("\n" + "=" * 60)
+        self.cb.on_log("ENABLING LOAD RELAY")
+        self.cb.on_log("=" * 60)
 
         ok, msg = self.daq.set_line(self.uut.relay_line, True)
         if not ok:
@@ -363,10 +360,10 @@ class _ExecutorMixin:
         if self.telemetry_logger:
             self.telemetry_logger.log_relay_state(self.uut.relay_line, True)
 
-        self.log_message.emit(
+        self.cb.on_log(
             f"\u2713 Relay {self.uut.relay_line} ENABLED - Load applied"
         )
-        self.log_message.emit(
+        self.cb.on_log(
             f"  Waiting {self.stabilization_delay}s for stabilization..."
         )
         time.sleep(self.stabilization_delay)
@@ -374,14 +371,14 @@ class _ExecutorMixin:
         hb = self.master.wait_heartbeat(timeout=2.0)
         if not hb:
             raise Exception("Lost connection after applying load")
-        self.log_message.emit("\u2713 Vehicle responsive under load")
-        self.log_message.emit("=" * 60 + "\n")
+        self.cb.on_log("\u2713 Vehicle responsive under load")
+        self.cb.on_log("=" * 60 + "\n")
 
     # ── Heartbeat ───────────────────────────────────────────────────────
 
     def _heartbeat_worker(self) -> None:
         """Send GCS heartbeats at 1 Hz with initial burst."""
-        self.log_message.emit("\u2713 Heartbeat sender started (1 Hz)")
+        self.cb.on_log("\u2713 Heartbeat sender started (1 Hz)")
 
         # Initial burst
         try:
@@ -396,9 +393,9 @@ class _ExecutorMixin:
                         )
                         self.heartbeat_count += 1
                 time.sleep(HEARTBEAT_BURST_INTERVAL)
-            self.log_message.emit("  \u2713 Initial heartbeat burst sent")
+            self.cb.on_log("  \u2713 Initial heartbeat burst sent")
         except Exception as e:
-            self.log_message.emit(f"\u26a0 Initial heartbeat error: {e}")
+            self.cb.on_log(f"\u26a0 Initial heartbeat error: {e}")
 
         # Regular 1 Hz
         while self.running:
@@ -413,14 +410,14 @@ class _ExecutorMixin:
                         )
                         self.heartbeat_count += 1
                 if self.heartbeat_count % 60 == 0:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  \u2764 Heartbeat active ({self.heartbeat_count} sent)"
                     )
             except Exception as e:
-                self.log_message.emit(f"\u26a0 Heartbeat send error: {e}")
+                self.cb.on_log(f"\u26a0 Heartbeat send error: {e}")
             time.sleep(1.0)
 
-        self.log_message.emit(
+        self.cb.on_log(
             f"\u2713 Heartbeat sender stopped (total sent: {self.heartbeat_count})"
         )
 
@@ -435,10 +432,10 @@ class _ExecutorMixin:
         if not self.daq or not self.uut:
             return
 
-        self.log_message.emit("=" * 60)
-        self.log_message.emit("\u26a0\u26a0\u26a0 EMERGENCY RELAY DISABLE \u26a0\u26a0\u26a0")
-        self.log_message.emit("=" * 60)
-        self.log_message.emit(
+        self.cb.on_log("=" * 60)
+        self.cb.on_log("\u26a0\u26a0\u26a0 EMERGENCY RELAY DISABLE \u26a0\u26a0\u26a0")
+        self.cb.on_log("=" * 60)
+        self.cb.on_log(
             f"\u2192 Attempting to disable relay {self.uut.relay_line}..."
         )
 
@@ -447,10 +444,10 @@ class _ExecutorMixin:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                self.log_message.emit(f"  Attempt {attempt}/{max_attempts}...")
+                self.cb.on_log(f"  Attempt {attempt}/{max_attempts}...")
                 ok, msg = self.daq.set_line(self.uut.relay_line, False)
                 if ok:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  \u2713 Relay {self.uut.relay_line} DISABLED "
                         f"(attempt {attempt})"
                     )
@@ -460,39 +457,39 @@ class _ExecutorMixin:
                                 self.uut.relay_line, False
                             )
                         except Exception as log_err:
-                            self.log_message.emit(
+                            self.cb.on_log(
                                 f"  \u26a0 Logging error: {log_err}"
                             )
-                    self.log_message.emit(
+                    self.cb.on_log(
                         "\u2713 Emergency relay disable SUCCESSFUL"
                     )
-                    self.log_message.emit("=" * 60)
+                    self.cb.on_log("=" * 60)
                     return
                 else:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  \u2717 Attempt {attempt} failed: {msg}"
                     )
             except Exception as err:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  \u2717 Attempt {attempt} exception: "
                     f"{type(err).__name__}: {err}"
                 )
 
             if attempt < max_attempts:
-                self.log_message.emit(f"  \u2192 Retrying in {retry_delay}s...")
+                self.cb.on_log(f"  \u2192 Retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
 
         # All attempts failed
-        self.log_message.emit("")
-        self.log_message.emit(
+        self.cb.on_log("")
+        self.cb.on_log(
             f"\u2717\u2717\u2717 CRITICAL: RELAY {self.uut.relay_line} "
             f"DISABLE FAILED AFTER {max_attempts} ATTEMPTS \u2717\u2717\u2717"
         )
-        self.log_message.emit("\u26a0 MANUAL INTERVENTION REQUIRED \u26a0")
-        self.log_message.emit("\u26a0 VERIFY HARDWARE IS POWERED OFF \u26a0")
-        self.log_message.emit("=" * 60)
+        self.cb.on_log("\u26a0 MANUAL INTERVENTION REQUIRED \u26a0")
+        self.cb.on_log("\u26a0 VERIFY HARDWARE IS POWERED OFF \u26a0")
+        self.cb.on_log("=" * 60)
 
-        self.alert_update.emit(
+        self.cb.on_alert(
             f"CRITICAL: RELAY {self.uut.relay_line} CONTROL FAILURE - "
             f"CHECK HARDWARE"
         )
@@ -544,52 +541,36 @@ class _ExecutorMixin:
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
             self.heartbeat_thread.join(timeout=2.0)
             if self.heartbeat_thread.is_alive():
-                self.log_message.emit(
+                self.cb.on_log(
                     "\u26a0 Heartbeat thread did not stop cleanly"
                 )
             else:
-                self.log_message.emit("\u2713 Heartbeat sender stopped")
+                self.cb.on_log("\u2713 Heartbeat sender stopped")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 # IBIT Test Executor
 # ════════════════════════════════════════════════════════════════════════════════
 
-class UUTTestExecutor(_ExecutorMixin, QThread):
+class UUTTestExecutor(_ExecutorMixin, threading.Thread):
     """
     Executes IBIT test with complete event logging.
 
     Runs in separate thread to avoid blocking UI.
-    Emits signals for UI updates.
+    Invokes callbacks for UI updates.
     """
-
-    # Qt Signals for UI updates
-    progress_update = pyqtSignal(int)
-    iteration_update = pyqtSignal(int)
-    status_update = pyqtSignal(str)
-    test_complete = pyqtSignal(bool, str)
-    log_message = pyqtSignal(str)
-    time_expired = pyqtSignal()
-    statistics_update = pyqtSignal(object)
-    ibit_state_update = pyqtSignal(str)
-    connection_health_update = pyqtSignal(bool)
-    alert_update = pyqtSignal(str)
-    log_file_size_update = pyqtSignal(float)
-    test_duration_update = pyqtSignal(float)
-    armed_state_update = pyqtSignal(bool, int)
-    mode_update = pyqtSignal(int)
-    actuator_feedback_update = pyqtSignal(dict)
 
     def __init__(self, uut, daq_controller, batch_end_time,
                  stabilization_delay, connection_timeout,
                  log_directory, test_start_datetime,
-                 skip_state_management=False, config=None):
-        super().__init__()
+                 skip_state_management=False, config=None, callbacks=None):
+        threading.Thread.__init__(self, daemon=True)
         self._init_executor(
             uut, daq_controller, batch_end_time,
             stabilization_delay, connection_timeout,
             log_directory, test_start_datetime, config,
         )
+        self.cb = callbacks or ExecutorCallbacks()
         self.skip_state_management = skip_state_management
         self.statistics = TestStatistics()
         self.phase_tracker = IBITPhaseTracker()
@@ -603,7 +584,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         
         try:
             if time.time() >= self.batch_end_time:
-                self.time_expired.emit()
+                self.cb.on_time_expired()
                 return
             
             # Connect and start heartbeat (shared)
@@ -623,7 +604,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             
             # State management (if not skipped)
             if not self.skip_state_management:
-                self.log_message.emit(
+                self.cb.on_log(
                     "\u2192 Beginning state capture (GCS heartbeats active)..."
                 )
                 self._create_preparation()
@@ -636,8 +617,8 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                 if not prep_ok:
                     raise Exception(prep_msg)
             else:
-                self.log_message.emit("\u26a0 Skipping state management (as configured)")
-                self.log_message.emit("\u2192 Requesting IBIT mode (mode 1)")
+                self.cb.on_log("\u26a0 Skipping state management (as configured)")
+                self.cb.on_log("\u2192 Requesting IBIT mode (mode 1)")
                 self.telemetry_logger.log_test_event(
                     'IBIT_REQUEST',
                     'Requesting IBIT mode (skipped state management)'
@@ -660,8 +641,8 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         except Exception as e:
             success = False
             message = f"Test failed: {str(e)}"
-            self.log_message.emit(f"\u2717 Error: {e}")
-            self.alert_update.emit(f"TEST FAILED: {str(e)}")
+            self.cb.on_log(f"\u2717 Error: {e}")
+            self.cb.on_alert(f"TEST FAILED: {str(e)}")
             
             if self.daq:
                 self._emergency_relay_disable()
@@ -674,32 +655,32 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         finally:
             self.cleanup()
         
-        self.test_complete.emit(success, message)
+        self.cb.on_complete(success, message)
     
     def execute_ibit_test(self):
         """Execute IBIT test - wait for COMPLETE state then return to OPERATE."""
         self._start_background_workers()
-        self.iteration_update.emit(self.uut.iterations_completed)
+        self.cb.on_iteration(self.uut.iterations_completed)
         test_start = time.time()
         self.uut.test_start_time = test_start
-        self.status_update.emit(
+        self.cb.on_status(
             f"Running IBIT (Iteration {self.uut.iterations_completed})..."
         )
-        self.log_message.emit("="*60)
-        self.log_message.emit("STARTING IBIT TEST SEQUENCE")
-        self.log_message.emit("="*60)
-        self.log_message.emit("Expected sequence:")
-        self.log_message.emit(
+        self.cb.on_log("="*60)
+        self.cb.on_log("STARTING IBIT TEST SEQUENCE")
+        self.cb.on_log("="*60)
+        self.cb.on_log("Expected sequence:")
+        self.cb.on_log(
             "  0: BEGIN → 1: WAIT_FOR_SETTLE → 2: ELEVONS → "
             "3: RUDDERS → 4: TVC → 5: COMPLETE"
         )
-        self.log_message.emit("Heartbeat running in background at 1 Hz")
-        self.log_message.emit("")
+        self.cb.on_log("Heartbeat running in background at 1 Hz")
+        self.cb.on_log("")
 
         self._ibit_monitor_loop()
 
         if time.time() >= self.batch_end_time:
-            self.log_message.emit("Batch time expired during IBIT")
+            self.cb.on_log("Batch time expired during IBIT")
             return
         if not self.phase_tracker.reached_complete:
             raise Exception(
@@ -736,6 +717,13 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         self._ibit_run_count = 0
         self._last_substate = None
 
+        # Accumulate mistracking flags across ALL IBIT messages.
+        # The firmware zeros actuation_ibit_mon_status as soon as it leaves
+        # IBIT mode, so reading it from the first OPERATE message always
+        # yields 0x00.  We OR-accumulate while still in IBIT to capture
+        # any transient fault flags.
+        self._accumulated_mistracking = 0
+
         while self.running and time.time() < self.batch_end_time:
             # Check timeouts
             if time.time() - ibit_start_time > ibit_timeout:
@@ -766,7 +754,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                 if self._last_mode == ActuationMode.IBIT and current_mode == ActuationMode.IBIT:
                     if self._last_substate in (IBITSubstate.RUDDERS, IBITSubstate.TVC) and current_substate in (IBITSubstate.BEGIN, IBITSubstate.WAIT_FOR_SETTLE):
                         self._ibit_run_count += 1
-                        self.log_message.emit(
+                        self.cb.on_log(
                             f"\n→ IBIT Run #{self._ibit_run_count + 1} detected "
                             f"(vehicle performing multiple cycles)"
                         )
@@ -791,6 +779,12 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
 
                 # Still in IBIT mode - continue tracking substates
                 if current_mode == ActuationMode.IBIT:
+                    # Accumulate mistracking flags while in IBIT.
+                    # Firmware zeros this field on mode exit, so we must
+                    # capture it every message while still in IBIT.
+                    ibit_mon = getattr(status_msg, 'actuation_ibit_mon_status', 0)
+                    self._accumulated_mistracking |= ibit_mon
+
                     last_logged_phase = self._track_ibit_substate(
                         status_msg, last_logged_phase
                     )
@@ -803,19 +797,21 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
 
     def _handle_ibit_completion(self, status_msg, current_substate):
         """Evaluate mistracking, log result, mark tracker complete, and disable relay."""
-        # Evaluate mistracking flags — actual PASS/FAIL determination
-        mistracking = getattr(status_msg, 'actuation_ibit_mon_status', 0)
+        # Use accumulated mistracking flags from all IBIT-mode messages.
+        # The firmware zeros actuation_ibit_mon_status on the IBIT→OPERATE
+        # transition, so reading from status_msg here would always be 0x00.
+        mistracking = self._accumulated_mistracking
         failed_surfaces = get_failed_surfaces(mistracking)
 
         total_runs = self._ibit_run_count + 1
-        self.log_message.emit(
+        self.cb.on_log(
             f"\n{'✓' if not failed_surfaces else '✗'} IBIT completed "
             f"after {total_runs} run(s) — "
             f"Mode: IBIT(1) → OPERATE(2)"
         )
 
         if failed_surfaces:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ✗ IBIT FAIL — mistracking on: "
                 f"{', '.join(failed_surfaces)} "
                 f"(flags=0x{mistracking:02X})"
@@ -832,7 +828,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                 f"{', '.join(failed_surfaces)}"
             )
         else:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ✓ IBIT PASS — no mistracking flags set"
             )
             if self.telemetry_logger:
@@ -840,11 +836,11 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                     'IBIT_PASS',
                     'IBIT passed — all surfaces tracked correctly'
                 )
-        self.log_message.emit(f"  Final IBIT substate: {current_substate}")
-        self.log_message.emit("")
-        self.log_message.emit("="*60)
-        self.log_message.emit("✓ IBIT PASS — Vehicle ready for flight!")
-        self.log_message.emit("="*60)
+        self.cb.on_log(f"  Final IBIT substate: {current_substate}")
+        self.cb.on_log("")
+        self.cb.on_log("="*60)
+        self.cb.on_log("✓ IBIT PASS — Vehicle ready for flight!")
+        self.cb.on_log("="*60)
 
         # Mark tracker as complete
         self.phase_tracker.reached_complete = True
@@ -866,7 +862,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
 
             # Log phase transitions
             if current_phase != last_logged_phase:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"→ Substate {substate}: {current_phase}"
                 )
                 last_logged_phase = current_phase
@@ -876,35 +872,35 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                 substate,
                 f"UNKNOWN({substate})"
             )
-            self.ibit_state_update.emit(display_name)
+            self.cb.on_ibit_state(display_name)
         return last_logged_phase
 
     def _log_phase_summary(self, total_runs):
         """Log phase duration summary after IBIT completion."""
-        self.log_message.emit(
+        self.cb.on_log(
             f"Phases observed: {len(self.phase_tracker.phases_completed)}/4"
         )
         for phase in self.phase_tracker.phases_completed:
             duration = self.phase_tracker.phase_durations.get(phase, 0)
             if duration > 0:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ✓ {phase:20s} - {duration:.2f}s"
                 )
             else:
-                self.log_message.emit(f"  ✓ {phase:20s} - completed")
+                self.cb.on_log(f"  ✓ {phase:20s} - completed")
 
         if total_runs > 1:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"\nℹ️  Vehicle performed {total_runs} IBIT cycles "
                 f"(firmware-controlled)"
             )
 
     def _disable_relay_after_ibit(self):
         """Disable the load relay after successful IBIT completion."""
-        self.log_message.emit("\n" + "="*60)
-        self.log_message.emit("IBIT COMPLETE - DISABLING LOAD RELAY")
-        self.log_message.emit("="*60)
-        self.log_message.emit(
+        self.cb.on_log("\n" + "="*60)
+        self.cb.on_log("IBIT COMPLETE - DISABLING LOAD RELAY")
+        self.cb.on_log("="*60)
+        self.cb.on_log(
             "✓ IBIT sequence finished - removing load from vehicle"
         )
 
@@ -915,18 +911,18 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                     self.uut.relay_line,
                     False
                 )
-            self.log_message.emit(
+            self.cb.on_log(
                 f"✓ Relay {self.uut.relay_line} DISABLED - Load removed"
             )
         else:
-            self.log_message.emit(f"⚠ Relay disable warning: {msg}")
+            self.cb.on_log(f"⚠ Relay disable warning: {msg}")
 
-        self.log_message.emit("="*60 + "\n")
+        self.cb.on_log("="*60 + "\n")
 
     def _wait_for_operate_after_ibit(self):
         """Wait for the vehicle to return to OPERATE mode after IBIT completion."""
-        self.log_message.emit("\n→ Waiting for vehicle to return to OPERATE mode...")
-        self.status_update.emit("Waiting for OPERATE mode...")
+        self.cb.on_log("\n→ Waiting for vehicle to return to OPERATE mode...")
+        self.cb.on_status("Waiting for OPERATE mode...")
 
         operate_timeout = OPERATE_WAIT_TIMEOUT
         operate_start = time.time()
@@ -943,12 +939,12 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
 
                 if current_mode == ActuationMode.OPERATE:
                     returned_to_operate = True
-                    self.log_message.emit(f"  ✓ Vehicle returned to OPERATE mode")
+                    self.cb.on_log(f"  ✓ Vehicle returned to OPERATE mode")
                     break
                 elif current_mode == ActuationMode.IBIT:
                     pass  # Still transitioning
                 else:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  ⚠ Unexpected mode: {current_mode} "
                         f"({get_mode_name(current_mode)})"
                     )
@@ -961,14 +957,14 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                 timeout=2.0
             )
             final_mode = final_mode_msg.actuation_state if final_mode_msg else -1
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ⚠ Vehicle did not return to OPERATE within {operate_timeout}s"
             )
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  Final mode: {final_mode} "
                 f"({get_mode_name(final_mode)})"
             )
-            self.log_message.emit(f"  → Proceeding with cleanup anyway...")
+            self.cb.on_log(f"  → Proceeding with cleanup anyway...")
 
     def _log_ibit_summary(self, test_start):
         """Record metrics and log final IBIT summary."""
@@ -983,13 +979,13 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             f"Duration: {test_duration:.1f} seconds"
         )
 
-        self.log_message.emit(
+        self.cb.on_log(
             f"\n✓ IBIT test completed successfully in {test_duration:.1f}s"
         )
-        self.log_message.emit(
+        self.cb.on_log(
             f"  Total transitions: {len(self.phase_tracker.transition_history)}"
         )
-        self.log_message.emit(f"  Sequence: IBIT → COMPLETE → OPERATE ✓")
+        self.cb.on_log(f"  Sequence: IBIT → COMPLETE → OPERATE ✓")
 
     def cleanup(self):
         """
@@ -997,7 +993,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         
         Relay is already disabled in execute_ibit_test() or exception handler.
         """
-        self.log_message.emit(
+        self.cb.on_log(
             "\u2192 Beginning cleanup (relay already OFF, restoring vehicle state)..."
         )
         time.sleep(1.0)
@@ -1007,7 +1003,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             self.running = False
             self._stop_heartbeat()
             self._close_resources()
-            self.log_message.emit("Quick cleanup complete (relay already OFF)")
+            self.cb.on_log("Quick cleanup complete (relay already OFF)")
             return
         
         # Normal cleanup path — restore state
@@ -1015,7 +1011,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             self.preparation.restore_original_state()
             
             if not self.running:
-                self.log_message.emit(
+                self.cb.on_log(
                     "\u26a0 Stop requested during restoration - aborting..."
                 )
                 self._stop_heartbeat()
@@ -1025,10 +1021,10 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             time.sleep(2.0)
             self.preparation.verify_final_state(relay_was_disabled=True)
         
-        self.log_message.emit("\u2192 Stopping heartbeat sender...")
+        self.cb.on_log("\u2192 Stopping heartbeat sender...")
         self._stop_heartbeat()
         self._close_resources()
-        self.log_message.emit("Cleanup complete - ready for next iteration")
+        self.cb.on_log("Cleanup complete - ready for next iteration")
     
     def _receive_telemetry_worker(self):
         """Enhanced telemetry receiver with thread-safe message reception"""
@@ -1057,7 +1053,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                     if msg_type == MsgType.PANDION_STATUS:
                         flight_regime = msg.flight_regime
                         armed = is_armed(flight_regime)
-                        self.armed_state_update.emit(armed, flight_regime)
+                        self.cb.on_armed_state(armed, flight_regime)
                     
                     # Heartbeat
                     if msg_type == MsgType.HEARTBEAT:
@@ -1066,7 +1062,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                     # Mode from actuation status
                     if msg_type == MsgType.ACTUATION_SYS_STATUS:
                         mode = msg.actuation_state
-                        self.mode_update.emit(mode)
+                        self.cb.on_mode(mode)
                         
                         if hasattr(msg, 'actuation_ibit_substate'):
                             self.current_ibit_substate = msg.actuation_ibit_substate
@@ -1074,15 +1070,15 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                         # Actuator feedback
                         try:
                             actuator_data = _build_actuator_feedback_dict(msg)
-                            self.actuator_feedback_update.emit(actuator_data)
+                            self.cb.on_actuator_feedback(actuator_data)
                         except AttributeError:
                             pass
                 
             except Exception as e:
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
-                    self.log_message.emit(f"⚠ Multiple telemetry errors: {e}")
-                    self.alert_update.emit(f"Telemetry reception issues")
+                    self.cb.on_log(f"⚠ Multiple telemetry errors: {e}")
+                    self.cb.on_alert(f"Telemetry reception issues")
                     consecutive_errors = 0
                 self.statistics.record_communication_error()
     
@@ -1091,7 +1087,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         while self.running:
             time.sleep(1.0)
             self.statistics.update_telemetry_rate()
-            self.statistics_update.emit(self.statistics)
+            self.cb.on_statistics(self.statistics)
     
     def _connection_health_monitor(self):
         """Monitor connection health"""
@@ -1100,14 +1096,14 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
         while self.running:
             time.sleep(0.5)
             is_healthy = self.statistics.is_connection_healthy()
-            self.connection_health_update.emit(is_healthy)
+            self.cb.on_connection_health(is_healthy)
             
             if not is_healthy:
                 now = time.time()
                 if now - last_warning_time > 5.0:
                     time_since = self.statistics.time_since_last_heartbeat()
-                    self.alert_update.emit(f"No heartbeat for {time_since:.1f}s")
-                    self.log_message.emit(
+                    self.cb.on_alert(f"No heartbeat for {time_since:.1f}s")
+                    self.cb.on_log(
                         f"⚠ Connection unhealthy - no heartbeat for {time_since:.1f}s"
                     )
                     last_warning_time = now
@@ -1121,7 +1117,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
                     if os.path.exists(self.uut.log_file):
                         file_size = os.path.getsize(self.uut.log_file)
                         size_mb = file_size / (1024 * 1024)
-                        self.log_file_size_update.emit(size_mb)
+                        self.cb.on_log_file_size(size_mb)
                 except Exception:
                     pass
     
@@ -1131,7 +1127,7 @@ class UUTTestExecutor(_ExecutorMixin, QThread):
             time.sleep(1.0)
             if self.uut.test_start_time:
                 duration = time.time() - self.uut.test_start_time
-                self.test_duration_update.emit(duration)
+                self.cb.on_test_duration(duration)
     
 
 
@@ -1249,7 +1245,7 @@ class IBITFailureDiagnostic:
 # Flight Profile Playback Executor
 # ============================================================
 
-class PlaybackTestExecutor(_ExecutorMixin, QThread):
+class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
     """
     Executes a flight profile playback test.
 
@@ -1263,19 +1259,6 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
       7. Restore vehicle state (CLASSIC_MODE_EN=0, power cycle)
     """
 
-    # Qt signals
-    progress_update   = pyqtSignal(int)
-    status_update     = pyqtSignal(str)
-    test_complete     = pyqtSignal(bool, str)
-    log_message       = pyqtSignal(str)
-    time_expired      = pyqtSignal()
-    armed_state_update = pyqtSignal(bool, int)
-    mode_update        = pyqtSignal(int)
-    actuator_feedback_update = pyqtSignal(dict)
-    connection_health_update = pyqtSignal(bool)
-    alert_update       = pyqtSignal(str)
-    test_duration_update = pyqtSignal(float)
-
     # Playback type constants
     TYPE_ACTUATION  = 'Actuation'
     TYPE_PROPULSION = 'Propulsion'
@@ -1285,18 +1268,19 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
                  stabilization_delay, connection_timeout,
                  log_directory, test_start_datetime,
                  playback_csv, playback_type,
-                 config=None):
-        super().__init__()
+                 config=None, callbacks=None):
+        threading.Thread.__init__(self, daemon=True)
         self._init_executor(
             uut, daq_controller, batch_end_time,
             stabilization_delay, connection_timeout,
             log_directory, test_start_datetime, config,
         )
+        self.cb = callbacks or ExecutorCallbacks()
         self.playback_csv = playback_csv
         self.playback_type = playback_type
 
     # ----------------------------------------------------------
-    # QThread entry point
+    # Thread entry point
     # ----------------------------------------------------------
 
     def run(self):
@@ -1306,12 +1290,12 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
 
         try:
             if time.time() >= self.batch_end_time:
-                self.time_expired.emit()
+                self.cb.on_time_expired()
                 return
 
             # Load CSV profile first so we fail fast before touching hardware
             profile = self._load_profile(self.playback_csv)
-            self.log_message.emit(
+            self.cb.on_log(
                 f"\u2713 Profile loaded: {len(profile)} frames "
                 f"({len(profile) / 100.0:.1f}s at 100 Hz)"
             )
@@ -1352,7 +1336,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
             # Disable relay
             self.daq.set_line(self.uut.relay_line, False)
             self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
-            self.log_message.emit(f"\u2713 Relay {self.uut.relay_line} DISABLED")
+            self.cb.on_log(f"\u2713 Relay {self.uut.relay_line} DISABLED")
 
             # Evaluate pass/fail
             success, message = self._evaluate_result(mistracking_flags, max_delta)
@@ -1360,8 +1344,8 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         except Exception as e:
             success = False
             message = f"Playback test failed: {str(e)}"
-            self.log_message.emit(f"\u2717 Error: {e}")
-            self.alert_update.emit(f"PLAYBACK FAILED: {str(e)}")
+            self.cb.on_log(f"\u2717 Error: {e}")
+            self.cb.on_alert(f"PLAYBACK FAILED: {str(e)}")
             if self.daq:
                 self._emergency_relay_disable()
             if self.telemetry_logger:
@@ -1370,7 +1354,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         finally:
             self._cleanup()
 
-        self.test_complete.emit(success, message)
+        self.cb.on_complete(success, message)
 
     # ----------------------------------------------------------
     # Profile loading
@@ -1422,7 +1406,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         if not rows:
             raise ValueError("CSV profile is empty")
 
-        self.log_message.emit(f"  CSV columns: {list(rows[0].keys())}")
+        self.cb.on_log(f"  CSV columns: {list(rows[0].keys())}")
         return rows
 
     # ----------------------------------------------------------
@@ -1501,11 +1485,11 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         Returns:
             (mistracking_flags: int, max_deltas: dict surface->max_cdeg_error)
         """
-        self.log_message.emit("=" * 60)
-        self.log_message.emit("STREAMING FLIGHT PROFILE")
-        self.log_message.emit(f"  Type: {self.playback_type}")
-        self.log_message.emit(f"  Frames: {len(profile)}")
-        self.log_message.emit("=" * 60)
+        self.cb.on_log("=" * 60)
+        self.cb.on_log("STREAMING FLIGHT PROFILE")
+        self.cb.on_log(f"  Type: {self.playback_type}")
+        self.cb.on_log(f"  Frames: {len(profile)}")
+        self.cb.on_log("=" * 60)
 
         self.uut.test_start_time = time.time()
         interval = 1.0 / 100.0  # 100 Hz
@@ -1531,7 +1515,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
 
         for frame_idx, row in enumerate(profile):
             if not self.running:
-                self.log_message.emit("⚠ Playback stopped by user")
+                self.cb.on_log("⚠ Playback stopped by user")
                 break
 
             frame_start = time.time()
@@ -1551,7 +1535,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
                     'r_eng':      float(row['event/right_engine_speed_command_prct_rpm']),
                 }
             except (ValueError, KeyError) as e:
-                self.log_message.emit(f"⚠ Frame {frame_idx} parse error: {e}")
+                self.cb.on_log(f"⚠ Frame {frame_idx} parse error: {e}")
                 continue
 
             # Zero out channels we're not commanding
@@ -1587,7 +1571,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
 
                 # Emit to UI
                 try:
-                    self.actuator_feedback_update.emit(
+                    self.cb.on_actuator_feedback(
                         _build_actuator_feedback_dict(fb)
                     )
                 except AttributeError:
@@ -1596,16 +1580,16 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
             # Progress log every 10%
             pct = int((frame_idx / total_frames) * 100)
             if pct // 10 != last_pct_logged // 10:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  [{pct:3d}%] Frame {frame_idx}/{total_frames} — "
                     f"mistracking_flags=0x{accumulated_flags:02X}"
                 )
-                self.progress_update.emit(pct)
+                self.cb.on_progress(pct)
                 last_pct_logged = pct
 
             # Duration update
             if self.uut.test_start_time:
-                self.test_duration_update.emit(
+                self.cb.on_test_duration(
                     time.time() - self.uut.test_start_time
                 )
 
@@ -1615,7 +1599,7 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
             if remaining > 0:
                 time.sleep(remaining)
 
-        self.log_message.emit(
+        self.cb.on_log(
             f"\n✓ Profile streaming complete — "
             f"{len(profile)} frames, "
             f"mistracking_flags=0x{accumulated_flags:02X}"
@@ -1644,18 +1628,18 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         Returns:
             (success: bool, message: str)
         """
-        self.log_message.emit("\n" + "=" * 60)
-        self.log_message.emit("PLAYBACK RESULT EVALUATION")
-        self.log_message.emit("=" * 60)
+        self.cb.on_log("\n" + "=" * 60)
+        self.cb.on_log("PLAYBACK RESULT EVALUATION")
+        self.cb.on_log("=" * 60)
 
         # Log max deltas
-        self.log_message.emit("Max command-feedback deltas:")
+        self.cb.on_log("Max command-feedback deltas:")
         for surface, delta in max_deltas.items():
-            self.log_message.emit(f"  {surface:25s}: {delta:.1f} cdeg")
+            self.cb.on_log(f"  {surface:25s}: {delta:.1f} cdeg")
 
         # Evaluate mistracking flags
         if mistracking_flags == 0:
-            self.log_message.emit("\n✓ PASS — No mistracking flags set")
+            self.cb.on_log("\n✓ PASS — No mistracking flags set")
             self.telemetry_logger.log_test_event(
                 'PLAYBACK_PASS',
                 f'All surfaces tracked correctly — max_deltas={max_deltas}'
@@ -1664,12 +1648,12 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
         else:
             failed_surfaces = get_failed_surfaces(mistracking_flags)
             msg = f"Playback FAIL — mistracking on: {', '.join(failed_surfaces)}"
-            self.log_message.emit(f"\n✗ FAIL — {msg}")
-            self.log_message.emit(
+            self.cb.on_log(f"\n✗ FAIL — {msg}")
+            self.cb.on_log(
                 f"  Mistracking flags: 0x{mistracking_flags:02X}"
             )
             for surface in failed_surfaces:
-                self.log_message.emit(f"  ✗ {surface}")
+                self.cb.on_log(f"  ✗ {surface}")
             self.telemetry_logger.log_test_event(
                 'PLAYBACK_FAIL',
                 f'{msg} — flags=0x{mistracking_flags:02X} '
@@ -1689,13 +1673,13 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
           3. Enable relay (power on)
           4. Wait for MAVLink heartbeat (up to 30 s)
         """
-        self.log_message.emit("  Disabling relay (power off)...")
+        self.cb.on_log("  Disabling relay (power off)...")
         self.daq.set_line(self.uut.relay_line, False)
         if self.telemetry_logger:
             self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
         time.sleep(3.0)
 
-        self.log_message.emit("  Enabling relay (power on)...")
+        self.cb.on_log("  Enabling relay (power on)...")
         ok, msg = self.daq.set_line(self.uut.relay_line, True)
         if not ok:
             raise Exception(f"Relay re-enable failed: {msg}")
@@ -1703,14 +1687,14 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
             self.telemetry_logger.log_relay_state(self.uut.relay_line, True)
         time.sleep(self.stabilization_delay)
 
-        self.log_message.emit("  Waiting for vehicle heartbeat after power cycle...")
+        self.cb.on_log("  Waiting for vehicle heartbeat after power cycle...")
         timeout = 30.0
         start = time.time()
         while time.time() - start < timeout:
             with self.master_lock:
                 hb = self.master.wait_heartbeat(timeout=2.0)
             if hb:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ✓ Heartbeat received after "
                     f"{time.time() - start:.1f}s"
                 )
@@ -1726,29 +1710,29 @@ class PlaybackTestExecutor(_ExecutorMixin, QThread):
 
     def _cleanup(self):
         """Restore vehicle state and close connections."""
-        self.log_message.emit("→ Playback cleanup...")
+        self.cb.on_log("→ Playback cleanup...")
 
         # Restore CLASSIC_MODE_EN = 0
         if self.preparation and self.master:
             try:
-                self.log_message.emit(
+                self.cb.on_log(
                     "  → Restoring CLASSIC_MODE_EN = 0..."
                 )
                 self.preparation._set_param('CLASSIC_MODE_EN', 0)
-                self.log_message.emit(
+                self.cb.on_log(
                     "  ✓ CLASSIC_MODE_EN restored — power cycle vehicle "
                     "before operational use"
                 )
             except Exception as e:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ⚠ Could not restore CLASSIC_MODE_EN: {e}"
                 )
 
             try:
                 self.preparation.restore_original_state()
             except Exception as e:
-                self.log_message.emit(f"  ⚠ State restore error: {e}")
+                self.cb.on_log(f"  ⚠ State restore error: {e}")
 
         self._stop_heartbeat()
         self._close_resources()
-        self.log_message.emit("✓ Playback cleanup complete")
+        self.cb.on_log("✓ Playback cleanup complete")

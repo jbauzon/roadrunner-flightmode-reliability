@@ -299,10 +299,13 @@ STATS_UPDATE_INTERVAL = 2.0            # seconds
 # DAQ health
 DAQ_HEALTH_CHECK_INTERVAL = 60000      # milliseconds (1 minute)
 
-# Monitor override commands
-MONITOR_OVERRIDE_CLEAR = 0             # Clear override
-MONITOR_OVERRIDE_SET = 1               # Set override
-MONITOR_OVERRIDE_CLEAR_SPECIFIC = 2    # Clear specific monitor
+# Monitor override commands — from firmware pandion_monitor_override_cmd_t
+MONITOR_OVERRIDE_CANCEL = 0            # Cancel override, return to normal monitoring
+MONITOR_OVERRIDE_SUPPRESS = 1          # Override to HEALTHY (suppresses fault — use to clear SET monitors)
+MONITOR_OVERRIDE_FORCE_FAULT = 2       # Override to FAULTED (forces fault — DO NOT use for clearing)
+
+# Network defaults
+DEFAULT_VEHICLE_PORT = 13002           # QGC MAVLink channel on real hardware (was 9985)
 
 # USE_NEST parameter values
 USE_NEST_ENABLED = 1

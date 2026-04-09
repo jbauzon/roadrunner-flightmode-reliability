@@ -12,9 +12,10 @@ from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QMessageBox, QFileDialog, QApplication, QScrollArea
+    QMessageBox, QFileDialog, QApplication, QScrollArea, QShortcut
 )
 from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QKeySequence
 
 from hardware.daq import SimpleDAQController
 from vehicle.connection import UUT
@@ -29,6 +30,7 @@ from .widgets import (
     AlertBannerWidget, ProgressWidget, ControlButtonsWidget,
     LogWidget, AddUUTDialog
 )
+from .qt_adapter import QtExecutorBridge
 from .command_server import CommandServer
 
 
@@ -91,6 +93,20 @@ class MultiUUTTestGUI(QMainWindow):
         self._cmd_server = CommandServer(parent=self)
         self._cmd_server.start(self._handle_remote_command)
         self.log(f"Command server listening on port {CommandServer.DEFAULT_PORT}")
+
+        self.log("")
+        self.log("Getting started:")
+        self.log("  1. Select DAQ device and click Detect")
+        self.log("  2. Click + Add to configure UUTs (serial, IP, port, relay)")
+        self.log("  3. Set test duration and click Start IBIT Test")
+        self.log("  Shortcuts: Ctrl+S Start | Ctrl+Q Stop | Ctrl+E Emergency | F5 Detect")
+        self.log("")
+
+        # ── Keyboard shortcuts ────────────────────────────────────────────
+        QShortcut(QKeySequence("Ctrl+S"), self, self.start_all_tests)
+        QShortcut(QKeySequence("Ctrl+Q"), self, self.stop_test)
+        QShortcut(QKeySequence("Ctrl+E"), self, self.emergency_stop)
+        QShortcut(QKeySequence("F5"), self, self.detect_daq_devices)
 
     # ═══════════════════════════════════════════════════════════════════════
     # UI construction
@@ -220,6 +236,9 @@ class MultiUUTTestGUI(QMainWindow):
         self.uut_table_widget.remove_clicked.connect(self.remove_uut)
         self.uut_table_widget.save_clicked.connect(self.save_uut_config)
         self.uut_table_widget.load_clicked.connect(self.load_uut_config)
+        self.uut_table_widget.table.selectionModel().selectionChanged.connect(
+            self._on_uut_selection_changed
+        )
 
         self.control_buttons.start_clicked.connect(self.start_all_tests)
         self.control_buttons.stop_clicked.connect(self.stop_test)
@@ -360,6 +379,12 @@ class MultiUUTTestGUI(QMainWindow):
             self.uut_table_widget.update_table(self.uuts)
             self.log(f"✓ Loaded {len(self.uuts)} UUT(s) from {os.path.basename(path)}")
 
+    def _on_uut_selection_changed(self):
+        """Show cached actuator feedback for the selected UUT."""
+        row = self.uut_table_widget.get_selected_row()
+        if 0 <= row < len(self.uuts):
+            self.actuator_display.set_current_uut(self.uuts[row].serial_number)
+
     # ═══════════════════════════════════════════════════════════════════════
     # Test control
     # ═══════════════════════════════════════════════════════════════════════
@@ -469,11 +494,16 @@ class MultiUUTTestGUI(QMainWindow):
 
         uut.status = UUTStatus.TESTING
         self.uut_table_widget.update_table(self.uuts)
+        self.actuator_display.set_current_uut(uut.serial_number)
         self.progress_widget.set_current_uut(
             f"UUT {self.current_uut_index+1}/{len(self.uuts)}  —  {uut.serial_number}"
         )
 
         skip = self.test_config_widget.get_skip_state_management()
+
+        # Create Qt bridge for thread-safe signal dispatch
+        self._executor_bridge = QtExecutorBridge(parent=self)
+        bridge = self._executor_bridge
 
         if self.test_mode == TestMode.PLAYBACK:
             self.current_test_executor = PlaybackTestExecutor(
@@ -484,6 +514,7 @@ class MultiUUTTestGUI(QMainWindow):
                 playback_csv=self.playback_csv,
                 playback_type=self.playback_type,
                 config=self.test_config,
+                callbacks=bridge.callbacks,
             )
         else:
             self.current_test_executor = UUTTestExecutor(
@@ -493,29 +524,29 @@ class MultiUUTTestGUI(QMainWindow):
                 self.log_directory, self.batch_start_datetime,
                 skip_state_management=skip,
                 config=self.test_config,
+                callbacks=bridge.callbacks,
             )
 
-        # Common signals
-        ex = self.current_test_executor
-        ex.test_complete.connect(self.on_uut_test_complete)
-        ex.time_expired.connect(self.on_batch_time_expired)
-        ex.log_message.connect(self.log)
-        ex.connection_health_update.connect(self.status_panel.set_connection_health)
-        ex.alert_update.connect(self.show_alert)
-        ex.test_duration_update.connect(self.ibit_display.set_duration)
-        ex.armed_state_update.connect(self.status_panel.set_armed_state)
-        ex.mode_update.connect(self.status_panel.set_mode)
-        ex.actuator_feedback_update.connect(self.actuator_display.update_feedback)
-        ex.status_update.connect(self._on_prep_status)
+        # Wire bridge signals to GUI handlers
+        bridge.sig_complete.connect(self.on_uut_test_complete)
+        bridge.sig_time_expired.connect(self.on_batch_time_expired)
+        bridge.sig_log.connect(self.log)
+        bridge.sig_connection_health.connect(self.status_panel.set_connection_health)
+        bridge.sig_alert.connect(self.show_alert)
+        bridge.sig_test_duration.connect(self.ibit_display.set_duration)
+        bridge.sig_armed_state.connect(self.status_panel.set_armed_state)
+        bridge.sig_mode.connect(self.status_panel.set_mode)
+        bridge.sig_actuator_feedback.connect(self.actuator_display.update_feedback)
+        bridge.sig_status.connect(self._on_prep_status)
 
         if self.test_mode == TestMode.IBIT:
-            ex.iteration_update.connect(self.progress_widget.set_iteration)
-            ex.statistics_update.connect(self._on_statistics)
-            ex.ibit_state_update.connect(self.ibit_display.set_substate)
+            bridge.sig_iteration.connect(self.progress_widget.set_iteration)
+            bridge.sig_statistics.connect(self._on_statistics)
+            bridge.sig_ibit_state.connect(self.ibit_display.set_substate)
         else:
-            ex.progress_update.connect(self.ibit_display.set_playback_progress)
+            bridge.sig_progress.connect(self.ibit_display.set_playback_progress)
 
-        ex.start()
+        self.current_test_executor.start()
 
     def on_uut_test_complete(self, success, message):
         uut = self.uuts[self.current_uut_index]
@@ -613,16 +644,14 @@ class MultiUUTTestGUI(QMainWindow):
             QApplication.processEvents()
 
             wait_start = time.time()
-            while self.current_test_executor.isRunning() and time.time()-wait_start < 15:
+            while self.current_test_executor.is_alive() and time.time()-wait_start < 15:
                 QApplication.processEvents()
                 time.sleep(0.1)
 
-            if not self.current_test_executor.isRunning():
+            if not self.current_test_executor.is_alive():
                 self.log("✓ Test thread stopped cleanly")
             else:
-                self.log("⚠ Forcing termination")
-                self.current_test_executor.terminate()
-                self.current_test_executor.wait(2000)
+                self.log("⚠ Thread did not stop within timeout — abandoning")
             self.current_test_executor = None
 
         if 0 <= self.current_uut_index < len(self.uuts):
@@ -688,7 +717,6 @@ class MultiUUTTestGUI(QMainWindow):
 
     def _on_prep_status(self, status_text):
         """Show preparation phase progress in the Test Status widget."""
-        # Map common preparation messages to short labels
         text = status_text.strip()
         if 'Connecting' in text:
             self.ibit_display.set_substate('CONNECTING')
@@ -702,6 +730,14 @@ class MultiUUTTestGUI(QMainWindow):
             self.ibit_display.set_substate('CLEARING MONITORS')
         elif 'Capturing' in text or 'capture' in text.lower():
             self.ibit_display.set_substate('CAPTURING STATE')
+        elif 'cleanup' in text.lower() or 'restor' in text.lower():
+            self.ibit_display.set_substate('RESTORING STATE')
+        elif 'OPERATE' in text:
+            self.ibit_display.set_substate('OPERATE')
+        elif 'DISARM' in text or 'disarm' in text:
+            self.ibit_display.set_substate('DISARMING')
+        elif 'Stopping' in text or 'stop' in text.lower():
+            self.ibit_display.set_substate('STOPPING')
 
     def show_alert(self, message):
         severity = AlertSeverity.CRITICAL if 'CRITICAL' in message.upper() else AlertSeverity.WARNING

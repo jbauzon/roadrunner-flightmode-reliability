@@ -33,6 +33,7 @@ class Servo:
         self.name = name
         self.is_tvc = is_tvc  # TVC uses cycle counter; elevon/rudder is instant
         self.cmd = 0.0
+        self.command = 0.0  # latched command value (cdeg) for telemetry
         self.fb = 0.0
         self.vel = 0.0
         self.cur = 200.0
@@ -44,6 +45,8 @@ class Servo:
         self._thermal_shutdown = False
         self._intermittent = False
         self._intermittent_prob = 0.0
+        self._bias = 0.0
+        self._rate_limit = SERVO_MAX_SLEW_CDEG_S
 
         # Mistracking detection (firmware-accurate)
         self._mistrack_cycle_count = 0
@@ -59,9 +62,25 @@ class Servo:
         self._trim_offset = random.gauss(0, 3.0)
         self.fb = self._trim_offset
 
-    def step(self, dt, global_time, coupling_load=0.0):
-        """Advance servo model by dt seconds."""
+    def step(self, dt, global_time, coupling_load=0.0, direct=False):
+        """Advance servo model by dt seconds.
+
+        Args:
+            dt: time step in seconds
+            global_time: current simulation time
+            coupling_load: aerodynamic coupling from other surfaces
+            direct: if True, bypass dynamics and set fb = cmd immediately
+                    (used by PLAYBACK mode to match firmware direct-apply)
+        """
+        self.command = self.cmd  # latch commanded position for telemetry
         self._ext_noise *= self._ext_decay
+
+        # ── Direct mode (playback): bypass all dynamics ───────────────
+        if direct:
+            self.fb = self.cmd
+            self.vel = 0.0
+            self.cur = 200.0 + abs(self.cmd) * 0.5
+            return
 
         # ── Thermal protection ────────────────────────────────────────
         if self.temp >= SERVO_THERMAL_SHUTDOWN:
@@ -76,11 +95,15 @@ class Servo:
             return
 
         # ── Intermittent fault ────────────────────────────────────────
-        if self._intermittent and not self._frozen:
-            if random.random() < self._intermittent_prob * dt:
-                self._frozen = True
-            elif self._frozen and random.random() < 0.1 * dt:
-                self._frozen = False
+        if self._intermittent:
+            if self._frozen:
+                # Chance to self-heal each tick
+                if random.random() < 0.1 * dt:
+                    self._frozen = False
+            else:
+                # Chance to freeze each tick
+                if random.random() < self._intermittent_prob * dt:
+                    self._frozen = True
 
         # ── Dynamics ──────────────────────────────────────────────────
         if self._frozen:
@@ -98,7 +121,7 @@ class Servo:
             old_fb = self.fb
             desired = self.fb + (err / self.tau) * dt
             delta = desired - self.fb
-            max_delta = SERVO_MAX_SLEW_CDEG_S * dt
+            max_delta = self._rate_limit * dt
             if abs(delta) > max_delta:
                 delta = max_delta if delta > 0 else -max_delta
             self.fb += delta
@@ -113,6 +136,7 @@ class Servo:
             noise += self._ext_noise * random.gauss(0, 1)
 
             self.fb += noise * dt
+            self.fb += self._bias
 
             # Current: effort + velocity + coupling
             self.cur = (abs(err) * 2.5 + abs(self.vel) * 0.5 +
@@ -136,7 +160,7 @@ class Servo:
             # TVC: consecutive cycle counter (actuation.c:1161-1182)
             if track_err > SERVO_MISTRACK_THRESH_CDEG:
                 self._mistrack_cycle_count += 1
-                if self._mistrack_cycle_count > SERVO_TVC_CONSEC_MISTRACK_CYCLES:
+                if self._mistrack_cycle_count >= SERVO_TVC_CONSEC_MISTRACK_CYCLES:
                     self._mistracking = True
             else:
                 self._mistrack_cycle_count = 0
@@ -173,6 +197,7 @@ class Servo:
     def reset(self):
         """Full reset to boot state."""
         self.cmd = 0.0
+        self.command = 0.0
         self.fb = self._trim_offset
         self.vel = 0.0
         self.cur = 200.0

@@ -16,7 +16,6 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-from PyQt5.QtCore import QObject, pyqtSignal
 from vehicle.constants import (
     TestMode, FLIGHT_REGIME_NAMES, ACTUATION_MODE_NAMES, SEVERITY_NAMES,
     DEFAULT_ACTUATOR_POSITION_CDEG, IBITSubstate,
@@ -24,7 +23,7 @@ from vehicle.constants import (
 )
 
 
-class TelemetryLogger(QObject):
+class TelemetryLogger:
     """
     IBIT-focused telemetry logger with human-readable, descriptive CSV format.
 
@@ -32,15 +31,13 @@ class TelemetryLogger(QObject):
     Supports both IBIT and Flight Profile Playback test modes.
     """
 
-    log_message = pyqtSignal(str)
-    file_rotated = pyqtSignal(str)
-
     MODE_IBIT_FOCUSED = "ibit_focused"
     MODE_NONE = "none"
 
     def __init__(self, log_directory: str, uut_serial: str, test_start_datetime: Any,
                  logging_mode: str = MODE_IBIT_FOCUSED, max_file_size_mb: int = 100,
-                 test_mode: str = 'ibit') -> None:
+                 test_mode: str = 'ibit',
+                 on_log=None, on_file_rotated=None) -> None:
         """
         Initialize telemetry logger.
 
@@ -51,8 +48,11 @@ class TelemetryLogger(QObject):
             logging_mode: Logging mode (IBIT_FOCUSED or NONE)
             max_file_size_mb: Maximum file size before rotation
             test_mode: 'ibit' or 'playback' — affects log filename
+            on_log: Callback for log messages (str) -> None
+            on_file_rotated: Callback for file rotation (str) -> None
         """
-        super().__init__()
+        self._on_log = on_log or (lambda msg: None)
+        self._on_file_rotated = on_file_rotated or (lambda path: None)
         self.log_directory = log_directory
         self.uut_serial = uut_serial
         self.test_start_datetime = test_start_datetime
@@ -156,7 +156,7 @@ class TelemetryLogger(QObject):
                 if self.log_file:
                     self.log_file.flush()
                     self.log_file.close()
-                    self.log_message.emit(
+                    self._on_log(
                         f"📁 Closed log file: {os.path.basename(self.current_log_path)}"
                     )
                 
@@ -179,16 +179,16 @@ class TelemetryLogger(QObject):
                 # Write header only for new files
                 if not file_exists:
                     self.csv_writer.writerow(self.ibit_columns)
-                    self.log_message.emit(f"📁 Created descriptive IBIT test log")
+                    self._on_log(f"📁 Created descriptive IBIT test log")
                 else:
-                    self.log_message.emit(f"📁 Appending to IBIT test log")
+                    self._on_log(f"📁 Appending to IBIT test log")
                 
                 self.current_file_size = self.log_file.tell()
             
             return True
             
         except Exception as e:
-            self.log_message.emit(f"Error opening log file: {e}")
+            self._on_log(f"Error opening log file: {e}")
             return False
     
     def log_test_event(self, event_type: str, description: str) -> None:
@@ -222,7 +222,7 @@ class TelemetryLogger(QObject):
             self._write_row(row)
             
         except Exception as e:
-            self.log_message.emit(f"Error logging test event: {e}")
+            self._on_log(f"Error logging test event: {e}")
     
     def log_relay_state(self, relay_line: str, state: bool) -> None:
         """
@@ -261,7 +261,7 @@ class TelemetryLogger(QObject):
             self._write_row(row)
             
         except Exception as e:
-            self.log_message.emit(f"Error logging relay state: {e}")
+            self._on_log(f"Error logging relay state: {e}")
     
     def set_iteration_number(self, iteration: int) -> None:
         """Set current iteration number"""
@@ -498,7 +498,7 @@ class TelemetryLogger(QObject):
                 self.last_flush_time = now.timestamp()
         
         except Exception as e:
-            self.log_message.emit(f"Error logging telemetry: {e}")
+            self._on_log(f"Error logging telemetry: {e}")
     
     def _write_row(self, row_dict: dict) -> None:
         """
@@ -555,7 +555,7 @@ class TelemetryLogger(QObject):
             if errors:
                 # Emit signal if possible
                 try:
-                    self.log_message.emit(
+                    self._on_log(
                         f"⚠ Log close completed with errors: {'; '.join(errors)}"
                     )
                 except Exception:

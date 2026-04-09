@@ -11,9 +11,9 @@ from vehicle.constants import (
     ActuationMode as _ActuationMode,
     IBITSubstate as _IBITSubstate,
     FlightRegime as _FlightRegime,
-    MONITOR_OVERRIDE_CLEAR,
-    MONITOR_OVERRIDE_SET,
-    MONITOR_OVERRIDE_CLEAR_SPECIFIC,
+    MONITOR_OVERRIDE_CANCEL,
+    MONITOR_OVERRIDE_SUPPRESS,
+    MONITOR_OVERRIDE_FORCE_FAULT,
 )
 
 
@@ -23,8 +23,16 @@ from vehicle.constants import (
 
 class FlightRegime:
     """Flight regime aliases for sim compatibility."""
-    DISARMED = _FlightRegime.GROUND_DISARMED
-    ARMED    = _FlightRegime.GROUND_ARMED
+    DISARMED       = _FlightRegime.GROUND_DISARMED        # 0
+    ARMED          = _FlightRegime.GROUND_ARMED            # 1
+    AUTO_TAKEOFF   = _FlightRegime.AUTO_TAKEOFF            # 2
+    HOVER          = _FlightRegime.HOVER                   # 3
+    CRUISE         = _FlightRegime.CRUISE                  # 5
+    POWERING_OFF   = _FlightRegime.POWERING_OFF            # 10
+    CUT_POWER      = _FlightRegime.CUT_POWER               # 11
+    TERMINATE      = _FlightRegime.TERMINATE                # 12
+    EMERGENCY_STOP = _FlightRegime.EMERGENCY_STOP          # 19
+    INVALID        = _FlightRegime.INVALID                  # 255
 
 
 class ActuationState:
@@ -132,15 +140,14 @@ SURFACE_NAMES = [
 # IBIT configuration (from actuation.c in roadrunner/pandion_roadrunner)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Duration per IBIT phase at scale=1.0 (seconds)
-# Source: actuation.c lines 30-32
+# IBIT phase durations (seconds) — from firmware #defines
 IBIT_PHASE_DURATIONS = {
-    IBITSubstate.BEGIN:   0.0,    # Immediate transition to SETTLE
-    IBITSubstate.SETTLE:  0.5,    # IBIT_ZERO_SETTLE_TIME_MS = 500
-    IBITSubstate.ELEVON:  5.0,    # IBIT_ELEVON_TEST_TIME_MS = 5000
-    IBITSubstate.RUDDERS: 10.0,   # IBIT_RUDDERS_TEST_TIME_MS = 10000
-    IBITSubstate.TVC:     5.0,    # IBIT_TVC_TEST_TIME_MS = 5000
-    IBITSubstate.DONE:    0.0,    # Immediate transition to OPERATE
+    0: 0.5,     # BEGIN (instant transition, small buffer)
+    1: 0.5,     # WAIT_FOR_SETTLE = 500ms
+    2: 5.0,     # ELEVON = 5000ms
+    3: 10.0,    # RUDDERS = 10000ms
+    4: 5.0,     # TVC = 5000ms
+    # No COMPLETE phase — firmware transitions immediately to OPERATE
 }
 
 # IBIT command profiles:
@@ -170,11 +177,21 @@ IBIT_NEST_COEFFS = {
     'tvc':  0.60,
 }
 
-# Servo hard limits (cdeg) from actuation.c
+# IBIT deflection attenuation when nest is connected
+NEST_IBIT_ATTEN_ELEVON = 0.75
+NEST_IBIT_ATTEN_RUDDER = 0.05
+NEST_IBIT_ATTEN_TVC = 0.60
+
+# Servo hard limits (cdeg) — from firmware clamp_to_servo_limits()
+SERVO_HARD_LIMIT_ELEVON_CDEG = 3500   # ±35°
+SERVO_HARD_LIMIT_RUDDER_CDEG = 6000   # ±60°
+SERVO_HARD_LIMIT_TVC_CDEG = 6000      # ±60°
+
+# Servo hard limits dict (convenience accessor used by vehicle.py)
 SERVO_HARD_LIMITS = {
-    'elevon': 3500,
-    'rudder': 6000,
-    'tvc':    6000,
+    'elevon': SERVO_HARD_LIMIT_ELEVON_CDEG,
+    'rudder': SERVO_HARD_LIMIT_RUDDER_CDEG,
+    'tvc':    SERVO_HARD_LIMIT_TVC_CDEG,
 }
 
 # IBIT profiles are now computed dynamically by the vehicle sim using
@@ -209,7 +226,7 @@ DEFAULT_PARAMS = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SERVO_TAU             = 0.02      # First-order lag time constant (seconds) - fast enough to track within 500cdeg
-SERVO_MAX_SLEW_CDEG_S = 40000.0  # ~400 deg/s
+SERVO_MAX_SLEW_CDEG_S = 1500.0   # was 9000 — from firmware MANUAL_MAX_RATE_CDEG_SEC
 SERVO_DEADBAND_CDEG   = 5.0      # No response below this error
 
 # Mistracking detection (from actuation.c lines 33-35):
@@ -234,15 +251,17 @@ MANUAL_MAX_RATE_CDEG_SEC = 1500.0
 # Telemetry rates
 # ═══════════════════════════════════════════════════════════════════════════════
 
-RATE_HEARTBEAT      = 1.0     # Hz
-RATE_PANDION_STATUS = 10.0    # Hz
-RATE_ACTUATION      = 20.0    # Hz
-RATE_MONITORS       = 5.0     # Hz
-RATE_ENGINE         = 2.0     # Hz
-RATE_BMS            = 1.0     # Hz
-RATE_WCA            = 0.5     # Hz
-RATE_PDU            = 0.2     # Hz
-RATE_HW_SELECTOR    = 0.2     # Hz
+# Telemetry rates (Hz) — from vehicle_cycle_task_table.h
+RATE_HEARTBEAT      = 1.0     # 1 Hz (was 10 Hz)
+RATE_PANDION_STATUS = 10.0    # 10 Hz
+RATE_ACTUATION      = 5.0     # 5 Hz (was 20 Hz) — firmware sends at 5 Hz
+RATE_MONITOR        = 5.0     # 5 Hz
+RATE_MONITORS       = RATE_MONITOR  # alias used by vehicle.py
+RATE_ENGINE         = 2.0     # 2 Hz
+RATE_BMS            = 1.0     # 1 Hz
+RATE_WCA            = 1.0     # 1 Hz
+RATE_PDU            = 0.5     # 0.5 Hz
+RATE_HW_SELECTOR    = 0.2     # 0.2 Hz
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -253,3 +272,27 @@ BMS_CAPACITY_MAH        = 5000
 BMS_CELLS               = 7
 BMS_VOLTAGE_PER_CELL_MV = 3700
 BMS_UNDERVOLTAGE_MV     = 21000  # Monitor triggers below this
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAVLink type
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MAV_TYPE_VTOL_DUOROTOR = 29  # firmware uses this, not FIXED_WING
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Actuation task rate — firmware runs at 100Hz
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ACTUATION_TASK_RATE_HZ = 100
+ACTUATION_TASK_DT = 1.0 / ACTUATION_TASK_RATE_HZ  # 0.01s
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mistracking detection — from firmware perform_monitoring()
+# ═══════════════════════════════════════════════════════════════════════════════
+
+IBIT_MISTRACK_THRESHOLD_CDEG = 500        # 5° for all surfaces
+IBIT_TVC_CONSEC_MISTRACK_MS = 50          # 50ms consecutive for TVC
+IBIT_TVC_CONSEC_MISTRACK_CYCLES = 5       # 50ms at 100Hz = 5 cycles

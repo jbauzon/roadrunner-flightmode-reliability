@@ -11,19 +11,22 @@ This module manages the complete vehicle preparation sequence:
 """
 import time
 import threading
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 
 from pymavlink import mavutil
-from PyQt5.QtCore import QObject, pyqtSignal
+
+if TYPE_CHECKING:
+    from testing.callbacks import PreparationCallbacks
+
 from .connection import UUTState
 from .constants import (
     ActuationMode, FlightRegime, CommandResult, MsgType, USE_NEST_ENABLED,
-    MONITOR_OVERRIDE_CLEAR, MONITOR_OVERRIDE_CLEAR_SPECIFIC,
+    MONITOR_OVERRIDE_CANCEL, MONITOR_OVERRIDE_SUPPRESS,
     get_mode_name, get_flight_regime_name, get_command_result_name, is_armed,
 )
 
 
-class UUTPreparation(QObject):
+class UUTPreparation:
     """
     Handles UUT state capture, preparation, and restoration.
     
@@ -31,15 +34,7 @@ class UUTPreparation(QObject):
     Then restoration after test complete.
     """
     
-    log_message = pyqtSignal(str)
-    progress_update = pyqtSignal(str)
-    # Vehicle status signals for live UI updates during preparation
-    armed_state_update = pyqtSignal(bool, int)       # (armed, flight_regime)
-    mode_update = pyqtSignal(int)                     # actuation_state
-    connection_health_update = pyqtSignal(bool)       # is_connected
-    actuator_feedback_update = pyqtSignal(dict)       # feedback data dict
-    
-    def __init__(self, master: Any, config: Optional[dict] = None, telemetry_logger: Optional[Any] = None) -> None:
+    def __init__(self, master: Any, config: Optional[dict] = None, telemetry_logger: Optional[Any] = None, callbacks: Optional[PreparationCallbacks] = None) -> None:
         """
         Initialize preparation manager.
         
@@ -47,14 +42,34 @@ class UUTPreparation(QObject):
             master: MAVLink connection
             config: Configuration dictionary
             telemetry_logger: Optional logger for events
+            callbacks: Optional PreparationCallbacks for UI communication
         """
-        super().__init__()
+        self.cb = callbacks or self._default_callbacks()
         self.master = master
         self.config = config or {}
         self.telemetry_logger = telemetry_logger
         self.initial_state = UUTState()
         self.use_nest_cache = None
         self.master_lock = threading.Lock()
+    
+    @staticmethod
+    def _default_callbacks() -> PreparationCallbacks:
+        """Lazy import to avoid circular dependency at module load time.
+
+        We load ``testing/callbacks.py`` directly via importlib.util so that
+        the ``testing`` package's ``__init__.py`` (which eagerly imports
+        PyQt5-dependent modules) is never executed.
+        """
+        import importlib.util, pathlib, sys
+        _name = 'testing.callbacks'
+        if _name in sys.modules:
+            return sys.modules[_name].PreparationCallbacks()
+        _path = str(pathlib.Path(__file__).resolve().parent.parent / 'testing' / 'callbacks.py')
+        spec = importlib.util.spec_from_file_location(_name, _path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_name] = mod
+        spec.loader.exec_module(mod)
+        return mod.PreparationCallbacks()
     
     def capture_initial_state(self) -> Tuple[bool, str]:
         """
@@ -70,7 +85,7 @@ class UUTPreparation(QObject):
         Returns:
             (success: bool, message: str)
         """
-        self.log_message.emit("Step: Capturing initial state...")
+        self.cb.on_log("Step: Capturing initial state...")
         
         if self.telemetry_logger:
             self.telemetry_logger.log_test_event(
@@ -83,23 +98,23 @@ class UUTPreparation(QObject):
         
         try:
             # Query USE_NEST parameter
-            self.progress_update.emit("Querying USE_NEST parameter...")
+            self.cb.on_progress("Querying USE_NEST parameter...")
             use_nest = self._query_use_nest()
             
             if use_nest is None:
-                self.log_message.emit(
+                self.cb.on_log(
                     "  ⚠ USE_NEST parameter not found (may not exist on this vehicle)"
                 )
                 self.initial_state.use_nest = 0
             else:
                 self.initial_state.use_nest = use_nest
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ✓ USE_NEST = {use_nest} "
                     f"({'ENABLED' if use_nest == USE_NEST_ENABLED else 'DISABLED'})"
                 )
             
             # Query actuation status
-            self.progress_update.emit("Querying actuation status...")
+            self.cb.on_progress("Querying actuation status...")
             actuation_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, 
                 timeout=5.0
@@ -109,12 +124,12 @@ class UUTPreparation(QObject):
                 raise Exception("Failed to receive actuation status")
             
             self.initial_state.actuation_mode = actuation_msg.actuation_state
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ✓ Actuation Mode = {actuation_msg.actuation_state}"
             )
             
             # Query armed state from PANDION_STATUS
-            self.progress_update.emit("Querying armed state...")
+            self.cb.on_progress("Querying armed state...")
             pandion_status = self._wait_for_message(MsgType.PANDION_STATUS, timeout=5.0)
             
             if not pandion_status:
@@ -126,18 +141,18 @@ class UUTPreparation(QObject):
             
             # Log with flight regime name
             regime_name = get_flight_regime_name(flight_regime)
-            self.log_message.emit(f"  ✓ Flight Regime = {flight_regime} ({regime_name})")
-            self.log_message.emit(f"  ✓ Armed = {self.initial_state.armed}")
+            self.cb.on_log(f"  ✓ Flight Regime = {flight_regime} ({regime_name})")
+            self.cb.on_log(f"  ✓ Armed = {self.initial_state.armed}")
             
             # Query monitor status
-            self.progress_update.emit("Querying monitor status...")
+            self.cb.on_progress("Querying monitor status...")
             monitor_msg = self._wait_for_message(
                 MsgType.MONITOR_STATUS,
                 timeout=5.0
             )
             
             if not monitor_msg:
-                self.log_message.emit(
+                self.cb.on_log(
                     "  ⚠ Monitor status not available (may not exist on this vehicle)"
                 )
                 self.initial_state.set_monitors = []
@@ -149,18 +164,18 @@ class UUTPreparation(QObject):
                 self.initial_state.overridden_monitors = self._extract_monitors_from_msg(
                     monitor_msg.currently_overridden
                 )
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ✓ SET Monitors: {len(self.initial_state.set_monitors)} monitor(s)"
                 )
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ✓ Overridden: {len(self.initial_state.overridden_monitors)} monitor(s)"
                 )
             
             self.initial_state.captured = True
             
-            self.log_message.emit("✓ Initial State Captured:")
+            self.cb.on_log("✓ Initial State Captured:")
             for line in self.initial_state.format_display().split('\n'):
-                self.log_message.emit(f"  {line}")
+                self.cb.on_log(f"  {line}")
             
             return True, "State captured successfully"
             
@@ -185,31 +200,31 @@ class UUTPreparation(QObject):
         Returns:
             (success: bool, message: str)
         """
-        self.log_message.emit("═══════════════════════════════════════════")
-        self.log_message.emit("PLAYBACK PRE-FLIGHT PREPARATION")
-        self.log_message.emit("═══════════════════════════════════════════")
+        self.cb.on_log("═══════════════════════════════════════════")
+        self.cb.on_log("PLAYBACK PRE-FLIGHT PREPARATION")
+        self.cb.on_log("═══════════════════════════════════════════")
 
         try:
             # Step 1: Set CLASSIC_MODE_EN = 1
-            self.log_message.emit("→ Setting CLASSIC_MODE_EN = 1...")
+            self.cb.on_log("→ Setting CLASSIC_MODE_EN = 1...")
             success, msg = self._set_param('CLASSIC_MODE_EN', 1)
             if not success:
                 raise Exception(f"Could not set CLASSIC_MODE_EN: {msg}")
-            self.log_message.emit(f"  ✓ {msg}")
+            self.cb.on_log(f"  ✓ {msg}")
 
             # Step 2: Ensure USE_NEST = 0
             if self.initial_state.use_nest != 0:
-                self.log_message.emit("→ Setting USE_NEST = 0...")
+                self.cb.on_log("→ Setting USE_NEST = 0...")
                 success, msg = self._set_use_nest(0)
                 if not success:
-                    self.log_message.emit(f"  ⚠ Could not disable USE_NEST: {msg}")
+                    self.cb.on_log(f"  ⚠ Could not disable USE_NEST: {msg}")
                 else:
-                    self.log_message.emit(f"  ✓ {msg}")
+                    self.cb.on_log(f"  ✓ {msg}")
             else:
-                self.log_message.emit("✓ USE_NEST already 0, skipping")
+                self.cb.on_log("✓ USE_NEST already 0, skipping")
 
             # Step 3: Power cycle (CLASSIC_MODE_EN only takes effect after reboot)
-            self.log_message.emit(
+            self.cb.on_log(
                 "\n→ Power cycling vehicle for CLASSIC_MODE_EN to take effect..."
             )
             if self.telemetry_logger:
@@ -218,16 +233,16 @@ class UUTPreparation(QObject):
                     'Power cycling vehicle for CLASSIC_MODE_EN to take effect'
                 )
             power_cycle_fn()
-            self.log_message.emit("  ✓ Power cycle complete, vehicle reconnected")
+            self.cb.on_log("  ✓ Power cycle complete, vehicle reconnected")
 
             # Step 4: ARM
             success, msg = self._arm_with_monitor_management()
             if not success:
                 raise Exception(f"Failed to ARM: {msg}")
-            self.log_message.emit(f"\n✓ {msg}")
+            self.cb.on_log(f"\n✓ {msg}")
 
             # Step 5: Wait for OPERATE
-            self.log_message.emit("\n→ Waiting for OPERATE mode...")
+            self.cb.on_log("\n→ Waiting for OPERATE mode...")
             operate_timeout = 10.0
             operate_start = time.time()
             in_operate = False
@@ -236,7 +251,7 @@ class UUTPreparation(QObject):
                     MsgType.ACTUATION_SYS_STATUS, timeout=1.0
                 )
                 if mode_msg and mode_msg.actuation_state == ActuationMode.OPERATE:
-                    self.log_message.emit("  ✓ Vehicle in OPERATE mode")
+                    self.cb.on_log("  ✓ Vehicle in OPERATE mode")
                     in_operate = True
                     break
                 time.sleep(0.2)
@@ -247,11 +262,11 @@ class UUTPreparation(QObject):
                 )
 
             # Step 6: Clear monitors until none remain (condition-based, not time-based)
-            self.log_message.emit("\n→ Clearing monitors before PLAYBACK...")
+            self.cb.on_log("\n→ Clearing monitors before PLAYBACK...")
             self._clear_monitors_until_clean(timeout=20.0)
 
             # Step 7: Enter PLAYBACK
-            self.log_message.emit("\n→ Requesting PLAYBACK mode...")
+            self.cb.on_log("\n→ Requesting PLAYBACK mode...")
             with self.master_lock:
                 self.master.mav.pandion_rr_actuation_request_mode_send(
                     requested_mode=int(ActuationMode.PLAYBACK)
@@ -264,7 +279,7 @@ class UUTPreparation(QObject):
                     MsgType.ACTUATION_SYS_STATUS, timeout=0.5
                 )
                 if mode_msg and mode_msg.actuation_state == ActuationMode.PLAYBACK:
-                    self.log_message.emit("  ✓ Vehicle in PLAYBACK mode")
+                    self.cb.on_log("  ✓ Vehicle in PLAYBACK mode")
                     break
                 time.sleep(0.1)
             else:
@@ -273,11 +288,11 @@ class UUTPreparation(QObject):
             # Clear any monitors that appeared during PLAYBACK entry
             self._clear_monitors_until_clean(timeout=10.0)
 
-            self.log_message.emit("\n✓ Playback preparation complete — ready to stream profile")
+            self.cb.on_log("\n✓ Playback preparation complete — ready to stream profile")
             return True, "Playback preparation complete"
 
         except Exception as e:
-            self.log_message.emit(f"\n✗ Playback preparation FAILED: {e}")
+            self.cb.on_log(f"\n✗ Playback preparation FAILED: {e}")
             return False, str(e)
 
     def _set_param(self, param_name: str, value: Any) -> Tuple[bool, str]:
@@ -318,7 +333,12 @@ class UUTPreparation(QObject):
             timeout = 5.0
             start = time.time()
             while time.time() - start < timeout:
-                msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
+                # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
+                # not standard PARAM_VALUE.  Try custom message first,
+                # then fall back to standard for SITL compatibility.
+                msg = self._wait_for_message('PANDION_RR_PARAM_VALUE', timeout=0.1)
+                if msg is None:
+                    msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
                 if msg:
                     name = (
                         msg.param_id.decode('utf-8').rstrip('\x00')
@@ -352,9 +372,9 @@ class UUTPreparation(QObject):
         Returns:
             (success: bool, message: str)
         """
-        self.log_message.emit("═══════════════════════════════════════════")
-        self.log_message.emit("PRE-FLIGHT PREPARATION")
-        self.log_message.emit("═══════════════════════════════════════════")
+        self.cb.on_log("═══════════════════════════════════════════")
+        self.cb.on_log("PRE-FLIGHT PREPARATION")
+        self.cb.on_log("═══════════════════════════════════════════")
         
         try:
             # Step 1: Disable USE_NEST if needed
@@ -400,8 +420,8 @@ class UUTPreparation(QObject):
                 log_interval=5,
             )
             
-            self.log_message.emit("\n✓ Pre-flight preparation complete")
-            self.log_message.emit(
+            self.cb.on_log("\n✓ Pre-flight preparation complete")
+            self.cb.on_log(
                 "  Sequence: ARM → OPERATE → Clear Monitors → "
                 "PLAYBACK → Clear Monitors → IBIT ✓"
             )
@@ -409,7 +429,7 @@ class UUTPreparation(QObject):
             return True, "Preparation complete"
             
         except Exception as e:
-            self.log_message.emit(f"\n✗ Pre-flight preparation FAILED: {e}")
+            self.cb.on_log(f"\n✗ Pre-flight preparation FAILED: {e}")
             return False, str(e)
 
     # ── prepare_for_test sub-steps ──────────────────────────────────────
@@ -418,8 +438,8 @@ class UUTPreparation(QObject):
         """Step 1: Disable USE_NEST if it is currently enabled."""
         if self.initial_state.use_nest is not None:
             if self.initial_state.use_nest != 0:
-                self.progress_update.emit("Disabling USE_NEST...")
-                self.log_message.emit("→ Setting USE_NEST = 0 (DISABLE)")
+                self.cb.on_progress("Disabling USE_NEST...")
+                self.cb.on_log("→ Setting USE_NEST = 0 (DISABLE)")
                 if self.telemetry_logger:
                     self.telemetry_logger.log_test_event(
                         'USE_NEST_DISABLE',
@@ -427,13 +447,13 @@ class UUTPreparation(QObject):
                     )
                 success, msg = self._set_use_nest(0)
                 if not success:
-                    self.log_message.emit(f"  ⚠ Could not disable USE_NEST: {msg}")
+                    self.cb.on_log(f"  ⚠ Could not disable USE_NEST: {msg}")
                 else:
-                    self.log_message.emit(f"  ✓ {msg}")
+                    self.cb.on_log(f"  ✓ {msg}")
             else:
-                self.log_message.emit("✓ USE_NEST already disabled, skipping")
+                self.cb.on_log("✓ USE_NEST already disabled, skipping")
         else:
-            self.log_message.emit("✓ USE_NEST not available on this vehicle, skipping")
+            self.cb.on_log("✓ USE_NEST not available on this vehicle, skipping")
 
     def _arm_vehicle_if_needed(self) -> None:
         """Step 2: ARM the vehicle with iterative monitor management."""
@@ -442,23 +462,23 @@ class UUTPreparation(QObject):
             if not success:
                 skip_arm = self.config.get('skip_arm_for_ibit', False)
                 if skip_arm:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"\n⚠ ARM failed but 'skip_arm_for_ibit' enabled"
                     )
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  → Proceeding to IBIT without ARM (may fail)"
                     )
                 else:
                     raise Exception(f"Failed to ARM: {msg}")
             else:
-                self.log_message.emit(f"\n✓ {msg}")
+                self.cb.on_log(f"\n✓ {msg}")
         else:
-            self.log_message.emit("✓ Vehicle already armed, skipping")
+            self.cb.on_log("✓ Vehicle already armed, skipping")
 
     def _wait_for_operate(self, timeout: float = 5.0) -> None:
         """Step 3: Wait for automatic transition to OPERATE mode after ARM."""
-        self.log_message.emit("\n→ Waiting for vehicle to enter OPERATE mode...")
-        self.progress_update.emit("Waiting for OPERATE mode...")
+        self.cb.on_log("\n→ Waiting for vehicle to enter OPERATE mode...")
+        self.cb.on_progress("Waiting for OPERATE mode...")
         if self.telemetry_logger:
             self.telemetry_logger.log_test_event(
                 'MODE_TRANSITION_WAIT',
@@ -472,7 +492,7 @@ class UUTPreparation(QObject):
             if mode_msg:
                 current_mode = mode_msg.actuation_state
                 if current_mode == ActuationMode.OPERATE:
-                    self.log_message.emit(f"  ✓ Vehicle entered OPERATE mode")
+                    self.cb.on_log(f"  ✓ Vehicle entered OPERATE mode")
                     if self.telemetry_logger:
                         self.telemetry_logger.log_test_event(
                             'MODE_CHANGE',
@@ -480,22 +500,22 @@ class UUTPreparation(QObject):
                         )
                     return
                 else:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  Current mode: {current_mode} "
                         f"({get_mode_name(current_mode)})"
                     )
             time.sleep(0.5)
-        self.log_message.emit(
+        self.cb.on_log(
             f"  ⚠ Vehicle did not enter OPERATE mode within {timeout}s"
         )
-        self.log_message.emit(f"  → Proceeding to clear monitors anyway...")
+        self.cb.on_log(f"  → Proceeding to clear monitors anyway...")
 
     def _clear_monitors_timed(self, duration: float, label: str, event_type: str) -> None:
         """Clear SET monitors for a fixed duration, logging progress."""
-        self.log_message.emit(
+        self.cb.on_log(
             f"\n→ Continuously clearing monitors {label}..."
         )
-        self.progress_update.emit("Clearing monitors...")
+        self.cb.on_progress("Clearing monitors...")
         if self.telemetry_logger:
             self.telemetry_logger.log_test_event(
                 event_type, f'Starting continuous monitor clearing {label}'
@@ -506,25 +526,25 @@ class UUTPreparation(QObject):
             current_set = self._get_current_set_monitors()
             if current_set:
                 clear_count += 1
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  [{clear_count}] Clearing {len(current_set)} "
                     f"SET monitors: {current_set}"
                 )
                 all_cleared, remaining = self._clear_specific_monitors(current_set)
                 if not all_cleared:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"    ⚠ {len(remaining)} monitors couldn't be cleared"
                     )
             else:
-                self.log_message.emit(f"  ✓ No SET monitors detected")
+                self.cb.on_log(f"  ✓ No SET monitors detected")
             time.sleep(0.5)
-        self.log_message.emit(
+        self.cb.on_log(
             f"  ✓ Monitor clearing complete ({clear_count} clear operations)"
         )
         # Final check
         final_set = self._get_current_set_monitors()
         if final_set:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ⚠ Warning: {len(final_set)} monitors still SET: {final_set}"
             )
             if self.telemetry_logger:
@@ -533,7 +553,7 @@ class UUTPreparation(QObject):
                     f'{len(final_set)} monitors still SET {label}: {final_set}'
                 )
         else:
-            self.log_message.emit(f"  ✓ All monitors clear")
+            self.cb.on_log(f"  ✓ All monitors clear")
 
     def _enter_mode(self, target: int, timeout: float, event_request: str, event_entered: str,
                     event_failed: str, log_interval: int = 2) -> None:
@@ -547,26 +567,27 @@ class UUTPreparation(QObject):
             log_interval: How often (seconds) to log "still waiting"
         """
         target_name = get_mode_name(target)
-        self.log_message.emit(
+        self.cb.on_log(
             f"\n→ Requesting transition → {target_name}..."
         )
-        self.progress_update.emit(f"Entering {target_name} mode...")
+        self.cb.on_progress(f"Entering {target_name} mode...")
         if self.telemetry_logger:
             self.telemetry_logger.log_test_event(
                 event_request,
                 f'Requesting transition to {target_name} mode'
             )
-        self.log_message.emit(
+        self.cb.on_log(
             f"  Sending {target_name} mode request (mode {int(target)})..."
         )
         with self.master_lock:
             self.master.mav.pandion_rr_actuation_request_mode_send(
                 requested_mode=int(target)
             )
-        self.log_message.emit(
+        self.cb.on_log(
             f"  Monitoring mode for up to {timeout:.0f} seconds..."
         )
         start = time.time()
+        last_log_second = -1
         while time.time() - start < timeout:
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=0.5
@@ -575,7 +596,32 @@ class UUTPreparation(QObject):
                 current_mode = mode_msg.actuation_state
                 if current_mode == target:
                     elapsed = time.time() - start
-                    self.log_message.emit(
+                    self.cb.on_log(
+                        f"  \u2713 Vehicle entered {target_name} mode "
+                        f"after {elapsed:.1f} seconds"
+                    )
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            event_entered,
+                            f'Vehicle entered {target_name} mode '
+                            f'after {elapsed:.1f} seconds'
+                        )
+                    return
+                else:
+                    elapsed = time.time() - start
+                    current_second = int(elapsed)
+                    if current_second % log_interval == 0 and current_second != last_log_second and elapsed > 0:
+                        last_log_second = current_second
+                        self.cb.on_log(
+                            f"    [{elapsed:.0f}s] Current mode: "
+                            f"{get_mode_name(current_mode)}, "
+                            f"waiting for {target_name}..."
+                        )
+            if mode_msg:
+                current_mode = mode_msg.actuation_state
+                if current_mode == target:
+                    elapsed = time.time() - start
+                    self.cb.on_log(
                         f"  ✓ Vehicle entered {target_name} mode "
                         f"after {elapsed:.1f} seconds"
                     )
@@ -589,7 +635,7 @@ class UUTPreparation(QObject):
                 else:
                     elapsed = time.time() - start
                     if int(elapsed) % log_interval == 0 and elapsed > 0:
-                        self.log_message.emit(
+                        self.cb.on_log(
                             f"    [{elapsed:.0f}s] Current mode: "
                             f"{get_mode_name(current_mode)}, "
                             f"waiting for {target_name}..."
@@ -627,9 +673,9 @@ class UUTPreparation(QObject):
         Returns:
             (success: bool, message: str)
         """
-        self.log_message.emit("═══════════════════════════════════════════")
-        self.log_message.emit("POST-FLIGHT RESTORATION")
-        self.log_message.emit("═══════════════════════════════════════════")
+        self.cb.on_log("═══════════════════════════════════════════")
+        self.cb.on_log("POST-FLIGHT RESTORATION")
+        self.cb.on_log("═══════════════════════════════════════════")
         
         if self.telemetry_logger:
             self.telemetry_logger.log_test_event(
@@ -638,12 +684,12 @@ class UUTPreparation(QObject):
             )
         
         if not self.initial_state.captured:
-            self.log_message.emit("⚠ No initial state captured, cannot restore.")
+            self.cb.on_log("⚠ No initial state captured, cannot restore.")
             return False, "No initial state"
         
-        self.log_message.emit("Target State (from initial capture):")
+        self.cb.on_log("Target State (from initial capture):")
         for line in self.initial_state.format_display().split('\n'):
-            self.log_message.emit(f"  {line}")
+            self.cb.on_log(f"  {line}")
         
         try:
             self._ensure_operate_mode()
@@ -654,7 +700,7 @@ class UUTPreparation(QObject):
             return True, "Restoration complete"
             
         except Exception as e:
-            self.log_message.emit(f"✗ Restoration error: {e}")
+            self.cb.on_log(f"✗ Restoration error: {e}")
             return False, str(e)
 
     # ── restore_original_state sub-steps ────────────────────────────────
@@ -668,7 +714,7 @@ class UUTPreparation(QObject):
         current_mode = current_mode_msg.actuation_state if current_mode_msg else -1
         
         if current_mode == ActuationMode.IBIT:  # Still in IBIT
-            self.log_message.emit(
+            self.cb.on_log(
                 f"⚠ Still in IBIT mode, requesting OPERATE first..."
             )
             with self.master_lock:
@@ -682,24 +728,24 @@ class UUTPreparation(QObject):
                 timeout=3.0
             )
             if verify_msg and verify_msg.actuation_state == ActuationMode.OPERATE:
-                self.log_message.emit(f"  ✓ Vehicle in OPERATE mode")
+                self.cb.on_log(f"  ✓ Vehicle in OPERATE mode")
             else:
-                self.log_message.emit(f"  ⚠ Could not transition to OPERATE")
+                self.cb.on_log(f"  ⚠ Could not transition to OPERATE")
         
         elif current_mode == ActuationMode.OPERATE:
-            self.log_message.emit(f"✓ Vehicle already in OPERATE mode")
+            self.cb.on_log(f"✓ Vehicle already in OPERATE mode")
         else:
-            self.log_message.emit(f"⚠ Unexpected mode: {current_mode}")
+            self.cb.on_log(f"⚠ Unexpected mode: {current_mode}")
         
         time.sleep(1.0)
 
     def _clear_overrides_before_disarm(self):
         """Clear any monitor overrides set during test before disarming."""
-        self.log_message.emit("\n→ Clearing overridden monitors BEFORE disarm...")
+        self.cb.on_log("\n→ Clearing overridden monitors BEFORE disarm...")
         current_overridden = self._get_current_overridden_monitors()
         
         if current_overridden:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  Found {len(current_overridden)} overridden monitors: "
                 f"{current_overridden}"
             )
@@ -713,21 +759,21 @@ class UUTPreparation(QObject):
             
             with self.master_lock:
                 for mid in current_overridden:
-                    self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_CLEAR, mid)
+                    self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_CANCEL, mid)
                     time.sleep(0.01)
             
             time.sleep(2.0)
             
             verify_overridden = self._get_current_overridden_monitors()
             if verify_overridden:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"  ⚠ {len(verify_overridden)} monitors still overridden: "
                     f"{verify_overridden}"
                 )
             else:
-                self.log_message.emit(f"  ✓ All monitors cleared before disarm")
+                self.cb.on_log(f"  ✓ All monitors cleared before disarm")
         else:
-            self.log_message.emit(f"  ✓ No overridden monitors to clear")
+            self.cb.on_log(f"  ✓ No overridden monitors to clear")
 
     def _disarm_if_needed(self):
         """Disarm the vehicle if it wasn't originally armed."""
@@ -739,7 +785,7 @@ class UUTPreparation(QObject):
                 is_vehicle_armed = is_armed(flight_regime)
                 
                 if is_vehicle_armed:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"\n→ Disarming vehicle (current flight regime: "
                         f"{flight_regime})..."
                     )
@@ -755,22 +801,22 @@ class UUTPreparation(QObject):
                     )
                     
                     if success:
-                        self.log_message.emit(f"  ✓ {message}")
+                        self.cb.on_log(f"  ✓ {message}")
                     else:
-                        self.log_message.emit(f"  ⚠ {message}")
+                        self.cb.on_log(f"  ⚠ {message}")
                         if self.telemetry_logger:
                             self.telemetry_logger.log_test_event(
                                 'DISARM_FAILED',
                                 message
                             )
                 else:
-                    self.log_message.emit(f"✓ Vehicle already disarmed")
+                    self.cb.on_log(f"✓ Vehicle already disarmed")
         
         time.sleep(2.0)
 
     def _transition_to_off(self):
         """Request transition to OFF mode and verify."""
-        self.log_message.emit("\n→ Requesting transition to OFF mode...")
+        self.cb.on_log("\n→ Requesting transition to OFF mode...")
         with self.master_lock:
             self.master.mav.pandion_rr_actuation_request_mode_send(requested_mode=int(ActuationMode.OFF))
         
@@ -786,11 +832,11 @@ class UUTPreparation(QObject):
             mode_str = get_mode_name(final_mode)
             
             if final_mode == ActuationMode.OFF:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"✓ Final actuation mode: {final_mode} ({mode_str}) ✓"
                 )
             else:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"⚠ Final actuation mode: {final_mode} ({mode_str}) - "
                     f"expected OFF"
                 )
@@ -801,7 +847,7 @@ class UUTPreparation(QObject):
                     f'Final mode after restoration: {mode_str}'
                 )
         else:
-            self.log_message.emit(f"⚠ Could not verify final mode")
+            self.cb.on_log(f"⚠ Could not verify final mode")
     
     def verify_final_state(self, relay_was_disabled: bool = False) -> None:
         """
@@ -810,15 +856,15 @@ class UUTPreparation(QObject):
         Args:
             relay_was_disabled: If True, skip verification (vehicle powered off)
         """
-        self.log_message.emit("═══════════════════════════════════════════")
-        self.log_message.emit("FINAL STATE VERIFICATION")
-        self.log_message.emit("═══════════════════════════════════════════")
+        self.cb.on_log("═══════════════════════════════════════════")
+        self.cb.on_log("FINAL STATE VERIFICATION")
+        self.cb.on_log("═══════════════════════════════════════════")
         
         # Skip verification if relay was disabled (vehicle is powered off)
         if relay_was_disabled:
-            self.log_message.emit("⚠ Relay was disabled - skipping state verification")
-            self.log_message.emit("  Reason: Cannot query vehicle state without power")
-            self.log_message.emit("  Result: Vehicle is in safe powered-off state ✓")
+            self.cb.on_log("⚠ Relay was disabled - skipping state verification")
+            self.cb.on_log("  Reason: Cannot query vehicle state without power")
+            self.cb.on_log("  Result: Vehicle is in safe powered-off state ✓")
             
             if self.telemetry_logger:
                 self.telemetry_logger.log_test_event(
@@ -831,15 +877,15 @@ class UUTPreparation(QObject):
         success, _ = self._capture_current_state(final_state)
         
         if not success:
-            self.log_message.emit("✗ Failed to capture final state for verification.")
+            self.cb.on_log("✗ Failed to capture final state for verification.")
             return
         
-        self.log_message.emit("Final State After Restoration:")
+        self.cb.on_log("Final State After Restoration:")
         for line in final_state.format_display().split('\n'):
-            self.log_message.emit(f"  {line}")
+            self.cb.on_log(f"  {line}")
         
         if self.initial_state.matches(final_state):
-            self.log_message.emit("✓✓✓ STATE SUCCESSFULLY RESTORED TO ORIGINAL ✓✓✓")
+            self.cb.on_log("✓✓✓ STATE SUCCESSFULLY RESTORED TO ORIGINAL ✓✓✓")
             
             if self.telemetry_logger:
                 self.telemetry_logger.log_test_event(
@@ -848,10 +894,10 @@ class UUTPreparation(QObject):
                 )
         else:
             differences = self.initial_state.get_differences(final_state)
-            self.log_message.emit("⚠⚠⚠ STATE RESTORATION MISMATCH ⚠⚠⚠")
+            self.cb.on_log("⚠⚠⚠ STATE RESTORATION MISMATCH ⚠⚠⚠")
             
             for diff in differences:
-                self.log_message.emit(f"  ⚠ {diff}")
+                self.cb.on_log(f"  ⚠ {diff}")
             
             if self.telemetry_logger:
                 self.telemetry_logger.log_test_event(
@@ -868,8 +914,8 @@ class UUTPreparation(QObject):
         Returns:
             (success: bool, message: str)
         """
-        self.progress_update.emit("Arming vehicle with monitor management...")
-        self.log_message.emit(
+        self.cb.on_progress("Arming vehicle with monitor management...")
+        self.cb.on_log(
             "→ Attempting to ARM vehicle with iterative monitor management..."
         )
         
@@ -887,32 +933,32 @@ class UUTPreparation(QObject):
         
         while iteration < max_iterations and (time.time() - start_time) < arm_timeout:
             iteration += 1
-            self.log_message.emit(f"\n  Iteration {iteration}/{max_iterations}:")
+            self.cb.on_log(f"\n  Iteration {iteration}/{max_iterations}:")
             
             # Check monitors
-            self.log_message.emit(f"    Checking monitor status...")
+            self.cb.on_log(f"    Checking monitor status...")
             current_set = self._get_current_set_monitors()
             
             if len(current_set) > 0:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"    Found {len(current_set)} SET monitors: {current_set}"
                 )
                 all_cleared, remaining = self._clear_specific_monitors(current_set)
                 
                 if not all_cleared:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"    ⚠ Some monitors couldn't be cleared (may be hardware faults)"
                     )
             else:
-                self.log_message.emit(f"    ✓ No SET monitors")
+                self.cb.on_log(f"    ✓ No SET monitors")
             
             # Try ARM
-            self.log_message.emit(f"    Attempting ARM command...")
+            self.cb.on_log(f"    Attempting ARM command...")
             arm_success, arm_message = self._try_arm_once()
             
             if arm_success:
-                self.log_message.emit(f"    ✓ Vehicle ARMED successfully!")
-                self.log_message.emit(f"  Success on iteration {iteration}")
+                self.cb.on_log(f"    ✓ Vehicle ARMED successfully!")
+                self.cb.on_log(f"  Success on iteration {iteration}")
                 
                 if self.telemetry_logger:
                     self.telemetry_logger.log_test_event(
@@ -922,25 +968,25 @@ class UUTPreparation(QObject):
                 
                 return True, f"Vehicle ARMED (iterations: {iteration})"
             else:
-                self.log_message.emit(f"    ✗ ARM failed: {arm_message}")
+                self.cb.on_log(f"    ✗ ARM failed: {arm_message}")
             
             time.sleep(0.5)
             
             # Check what happened
             post_arm_set = self._get_current_set_monitors()
             if post_arm_set:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"    → After ARM failure, {len(post_arm_set)} monitors are SET"
                 )
             else:
-                self.log_message.emit(
+                self.cb.on_log(
                     f"    → No new monitors SET, but ARM still failed"
                 )
             
             time.sleep(0.3)
         
         # ARM failed
-        self.log_message.emit(f"\n✗ ARM FAILED after {iteration} iterations")
+        self.cb.on_log(f"\n✗ ARM FAILED after {iteration} iterations")
         final_set = self._get_current_set_monitors()
         
         if self.telemetry_logger:
@@ -951,10 +997,10 @@ class UUTPreparation(QObject):
             )
         
         if final_set:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  Final status: {len(final_set)} monitors still SET: {final_set}"
             )
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  These monitors could not be cleared - likely hardware faults"
             )
             return False, (
@@ -962,7 +1008,7 @@ class UUTPreparation(QObject):
                 f"(hardware faults)"
             )
         else:
-            self.log_message.emit(f"  Final status: No monitors SET, but ARM still failed")
+            self.cb.on_log(f"  Final status: No monitors SET, but ARM still failed")
             return False, "ARM failed - no monitors SET but vehicle refuses to ARM"
     
     def _try_arm_once(self) -> Tuple[bool, str]:
@@ -1014,7 +1060,7 @@ class UUTPreparation(QObject):
             (success: bool, message: str)
         """
         for attempt in range(1, max_attempts + 1):
-            self.log_message.emit(f"  DISARM attempt {attempt}/{max_attempts}...")
+            self.cb.on_log(f"  DISARM attempt {attempt}/{max_attempts}...")
             
             with self.master_lock:
                 self.master.mav.command_long_send(
@@ -1035,7 +1081,7 @@ class UUTPreparation(QObject):
                     ack_received = True
                     
                     if ack.result == CommandResult.ACCEPTED:
-                        self.log_message.emit(f"    ✓ DISARM command accepted")
+                        self.cb.on_log(f"    ✓ DISARM command accepted")
                         
                         # Wait for actual disarm (vehicle takes time)
                         time.sleep(2.0)
@@ -1045,7 +1091,7 @@ class UUTPreparation(QObject):
                             ps = self._wait_for_message(MsgType.PANDION_STATUS, timeout=1.0)
                             if ps:
                                 if ps.flight_regime == FlightRegime.GROUND_DISARMED:
-                                    self.log_message.emit(
+                                    self.cb.on_log(
                                         f"    ✓ DISARMED verified (flight regime 0)"
                                     )
                                     
@@ -1057,35 +1103,35 @@ class UUTPreparation(QObject):
                                     
                                     return True, f"DISARMED on attempt {attempt}"
                                 else:
-                                    self.log_message.emit(
+                                    self.cb.on_log(
                                         f"    ⚠ Still armed (flight regime: "
                                         f"{ps.flight_regime}), waiting..."
                                     )
                                     time.sleep(0.5)
                             else:
-                                self.log_message.emit(
+                                self.cb.on_log(
                                     f"    ⚠ No PANDION_STATUS received"
                                 )
                                 time.sleep(0.5)
                         
-                        self.log_message.emit(
+                        self.cb.on_log(
                             f"    ✗ DISARM accepted but verification failed"
                         )
                     else:
                         result_str = get_command_result_name(ack.result)
-                        self.log_message.emit(f"    ✗ DISARM rejected: {result_str}")
+                        self.cb.on_log(f"    ✗ DISARM rejected: {result_str}")
                     
                     break
                 
                 time.sleep(0.1)
             
             if not ack_received:
-                self.log_message.emit(f"    ✗ No ACK received within {timeout}s")
+                self.cb.on_log(f"    ✗ No ACK received within {timeout}s")
             
             # Wait before retry
             if attempt < max_attempts:
                 wait_time = min(attempt * 2, 5)
-                self.log_message.emit(f"    → Retrying in {wait_time}s...")
+                self.cb.on_log(f"    → Retrying in {wait_time}s...")
                 time.sleep(wait_time)
         
         return False, f"DISARM failed after {max_attempts} attempts"
@@ -1103,7 +1149,7 @@ class UUTPreparation(QObject):
         if not monitor_ids:
             return True, []
         
-        self.log_message.emit(
+        self.cb.on_log(
             f"    Clearing {len(monitor_ids)} monitors: {monitor_ids}"
         )
         
@@ -1115,7 +1161,7 @@ class UUTPreparation(QObject):
         
         with self.master_lock:
             for monitor_id in monitor_ids:
-                self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_CLEAR_SPECIFIC, monitor_id)
+                self.master.mav.pandion_monitor_override_cmd_send(MONITOR_OVERRIDE_SUPPRESS, monitor_id)
                 time.sleep(0.01)
         
         time.sleep(1.5)
@@ -1133,16 +1179,16 @@ class UUTPreparation(QObject):
         cleared = set(monitor_ids) - set(still_set)
         
         if cleared:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"    ✓ Cleared {len(cleared)} monitors: {sorted(list(cleared))}"
             )
         
         if still_set:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"    ✗ {len(still_set)} monitors remain SET: {still_set}"
             )
         else:
-            self.log_message.emit(f"    ✓ All monitors cleared")
+            self.cb.on_log(f"    ✓ All monitors cleared")
         
         return len(still_set) == 0, still_set
     
@@ -1184,11 +1230,12 @@ class UUTPreparation(QObject):
             return self.use_nest_cache
 
         try:
-            # Drain any stale PARAM_VALUE messages
+            # Drain any stale PARAM_VALUE / PANDION_RR_PARAM_VALUE messages
             while True:
                 with self.master_lock:
                     msg = self.master.recv_match(
-                        type=MsgType.PARAM_VALUE, blocking=False, timeout=0.01
+                        type=['PANDION_RR_PARAM_VALUE', MsgType.PARAM_VALUE],
+                        blocking=False, timeout=0.01
                     )
                 if not msg:
                     break
@@ -1207,7 +1254,12 @@ class UUTPreparation(QObject):
             start_time = time.time()
 
             while time.time() - start_time < timeout:
-                msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
+                # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
+                # not standard PARAM_VALUE.  Try custom first, fall back
+                # to standard for SITL compatibility.
+                msg = self._wait_for_message('PANDION_RR_PARAM_VALUE', timeout=0.1)
+                if msg is None:
+                    msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
 
                 if msg:
                     param_name = (
@@ -1218,15 +1270,15 @@ class UUTPreparation(QObject):
 
                     if param_name == 'USE_NEST':
                         value = int(msg.param_value)
-                        self.log_message.emit(f"  ✓ Received USE_NEST = {value}")
+                        self.cb.on_log(f"  ✓ Received USE_NEST = {value}")
                         self.use_nest_cache = value
                         return value
 
-            self.log_message.emit("  ⚠ USE_NEST query timeout after 5s")
+            self.cb.on_log("  ⚠ USE_NEST query timeout after 5s")
             return None
 
         except Exception as e:
-            self.log_message.emit(f"  ⚠ Error querying USE_NEST: {e}")
+            self.cb.on_log(f"  ⚠ Error querying USE_NEST: {e}")
             return None
     
     def _set_use_nest(self, value: int) -> Tuple[bool, str]:
@@ -1287,7 +1339,7 @@ class UUTPreparation(QObject):
             if not current_set:
                 consecutive_clean += 1
                 if consecutive_clean >= required_clean_polls:
-                    self.log_message.emit(
+                    self.cb.on_log(
                         f"  ✓ All monitors clear (confirmed {required_clean_polls}x)"
                     )
                     return True
@@ -1299,7 +1351,7 @@ class UUTPreparation(QObject):
 
         remaining = self._get_current_set_monitors()
         if remaining:
-            self.log_message.emit(
+            self.cb.on_log(
                 f"  ⚠ Monitor clear timeout — {len(remaining)} monitors "
                 f"still SET: {remaining}"
             )
@@ -1381,13 +1433,13 @@ class UUTPreparation(QObject):
             if msg_type == MsgType.PANDION_STATUS:
                 fr = msg.flight_regime
                 armed = is_armed(fr)
-                self.armed_state_update.emit(armed, fr)
-                self.connection_health_update.emit(True)
+                self.cb.on_armed_state(armed, fr)
+                self.cb.on_connection_health(True)
             elif msg_type == MsgType.ACTUATION_SYS_STATUS:
-                self.mode_update.emit(msg.actuation_state)
-                self.connection_health_update.emit(True)
+                self.cb.on_mode(msg.actuation_state)
+                self.cb.on_connection_health(True)
                 try:
-                    self.actuator_feedback_update.emit({
+                    self.cb.on_actuator_feedback({
                         'left_elevon_feedback_cdeg': msg.left_elevon_feedback_cdeg,
                         'right_elevon_feedback_cdeg': msg.right_elevon_feedback_cdeg,
                         'dorsal_rudder_feedback_cdeg': msg.dorsal_rudder_feedback_cdeg,
@@ -1410,6 +1462,6 @@ class UUTPreparation(QObject):
                 except AttributeError:
                     pass
             elif msg_type == 'HEARTBEAT':
-                self.connection_health_update.emit(True)
+                self.cb.on_connection_health(True)
         except Exception:
             pass

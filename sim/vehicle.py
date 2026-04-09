@@ -28,6 +28,7 @@ import time
 import math
 import random
 import threading
+from typing import Optional
 
 # ── Path setup for dialect loading ────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +61,8 @@ from .config.defaults import (
     RATE_HEARTBEAT, RATE_PANDION_STATUS, RATE_ACTUATION,
     RATE_MONITORS, RATE_ENGINE, RATE_BMS, RATE_WCA, RATE_PDU,
     RATE_HW_SELECTOR,
-    MONITOR_OVERRIDE_CLEAR, MONITOR_OVERRIDE_SET, MONITOR_OVERRIDE_CLEAR_SPECIFIC,
+    MONITOR_OVERRIDE_CANCEL, MONITOR_OVERRIDE_SUPPRESS, MONITOR_OVERRIDE_FORCE_FAULT,
+    MAV_TYPE_VTOL_DUOROTOR,
 )
 from version import __version__
 from .models.servo import Servo
@@ -68,6 +70,8 @@ from .models.battery import BatteryModel
 from .models.monitors import MonitorSystem, default_monitor_conditions
 from .models.sensors import SensorSuite
 from .telemetry import TelemetryManager
+from .clock import SimClock
+from .recorder import TelemetryRecorder
 
 
 def _log(sysid, msg):
@@ -90,9 +94,18 @@ class PandionVehicleSim:
                  packet_drop_rate=0.0, gcs_timeout_s=5.0,
                  mode_transition_delay_s=0.1, ibit_cooldown_s=2.0,
                  intermittent_servos=None, gnss_degrade_during_ibit=False,
-                 verbose=False, fleet=None):
+                 surface_faults=None,
+                 verbose=False, fleet=None,
+                 deterministic: bool = False, seed: int = 42,
+                 record_path: Optional[str] = None,
+                 fuzz_modes: Optional[set] = None,
+                 fuzz_intensity: float = 0.0,
+                 has_tau_elevons: bool = False,
+                 x_tail: bool = False):
 
         self.vehicle_port = vehicle_port
+        self.has_tau_elevons = has_tau_elevons
+        self.x_tail = x_tail
         self.sysid = sysid
         self.ibit_pass = ibit_pass
         self.mist_flags = mistracking_flags if not ibit_pass else 0
@@ -110,13 +123,30 @@ class PandionVehicleSim:
         self.verbose = verbose
         self.fleet = fleet
 
+        # ── Deterministic clock & telemetry recorder ──────────────────
+        self._clock = SimClock(deterministic=deterministic, seed=seed)
+        self._recorder = TelemetryRecorder(record_path) if record_path else None
+
         # ── Vehicle state ─────────────────────────────────────────────
         self.flight_regime = FlightRegime.DISARMED
         self.act_state = ActuationState.OFF
         self.ibit_substate = IBITSubstate.BEGIN
         self.ibit_mon_status = 0
         self._ibit_active = False
+        self._ibit_owns_servos = False  # When True, IBIT thread steps servos
         self._last_ibit_end = 0.0
+        self._playback_direct = False  # Playback bypasses servo dynamics
+        self._ibit_direct = False      # IBIT bypasses servo rate limiting
+
+        # ── Real mistracking detection (firmware perform_monitoring()) ─
+        self._mistrack_flags = 0       # accumulated mistracking bitmask
+        self._tvc_consec_counters = {
+            'left_tvc_upper': 0, 'left_tvc_lower': 0,
+            'right_tvc_upper': 0, 'right_tvc_lower': 0,
+        }
+
+        # ── IBIT interruption support ─────────────────────────────────
+        self._ibit_interrupted = False
 
         # ── Parameters ────────────────────────────────────────────────
         self._stored_params = dict(DEFAULT_PARAMS)
@@ -132,6 +162,21 @@ class PandionVehicleSim:
             for sname, prob in intermittent_servos.items():
                 if sname in self.servos:
                     self.servos[sname].set_intermittent(prob)
+
+        # Apply per-surface faults
+        if surface_faults:
+            for surface_name, fault_cfg in surface_faults.items():
+                if surface_name in self.servos:
+                    servo = self.servos[surface_name]
+                    if fault_cfg.get('frozen'):
+                        servo._frozen = True
+                    if 'intermittent' in fault_cfg:
+                        servo._intermittent = True
+                        servo._intermittent_prob = fault_cfg['intermittent']
+                    if 'bias_cdeg' in fault_cfg:
+                        servo._bias = fault_cfg['bias_cdeg']
+                    if 'rate_limit' in fault_cfg:
+                        servo._rate_limit = fault_cfg['rate_limit']
 
         # ── GCS link ──────────────────────────────────────────────────
         self._last_gcs_hb = 0.0
@@ -153,9 +198,82 @@ class PandionVehicleSim:
         self._running = False
         self._lock = threading.Lock()
 
+        # ── Protocol fuzzer ───────────────────────────────────────────
+        self._fuzzer = None
+        if fuzz_intensity > 0 and fuzz_modes:
+            from sim.fuzzer import ProtocolFuzzer
+            # Fuzzer is created here but started in start() after connection is live
+            self._fuzz_modes = fuzz_modes
+            self._fuzz_intensity = fuzz_intensity
+
         _log(sysid, f"Sim v{__version__}  port={vehicle_port}  "
              f"ibit={'PASS' if ibit_pass else 'FAIL(0x%02X)' % self.mist_flags}  "
              f"cycles={ibit_cycles}  boot={boot_time_s}s")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Monitor condition registration
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _register_monitor_conditions(self):
+        """Register dynamically-evaluated monitor conditions.
+
+        These supplement the static conditions in default_monitor_conditions()
+        (monitors.py) and are re-registered on each power cycle since the
+        MonitorSystem is recreated.
+
+        Condition functions are no-arg lambdas that capture `self` and return
+        True when the monitor should be SET.
+        """
+        m = self.monitors
+
+        # ── Boot monitors (0-5) ───────────────────────────────────────
+        # (Evaluated via default_monitor_conditions; force-set at power-on)
+
+        # ── Post-ARM monitors (10-12) ─────────────────────────────────
+        m.register_condition(11, lambda: False,
+                             "Landing Gear Deployed")
+        m.register_condition(12,
+                             lambda: (self._active_params.get('USE_NEST', 0) == 1
+                                      and self.flight_regime == FlightRegime.ARMED),
+                             "Nest Connection Lost")
+
+        # ── Runtime monitors (20-29) ──────────────────────────────────
+        m.register_condition(20, lambda: self._gcs_link_lost and self._last_gcs_hb > 0,
+                             "GCS Link Lost")
+        m.register_condition(21, lambda: self._bms.pack_voltage < 22000,
+                             "Low Battery Voltage")
+        m.register_condition(22, lambda: any(s.temp > 80 for s in self.servos.values()),
+                             "High Servo Temperature")
+        m.register_condition(23,
+                             lambda: (self._booted
+                                      and self._sensors.ins_status < 3),  # INSStatus.FULL
+                             "INS Degraded")
+        m.register_condition(25,
+                             lambda: (self.flight_regime == FlightRegime.ARMED
+                                      and self._sensors.eng1_mode == 2
+                                      and self._sensors.eng1_rpm < 30000),
+                             "Engine 1 RPM Low")
+        m.register_condition(26,
+                             lambda: (self.flight_regime == FlightRegime.ARMED
+                                      and self._sensors.eng2_mode == 2
+                                      and self._sensors.eng2_rpm < 30000),
+                             "Engine 2 RPM Low")
+        m.register_condition(27, lambda: False,
+                             "Actuation Bus Fault")
+        m.register_condition(28,
+                             lambda: (max(self._bms.get_cell_voltage())
+                                      - min(self._bms.get_cell_voltage()) > 500),
+                             "BMS Cell Imbalance")
+        m.register_condition(29, lambda: any(s.cur > 5000 for s in self.servos.values()),
+                             "Servo Overcurrent")
+
+        # ── Safety-critical monitors (50-52) ──────────────────────────
+        m.register_condition(50, lambda: False,
+                             "Emergency Stop Commanded")
+        m.register_condition(51, lambda: self._bms.pack_voltage < 18000,
+                             "Power Bus Undervoltage")
+        m.register_condition(52, lambda: any(s.temp > 95 for s in self.servos.values()),
+                             "Thermal Shutdown Imminent")
 
     # ═══════════════════════════════════════════════════════════════════
     # Boot / power
@@ -176,11 +294,13 @@ class PandionVehicleSim:
             self._ibit_active = False
             self._active_params = dict(self._stored_params)
             self._sensors.reset()
+            self._bms.reset()
             self._gcs_link_lost = True
             self._last_gcs_hb = 0
             for s in self.servos.values():
                 s.reset()
             self.monitors = MonitorSystem(eval_window_s=self.monitors.eval_window)
+            self._register_monitor_conditions()
             # Force-set boot monitors (these represent hardware conditions
             # present at power-on that must be cleared by the operator)
             for mid in self.boot_monitors:
@@ -195,6 +315,7 @@ class PandionVehicleSim:
             self._booted = False
             self.flight_regime = FlightRegime.DISARMED
             self.act_state = ActuationState.OFF
+            self._bms.reset()
         _log(self.sysid, "Power OFF")
 
     def _boot_sequence(self):
@@ -226,11 +347,22 @@ class PandionVehicleSim:
             source_system=self.sysid, source_component=1)
         self._tx = TelemetryManager(self._conn, self.sysid)
         self._running = True
+        if self._recorder:
+            self._recorder.start()
         self.power_on()
 
         threading.Thread(target=self._telem_loop, daemon=True).start()
         threading.Thread(target=self._monitor_eval_loop, daemon=True).start()
         threading.Thread(target=self._sensor_loop, daemon=True).start()
+
+        # Start protocol fuzzer if configured
+        if hasattr(self, '_fuzz_modes') and self._fuzz_modes:
+            from sim.fuzzer import ProtocolFuzzer
+            self._fuzzer = ProtocolFuzzer(
+                self._conn, modes=self._fuzz_modes,
+                intensity=self._fuzz_intensity
+            )
+            self._fuzzer.start()
 
         # RX loop (blocking)
         try:
@@ -242,9 +374,18 @@ class PandionVehicleSim:
             pass
         finally:
             self._running = False
+            if self._fuzzer:
+                self._fuzzer.stop()
+            if self._recorder:
+                self._recorder.stop()
 
     def stop(self):
         self._running = False
+
+    @property
+    def clock(self) -> SimClock:
+        """Simulation clock (deterministic or real-time)."""
+        return self._clock
 
     def inject_relay_noise(self, amplitude=25.0):
         with self._lock:
@@ -293,12 +434,21 @@ class PandionVehicleSim:
                     self._tx.command_ack(400, 1)
                     return
                 self.flight_regime = FlightRegime.ARMED
-                self.act_state = ActuationState.OPERATE
-                self.ibit_substate = IBITSubstate.BEGIN
-                self.ibit_mon_status = 0
-                _log(self.sysid, "ARMED -> OPERATE" + (" (FORCED)" if force else ""))
-                self._tx.command_ack(400, 0)
-                self._tx.statustext("Vehicle ARMED")
+                if self.has_tau_elevons:
+                    self.act_state = ActuationState.POS_CHECK
+                    self.ibit_substate = IBITSubstate.BEGIN
+                    self.ibit_mon_status = 0
+                    _log(self.sysid, "ARMED -> POS_CHECK" + (" (FORCED)" if force else ""))
+                    self._tx.command_ack(400, 0)
+                    self._tx.statustext("Vehicle ARMED")
+                    threading.Thread(target=self._pos_check_sequence, daemon=True).start()
+                else:
+                    self.act_state = ActuationState.OPERATE
+                    self.ibit_substate = IBITSubstate.BEGIN
+                    self.ibit_mon_status = 0
+                    _log(self.sysid, "ARMED -> OPERATE" + (" (FORCED)" if force else ""))
+                    self._tx.command_ack(400, 0)
+                    self._tx.statustext("Vehicle ARMED")
             else:
                 if self._ibit_active:
                     _log(self.sysid, "DISARM REJECTED -- IBIT active")
@@ -309,6 +459,14 @@ class PandionVehicleSim:
                 _log(self.sysid, "DISARMED -> OFF")
                 self._tx.command_ack(400, 0)
                 self._tx.statustext("Vehicle DISARMED")
+
+    def _pos_check_sequence(self):
+        """TAU Mk2 elevon position verification delay."""
+        time.sleep(2.0)
+        with self._lock:
+            if self.act_state == ActuationState.POS_CHECK:
+                self.act_state = ActuationState.OPERATE
+                _log(self.sysid, "POS_CHECK -> OPERATE")
 
     def _handle_param_read(self, msg):
         name = _decode_param_id(msg.param_id)
@@ -330,14 +488,38 @@ class PandionVehicleSim:
         N = ActuationState.NAMES
 
         with self._lock:
+            # Fix #4: Firmware requires armed state for non-OFF mode requests
+            _armed = (self.flight_regime >= FlightRegime.ARMED)
+            if not _armed and req != ActuationState.OFF:
+                return  # Silently reject
+
+            # Fix #5: Nest-connected restricts to IBIT (and OFF) only
+            _use_nest_active = (
+                self._active_params.get('USE_NEST', 0) == 1
+                and self.flight_regime >= FlightRegime.ARMED
+            )
+            if _use_nest_active and req != ActuationState.IBIT and req != ActuationState.OFF:
+                return  # Silently reject
+
             cur = self.act_state
+
+            # ── Fix #1: IBIT interruption (firmware allows mode changes during IBIT) ──
+            if cur == ActuationState.IBIT and req != ActuationState.IBIT:
+                self._ibit_interrupted = True
+                self._ibit_active = False  # Signal the IBIT thread to stop
+                # Wait briefly for IBIT thread to notice
+                time.sleep(0.05)
+                self.act_state = req
+                self._playback_direct = (req == ActuationState.PLAYBACK)
+                self._mode_transition_blackout = time.time() + 0.1
+                _log(self.sysid, f"IBIT INTERRUPTED: {N.get(cur, '?')} -> {N.get(req, '?')}")
+                self._tx.statustext(f"Mode: {N.get(req, str(req))}")
+                return
+
+            # Use centralized transition table; OFF is always allowed
             valid = (
-                (req == ActuationState.PLAYBACK and cur == ActuationState.OPERATE) or
-                (req == ActuationState.IBIT and cur == ActuationState.PLAYBACK) or
-                (req == ActuationState.OPERATE and cur in (
-                    ActuationState.IBIT, ActuationState.PLAYBACK, ActuationState.MANUAL
-                )) or
-                req == ActuationState.OFF
+                req == ActuationState.OFF or
+                (cur, req) in ActuationState.VALID_TRANSITIONS
             )
 
             if valid:
@@ -350,6 +532,8 @@ class PandionVehicleSim:
 
                 time.sleep(self.mode_delay * self.scale)
                 self.act_state = req
+                # Track playback direct mode for servo bypass
+                self._playback_direct = (req == ActuationState.PLAYBACK)
                 # Brief telemetry blackout during transition (1-2 frames at 20Hz)
                 self._mode_transition_blackout = time.time() + 0.05
                 _log(self.sysid, f"Mode: {N.get(cur, '?')} -> {N.get(req, '?')}")
@@ -357,61 +541,137 @@ class PandionVehicleSim:
 
                 if req == ActuationState.IBIT:
                     self._ibit_active = True
+                    self._ibit_direct = False  # IBIT uses real servo dynamics for mistracking detection
                     threading.Thread(target=self._run_ibit, daemon=True).start()
             else:
                 _log(self.sysid, f"Mode REJECTED: {N.get(cur, '?')} -> {N.get(req, '?')}")
 
     def _handle_monitor_override(self, msg):
-        if msg.override_cmd == MONITOR_OVERRIDE_CLEAR_SPECIFIC:
-            self.monitors.clear(msg.monitor_id)
-        elif msg.override_cmd == MONITOR_OVERRIDE_CLEAR:
+        if msg.override_cmd == MONITOR_OVERRIDE_CANCEL:
+            # Cancel override, return to normal monitoring
             self.monitors.cancel_override(msg.monitor_id)
-        elif msg.override_cmd == MONITOR_OVERRIDE_SET:
+        elif msg.override_cmd == MONITOR_OVERRIDE_SUPPRESS:
+            # Override to healthy (suppress fault) — clear from SET, mark overridden
+            self.monitors.clear(msg.monitor_id)
+        elif msg.override_cmd == MONITOR_OVERRIDE_FORCE_FAULT:
+            # Override to faulted — add to SET
             self.monitors.force_set(msg.monitor_id)
 
     def _handle_playback_command(self, msg):
+        """Apply playback commands directly (no slew limiting).
+
+        Firmware applies playback commands directly to servo outputs,
+        bypassing the rate-limited servo dynamics.  We set both .cmd
+        and .fb so the servo step() sees zero error and does not slew.
+        """
         with self._lock:
-            self.servos['left_elevon'].cmd = msg.left_elevon_ted_command_cdeg
-            self.servos['right_elevon'].cmd = msg.right_elevon_ted_command_cdeg
-            self.servos['dorsal_rudder'].cmd = msg.upper_rudder_tel_command_cdeg
-            self.servos['ventral_rudder'].cmd = msg.lower_rudder_tel_command_cdeg
-            self.servos['left_tvc_upper'].cmd = msg.left_tvc_upper_command_cdeg
-            self.servos['left_tvc_lower'].cmd = msg.left_tvc_lower_command_cdeg
-            self.servos['right_tvc_upper'].cmd = msg.right_tvc_upper_command_cdeg
-            self.servos['right_tvc_lower'].cmd = msg.right_tvc_lower_command_cdeg
+            pairs = [
+                ('left_elevon',     msg.left_elevon_ted_command_cdeg),
+                ('right_elevon',    msg.right_elevon_ted_command_cdeg),
+                ('dorsal_rudder',   msg.upper_rudder_tel_command_cdeg),
+                ('ventral_rudder',  msg.lower_rudder_tel_command_cdeg),
+                ('left_tvc_upper',  msg.left_tvc_upper_command_cdeg),
+                ('left_tvc_lower',  msg.left_tvc_lower_command_cdeg),
+                ('right_tvc_upper', msg.right_tvc_upper_command_cdeg),
+                ('right_tvc_lower', msg.right_tvc_lower_command_cdeg),
+            ]
+            for name, val in pairs:
+                self.servos[name].cmd = val
+                self.servos[name].fb = val
 
     # ═══════════════════════════════════════════════════════════════════
     # IBIT
     # ═══════════════════════════════════════════════════════════════════
 
+    # Surface-to-bitmask mapping (from MistrackingFlags)
+    _SURFACE_FLAGS = {
+        'left_elevon': 64, 'right_elevon': 128,
+        'dorsal_rudder': 1, 'ventral_rudder': 2,
+        'left_tvc_upper': 4, 'left_tvc_lower': 8,
+        'right_tvc_upper': 16, 'right_tvc_lower': 32,
+    }
+    _MISTRACK_THRESHOLD = 500  # cdeg
+    _TVC_CONSEC_LIMIT = 5      # cycles
+
+    def _check_mistracking(self):
+        """Firmware-accurate mistracking detection (perform_monitoring()).
+
+        Called every tick during IBIT phases ELEVON, RUDDERS, TVC.
+        - Aero surfaces (elevon + rudder): instantaneous fail if |cmd - fb| > 500 cdeg
+        - TVC servos: consecutive counter -- 5 consecutive ticks above threshold
+        """
+        for name, servo in self.servos.items():
+            error = abs(servo.command - servo.fb)
+            flag = self._SURFACE_FLAGS.get(name, 0)
+
+            if 'tvc' in name:
+                # TVC: consecutive counter
+                if error > self._MISTRACK_THRESHOLD:
+                    self._tvc_consec_counters[name] += 1
+                    if self._tvc_consec_counters[name] >= self._TVC_CONSEC_LIMIT:
+                        self._mistrack_flags |= flag
+                else:
+                    self._tvc_consec_counters[name] = 0
+            else:
+                # Aero: instantaneous
+                if error > self._MISTRACK_THRESHOLD:
+                    self._mistrack_flags |= flag
+
     def _run_ibit(self):
-        for cycle in range(self.ibit_cycles):
-            if cycle > 0:
-                _log(self.sysid, f"IBIT cycle {cycle + 1}/{self.ibit_cycles}")
-            if not self._run_ibit_cycle():
-                break
+        # Reset mistracking state at the start of IBIT
+        self._mistrack_flags = 0
+        for k in self._tvc_consec_counters:
+            self._tvc_consec_counters[k] = 0
+        self._ibit_interrupted = False
+
+        # Set fast servo rate limit for IBIT (physical servo speed, not manual limit)
+        # Real servos move at ~40000 cdeg/s; the 1500 cdeg/s manual limit doesn't apply during IBIT
+        IBIT_SERVO_RATE = 40000.0
+        saved_rates = {}
+        for name, servo in self.servos.items():
+            saved_rates[name] = servo._rate_limit
+            servo._rate_limit = IBIT_SERVO_RATE
+
+        try:
+            self._ibit_owns_servos = True
+            for cycle in range(self.ibit_cycles):
+                if cycle > 0:
+                    _log(self.sysid, f"IBIT cycle {cycle + 1}/{self.ibit_cycles}")
+                if not self._run_ibit_cycle():
+                    break
+        finally:
+            self._ibit_owns_servos = False
+            # Restore original rate limits
+            for name, servo in self.servos.items():
+                servo._rate_limit = saved_rates.get(name, servo._rate_limit)
 
         with self._lock:
-            if not self.ibit_pass:
-                self.ibit_mon_status = self.mist_flags
-            else:
-                computed = 0
-                for flag, sname in MistrackingFlags.FLAG_TO_SURFACE.items():
-                    if self.servos[sname].is_mistracking:
-                        computed |= flag
-                self.ibit_mon_status = computed
+            # Use REAL computed mistracking OR the forced flags (for scenario testing)
+            self.ibit_mon_status = self._mistrack_flags | self.mist_flags
 
             for s in self.servos.values():
                 s.unfreeze()
                 s.cmd = 0
-            self.act_state = ActuationState.OPERATE
+
+            if self._ibit_interrupted:
+                # Transition to the interrupted-requested mode is already
+                # handled in _handle_mode_request; just clean up.
+                pass
+            else:
+                self.act_state = ActuationState.OPERATE
+
             self.ibit_substate = IBITSubstate.DONE
             self._ibit_active = False
+            self._ibit_direct = False
             self._last_ibit_end = time.time()
 
         result = "PASS" if self.ibit_mon_status == 0 else f"FAIL(0x{self.ibit_mon_status:02X})"
-        _log(self.sysid, f"IBIT -> OPERATE  [{result}]")
-        self._tx.statustext(f"IBIT {result}")
+        if self._ibit_interrupted:
+            _log(self.sysid, f"IBIT INTERRUPTED  [{result}]")
+            self._tx.statustext(f"IBIT INTERRUPTED {result}")
+        else:
+            _log(self.sysid, f"IBIT -> OPERATE  [{result}]")
+            self._tx.statustext(f"IBIT {result}")
 
     def _run_ibit_cycle(self):
         with self._lock:
@@ -426,17 +686,22 @@ class PandionVehicleSim:
 
         for phase in IBITSubstate.SEQUENCE:
             with self._lock:
-                if self.act_state != ActuationState.IBIT:
+                if self.act_state != ActuationState.IBIT or not self._ibit_active:
                     return False
                 self.ibit_substate = phase
                 if self.monitors.has_safety_critical():
                     _log(self.sysid, "IBIT ABORT -- safety-critical monitor")
                     return False
 
+            # DONE: firmware transitions immediately from TVC -> OPERATE.
+            # No COMPLETE state delay.  Just break out of the phase loop.
+            if phase == IBITSubstate.DONE:
+                break
+
             _log(self.sysid, f"IBIT: {IBITSubstate.NAMES[phase]}")
             self._tx.statustext(f"IBIT: {IBITSubstate.NAMES[phase]}")
 
-            dur = IBIT_PHASE_DURATIONS[phase] * self.scale
+            dur = IBIT_PHASE_DURATIONS.get(phase, 0) * self.scale
 
             if phase == IBITSubstate.BEGIN:
                 # Immediate: zero commands, enable servos, transition
@@ -453,14 +718,14 @@ class PandionVehicleSim:
                 self._run_ibit_elevon(dur)
 
             elif phase == IBITSubstate.RUDDERS:
-                self._run_ibit_rudders(dur)
+                if not self.x_tail:
+                    self._run_ibit_rudders(dur)
+                else:
+                    # X-tail: skip rudders, go directly to TVC
+                    self.ibit_substate = IBITSubstate.TVC
 
             elif phase == IBITSubstate.TVC:
                 self._run_ibit_tvc(dur)
-
-            elif phase == IBITSubstate.DONE:
-                # Immediate transition to OPERATE
-                continue
 
         if self.gnss_degrade_ibit:
             with self._lock:
@@ -493,15 +758,26 @@ class PandionVehicleSim:
     def _run_ibit_zero_settle(self, dur):
         """IBIT_WAIT_FOR_SETTLE: zero all commands for dur seconds."""
         dt = 0.01
-        elapsed = 0.0
-        while elapsed < dur:
+        start = time.time()
+        while (time.time() - start) < dur:
+            loop_start = time.time()
             with self._lock:
-                if self.act_state != ActuationState.IBIT:
+                if self.act_state != ActuationState.IBIT or not self._ibit_active:
                     return
+                # 1. Set commands
                 for s in self.servos.values():
                     s.cmd = 0.0
-            time.sleep(dt)
-            elapsed += dt
+                # 2. Step servo dynamics
+                now = time.time()
+                elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                for sname, servo in self.servos.items():
+                    coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                    servo.step(dt, now, coupling, direct=False)
+                # 3. Check mistracking (sees current tick's feedback)
+                self._check_mistracking()
+            elapsed_tick = time.time() - loop_start
+            sleep_time = max(0, dt - elapsed_tick)
+            time.sleep(sleep_time)
 
     def _run_ibit_elevon(self, dur):
         """
@@ -514,7 +790,6 @@ class PandionVehicleSim:
         [-1,+1] multiplier directly to elevon commands.
         """
         dt = 0.01
-        elapsed = 0.0
         nest = self._active_params.get('USE_NEST', 0) == 0
         coeff = IBIT_NEST_COEFFS['elev'] if nest else 1.0
         max_cdeg = SERVO_HARD_LIMITS['elevon']
@@ -526,17 +801,28 @@ class PandionVehicleSim:
                     if (self.mist_flags & flag) and 'elevon' in sname:
                         self.servos[sname].freeze()
 
-        while elapsed < dur:
+        start = time.time()
+        while (time.time() - start) < dur:
+            loop_start = time.time()
             with self._lock:
-                if self.act_state != ActuationState.IBIT:
+                if self.act_state != ActuationState.IBIT or not self._ibit_active:
                     return
-                pct = elapsed / dur
+                pct = (time.time() - start) / dur
                 mult = self._ibit_linear_function(pct) * coeff
-                # Elevons move in opposite directions for pitch
+                # 1. Set commands -- elevons move in opposite directions for pitch
                 self.servos['left_elevon'].cmd = mult * max_cdeg
                 self.servos['right_elevon'].cmd = -mult * max_cdeg
-            time.sleep(dt)
-            elapsed += dt
+                # 2. Step ALL servo dynamics
+                now = time.time()
+                elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                for sname, servo in self.servos.items():
+                    coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                    servo.step(dt, now, coupling, direct=False)
+                # 3. Check mistracking (sees current tick's feedback)
+                self._check_mistracking()
+            elapsed_tick = time.time() - loop_start
+            sleep_time = max(0, dt - elapsed_tick)
+            time.sleep(sleep_time)
 
     def _run_ibit_rudders(self, dur):
         """
@@ -546,7 +832,6 @@ class PandionVehicleSim:
         Nest coefficient: 0.05 (very small when connected to nest).
         """
         dt = 0.01
-        elapsed = 0.0
         nest = self._active_params.get('USE_NEST', 0) == 0
         coeff = IBIT_NEST_COEFFS['rudd'] if nest else 1.0
         max_cdeg = SERVO_HARD_LIMITS['rudder']
@@ -557,30 +842,46 @@ class PandionVehicleSim:
                     if (self.mist_flags & flag) and 'rudder' in sname:
                         self.servos[sname].freeze()
 
-        while elapsed < dur:
+        start = time.time()
+        while (time.time() - start) < dur:
+            loop_start = time.time()
             with self._lock:
-                if self.act_state != ActuationState.IBIT:
+                if self.act_state != ActuationState.IBIT or not self._ibit_active:
                     return
-                pct = elapsed / dur
+                pct = (time.time() - start) / dur
                 mult = self._ibit_linear_function(pct) * coeff
+                # 1. Set commands
                 self.servos['dorsal_rudder'].cmd = mult * max_cdeg
                 self.servos['ventral_rudder'].cmd = -mult * max_cdeg
-            time.sleep(dt)
-            elapsed += dt
+                # 2. Step ALL servo dynamics
+                now = time.time()
+                elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                for sname, servo in self.servos.items():
+                    coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                    servo.step(dt, now, coupling, direct=False)
+                # 3. Check mistracking (sees current tick's feedback)
+                self._check_mistracking()
+            elapsed_tick = time.time() - loop_start
+            sleep_time = max(0, dt - elapsed_tick)
+            time.sleep(sleep_time)
 
     def _run_ibit_tvc(self, dur):
         """
         IBIT_TVC phase from actuation.c:
-        Circular/square pattern using cos/sin with radial scaling.
+        Radial sweep using cos/sin with amplitude envelope.
 
         From firmware:
-          0-25%:   radial lerp 0->1
-          25-75%:  square pattern (1/cos or 1/sin at different angle ranges)
-          75-100%: radial lerp 1->0
+          angle sweeps 0 -> 2*pi over the full phase duration
+          Radial amplitude:
+            0-25%:   ramp 0 -> 1
+            25-75%:  full amplitude 1.0
+            75-100%: ramp 1 -> 0
+          Square-wave clipping: radial = min(1/|cos|, 1/|sin|) clamped to 1.0
+          Upper TVC commands = radial * cos(angle) * max_cdeg
+          Lower TVC commands = radial * sin(angle) * max_cdeg
         Nest coefficient: 0.60.
         """
         dt = 0.01
-        elapsed = 0.0
         nest = self._active_params.get('USE_NEST', 0) == 0
         coeff = IBIT_NEST_COEFFS['tvc'] if nest else 1.0
         max_cdeg = SERVO_HARD_LIMITS['tvc']
@@ -591,45 +892,55 @@ class PandionVehicleSim:
                     if (self.mist_flags & flag) and 'tvc' in sname:
                         self.servos[sname].freeze()
 
-        while elapsed < dur:
+        start = time.time()
+        while (time.time() - start) < dur:
+            loop_start = time.time()
             with self._lock:
-                if self.act_state != ActuationState.IBIT:
+                if self.act_state != ActuationState.IBIT or not self._ibit_active:
                     return
-                pct = elapsed / dur
-                angle = math.pi * 4 * pct
+                pct = (time.time() - start) / dur
+                angle = 2.0 * math.pi * pct
 
-                # Radial scaling (from firmware)
-                if pct <= 0.25:
-                    radial = pct * 4.0
-                elif pct < 0.3125:
-                    radial = -1.0 / math.cos(angle) if math.cos(angle) != 0 else 1.0
-                elif pct < 0.4375:
-                    radial = -1.0 / math.sin(angle) if math.sin(angle) != 0 else 1.0
-                elif pct < 0.5625:
-                    radial = 1.0 / math.cos(angle) if math.cos(angle) != 0 else 1.0
-                elif pct < 0.6875:
-                    radial = 1.0 / math.sin(angle) if math.sin(angle) != 0 else 1.0
+                # Radial amplitude envelope
+                if pct < 0.25:
+                    radial = pct / 0.25         # ramp 0 -> 1
                 elif pct < 0.75:
-                    radial = -1.0 / math.cos(angle) if math.cos(angle) != 0 else 1.0
+                    radial = 1.0                # full amplitude
                 else:
-                    radial = (1.0 - pct) * 4.0
+                    radial = (1.0 - pct) / 0.25  # ramp 1 -> 0
 
-                radial *= coeff
-                # Clamp -- ControlAllocation limits the output
+                # Square-wave clipping from firmware
+                cos_a = math.cos(angle)
+                sin_a = math.sin(angle)
+                sq_cos = (1.0 / abs(cos_a)) if abs(cos_a) > 1e-6 else 1e6
+                sq_sin = (1.0 / abs(sin_a)) if abs(sin_a) > 1e-6 else 1e6
+                sq_clip = min(sq_cos, sq_sin, 1.0)
+                radial *= sq_clip
+
                 radial = max(-1.0, min(1.0, radial))
+                radial *= coeff
 
-                roll_cmd = radial * math.cos(angle) * max_cdeg * 0.3
-                pitch_cmd = radial * math.sin(angle) * max_cdeg * 0.3
+                upper_cmd = radial * cos_a * max_cdeg
+                lower_cmd = radial * sin_a * max_cdeg
 
-                # TVC mapping: roll/pitch -> individual servos
-                # Approximation of ControlAllocation output
-                self.servos['left_tvc_upper'].cmd = (pitch_cmd + roll_cmd) * 0.5
-                self.servos['left_tvc_lower'].cmd = (pitch_cmd - roll_cmd) * 0.5
-                self.servos['right_tvc_upper'].cmd = (pitch_cmd - roll_cmd) * 0.5
-                self.servos['right_tvc_lower'].cmd = (pitch_cmd + roll_cmd) * 0.5
+                self.servos['left_tvc_upper'].cmd = upper_cmd
+                self.servos['left_tvc_lower'].cmd = lower_cmd
+                self.servos['right_tvc_upper'].cmd = upper_cmd
+                self.servos['right_tvc_lower'].cmd = lower_cmd
 
-            time.sleep(dt)
-            elapsed += dt
+                # 2. Step ALL servo dynamics
+                now = time.time()
+                elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                for sname, servo in self.servos.items():
+                    coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                    servo.step(dt, now, coupling, direct=False)
+
+                # 3. Check mistracking (sees current tick's feedback)
+                self._check_mistracking()
+
+            elapsed_tick = time.time() - loop_start
+            sleep_time = max(0, dt - elapsed_tick)
+            time.sleep(sleep_time)
 
     # ═══════════════════════════════════════════════════════════════════
     # Background loops
@@ -678,11 +989,14 @@ class PandionVehicleSim:
 
                 if act in (ActuationState.OPERATE, ActuationState.IBIT,
                            ActuationState.PLAYBACK, ActuationState.MANUAL):
-                    # Servos are powered -- step dynamics with coupling
-                    elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
-                    for sname, servo in self.servos.items():
-                        coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
-                        servo.step(dt, now, coupling)
+                    if not self._ibit_owns_servos:
+                        # Normal servo stepping (telem loop owns servos)
+                        direct = self._playback_direct or self._ibit_direct
+                        elev_load = abs(self.servos['left_elevon'].fb) + abs(self.servos['right_elevon'].fb)
+                        for sname, servo in self.servos.items():
+                            coupling = elev_load * 0.01 if 'rudder' in sname else 0.0
+                            servo.step(dt, now, coupling, direct=direct)
+                    # else: IBIT thread is stepping servos -- skip here to avoid double-stepping
                 else:
                     # OFF mode: servos unpowered, feedback drifts to trim
                     for servo in self.servos.values():

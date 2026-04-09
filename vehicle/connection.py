@@ -11,7 +11,7 @@ import ipaddress
 from typing import Any, Dict, List, Optional
 
 from pymavlink import mavutil
-from .constants import UUTStatus, USE_NEST_ENABLED, get_mode_name, get_flight_regime_name
+from .constants import UUTStatus, USE_NEST_ENABLED, DEFAULT_VEHICLE_PORT, get_mode_name, get_flight_regime_name
 
 class UUT:
     """
@@ -22,14 +22,14 @@ class UUT:
     
     MAX_RELAY_LINES = 32  # System maximum relay lines
     
-    def __init__(self, serial_number: str = "", ip_address: str = "", port: int = 9985, relay_line: int = 0) -> None:
+    def __init__(self, serial_number: str = "", ip_address: str = "", port: int = DEFAULT_VEHICLE_PORT, relay_line: int = 0) -> None:
         """
         Initialize UUT with validation.
         
         Args:
             serial_number: Unique identifier for this UUT
             ip_address: Network address of vehicle (must be valid IP)
-            port: MAVLink UDP port (1-65535, default: 9985)
+            port: MAVLink UDP port (1-65535, default: 13002)
             relay_line: Which DAQ line controls power (0-31)
         
         Raises:
@@ -91,7 +91,7 @@ class UUT:
         return UUT(
             serial_number=data.get('serial_number', ''),
             ip_address=data.get('ip_address', ''),
-            port=data.get('port', 9985),
+            port=data.get('port', DEFAULT_VEHICLE_PORT),
             relay_line=data.get('relay_line', 0)
         )
 
@@ -216,7 +216,7 @@ def connect_to_vehicle(ip_address: str, port: int, timeout: float = 10.0) -> Any
     
     Args:
         ip_address: Vehicle IP address (must be valid IPv4/IPv6)
-        port: MAVLink port (1-65535, typically 9985)
+        port: MAVLink port (1-65535, typically 13002)
         timeout: Connection timeout in seconds (must be positive)
     
     Returns:
