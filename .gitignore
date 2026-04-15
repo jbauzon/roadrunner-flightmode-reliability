@@ -43,3 +43,6 @@ vehicle/dialects/*_pb2.py
 
 # Sim config (local overrides)
 sim_config.yaml
+
+# OpenCode local state
+.opencode/

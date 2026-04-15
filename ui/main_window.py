@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QFileDialog, QApplication, QScrollArea, QShortcut,
     QStackedWidget, QPushButton,
 )
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal as _pyqtSignal
 from PyQt5.QtGui import QKeySequence
 
 from hardware.daq import SimpleDAQController
@@ -41,8 +41,12 @@ from .command_server import CommandServer
 class MultiUUTTestGUI(QMainWindow):
     """Roadrunner Flight Test operator console — multi-UUT IBIT and Playback."""
 
+    # Emitted from background thread when SITL sims are ready
+    _sitl_ready_signal = _pyqtSignal(object)  # payload: MockDAQController instance
+
     def __init__(self):
         super().__init__()
+        self._sitl_ready_signal.connect(self._on_sitl_ready)
 
         # ── Directories ───────────────────────────────────────────────────
         # script_dir is ui/ — project root is one level up
@@ -545,24 +549,8 @@ class MultiUUTTestGUI(QMainWindow):
 
         conn_mod.connect_to_vehicle = _sitl_connect
 
-        def _on_ready(mock_daq):
-            """Called on Qt main thread after sims have booted."""
-            self.daq = mock_daq
-
-            # Pre-load UUTs
-            self.uuts = []
-            for cfg in sim_configs:
-                self.uuts.append(
-                    UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
-                )
-            self.uut_table_widget.update_table(self.uuts)
-            self.debug_console.populate_uuts(self.uuts)
-
-            self.daq_widget.set_sitl_active()
-            self.log("  MockDAQ initialized, UUTs loaded")
-            self.log("  SITL ready — click Connect in Debug Mode or Start to test")
-            self.log("  (RR-SIM-001: PASS  ·  RR-SIM-002: FAIL — elevon mistracking)")
-            self.log("="*56)
+        # Store sim_configs so _on_sitl_ready can access them
+        self._sitl_configs = sim_configs
 
         def _background():
             """Boot sims and build MockDAQ — runs entirely off the main thread."""
@@ -580,10 +568,6 @@ class MultiUUTTestGUI(QMainWindow):
                 threading.Thread(target=sim.start, daemon=True,
                                  name=f"sitl-{cfg['port']}").start()
                 sims.append(sim)
-                QTimer.singleShot(0, lambda s=cfg['serial'], p=cfg['port'],
-                                  ok=cfg['ibit_pass']:
-                    self.log(f"  Started {s} on port {p} "
-                             f"({'PASS' if ok else 'FAIL'})"))
 
             self._sitl_sims = sims
 
@@ -595,11 +579,36 @@ class MultiUUTTestGUI(QMainWindow):
             for i, cfg in enumerate(sim_configs):
                 mock_daq.register_vehicle(cfg['relay'], sims[i])
 
-            # Hand results back to the Qt main thread
-            QTimer.singleShot(0, lambda: _on_ready(mock_daq))
+            # Hand results back to Qt main thread via signal (safe cross-thread)
+            self._sitl_ready_signal.emit(mock_daq)
 
         threading.Thread(target=_background, daemon=True,
                          name='sitl-launcher').start()
+
+    def _on_sitl_ready(self, mock_daq):
+        """Slot called on the Qt main thread when SITL sims have finished booting."""
+        from vehicle.connection import UUT
+        self.daq = mock_daq
+
+        # Log each started sim
+        for cfg in self._sitl_configs:
+            self.log(f"  Started {cfg['serial']} on port {cfg['port']} "
+                     f"({'PASS' if cfg['ibit_pass'] else 'FAIL'})")
+
+        # Pre-load UUTs
+        self.uuts = []
+        for cfg in self._sitl_configs:
+            self.uuts.append(
+                UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
+            )
+        self.uut_table_widget.update_table(self.uuts)
+        self.debug_console.populate_uuts(self.uuts)
+
+        self.daq_widget.set_sitl_active()
+        self.log("  MockDAQ initialized, UUTs loaded")
+        self.log("  SITL ready — click Connect in Debug Mode or Start to test")
+        self.log("  (RR-SIM-001: PASS  ·  RR-SIM-002: FAIL — elevon mistracking)")
+        self.log("="*56)
 
     def check_daq_health(self):
         if not self.daq or not self.daq.do_task:
