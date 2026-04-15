@@ -25,6 +25,7 @@ from vehicle.connection import UUT
 from vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
 from version import __version__
 from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog, ErrorLogger
+from testing.debug_connection import DebugConnection
 from . import theme as T
 from .widgets import (
     HeaderBanner,
@@ -95,6 +96,7 @@ class MultiUUTTestGUI(QMainWindow):
         }
 
         self._last_mode            = 0      # tracks last mode int for telemetry panel
+        self._debug_conn: Optional[DebugConnection] = None
 
         # ── Timers ────────────────────────────────────────────────────────
         self.daq_health_timer = QTimer()
@@ -287,6 +289,8 @@ class MultiUUTTestGUI(QMainWindow):
         self.debug_console.command_sent.connect(
             lambda msg: self.log(f"[DEBUG] {msg}")
         )
+        self.debug_console.connect_requested.connect(self._debug_connect)
+        self.debug_console.disconnect_requested.connect(self._debug_disconnect)
         debug_cmd_scroll.setWidget(self.debug_console)
 
         # Live telemetry (right half)
@@ -297,6 +301,9 @@ class MultiUUTTestGUI(QMainWindow):
         debug_layout.addWidget(debug_cmd_scroll, 0)   # fixed width
         debug_layout.addWidget(self.telemetry_panel, 1)  # stretches
         self._content_stack.addWidget(debug_page)  # index 1
+
+        # Populate debug console with any already-configured UUTs (initially empty)
+        self.debug_console.populate_uuts(self.uuts)
 
         # ── Bottom bar ─────────────────────────────────────────────────
         bottom_bar = QWidget()
@@ -363,6 +370,81 @@ class MultiUUTTestGUI(QMainWindow):
         self._switch_mode(1)
         self._tab_debug.setChecked(True)
         self._tab_test.setChecked(False)
+
+    def _debug_connect(self, serial: str, ip: str, port: int) -> None:
+        """Connect to a UUT from Debug Mode without starting a test."""
+        if self._debug_conn:
+            self._debug_disconnect()
+
+        self._debug_conn = DebugConnection(ip, port, serial)
+        self._debug_conn.on_log = self.log
+        self._debug_conn.on_error = lambda msg: self.show_alert(msg, severity=AlertSeverity.ERROR)
+
+        # Wire incoming messages to telemetry panel
+        def _on_message(msg):
+            msg_type = msg.get_type()
+            try:
+                from vehicle.constants import MsgType
+                if msg_type == MsgType.ACTUATION_SYS_STATUS:
+                    from testing.helpers import _build_actuator_feedback_dict
+                    from vehicle.constants import safe_int_field
+                    self.telemetry_panel.update_actuator_feedback(
+                        _build_actuator_feedback_dict(msg)
+                    )
+                    mode = safe_int_field(msg, 'actuation_state')
+                    self.telemetry_panel.update_vehicle_status(mode, 0, False)
+                elif msg_type == MsgType.PANDION_STATUS:
+                    from vehicle.constants import safe_int_field, is_armed
+                    regime = safe_int_field(msg, 'flight_regime', 255)
+                    armed = is_armed(regime)
+                    mode = getattr(self, '_last_mode', 0)
+                    self.telemetry_panel.update_vehicle_status(mode, regime, armed)
+                elif msg_type == MsgType.ENGINE_STATUS:
+                    self.telemetry_panel.update_engine(
+                        getattr(msg, 'eng_1_speed', 0) or 0,
+                        getattr(msg, 'eng_1_egt_temp_degC', 0) or 0,
+                        getattr(msg, 'eng_1_fuel_pump_curr_mA', 0) or 0,
+                    )
+                # Add to message stream
+                key_fields = []
+                for field in ('actuation_state', 'flight_regime', 'eng_1_speed'):
+                    val = getattr(msg, field, None)
+                    if val is not None:
+                        key_fields.append(f"{field}={val}")
+                summary = ', '.join(key_fields[:2]) if key_fields else ''
+                self.telemetry_panel.add_message(msg_type, summary)
+            except Exception:
+                pass
+
+        self._debug_conn.on_message = _on_message
+
+        def _on_connected(serial):
+            # Give debug console the connection
+            self.debug_console.set_connection(
+                self._debug_conn.master,
+                self._debug_conn.master_lock,
+                serial,
+            )
+            self.telemetry_panel.reset()
+
+        self._debug_conn.on_connected = _on_connected
+        self._debug_conn.on_disconnected = lambda s: self.debug_console.clear_connection()
+
+        # Connect in background thread so UI doesn't freeze
+        import threading as _threading
+        _threading.Thread(
+            target=self._debug_conn.connect, daemon=True, name='debug-connect'
+        ).start()
+
+    def _debug_disconnect(self) -> None:
+        """Disconnect from the current debug connection."""
+        if self._debug_conn:
+            import threading as _threading
+            _threading.Thread(
+                target=self._debug_conn.disconnect, daemon=True
+            ).start()
+            self._debug_conn = None
+        self.telemetry_panel.reset()
 
     # ═══════════════════════════════════════════════════════════════════════
     # DAQ management
@@ -494,6 +576,7 @@ class MultiUUTTestGUI(QMainWindow):
             uut = UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
             self.uuts.append(uut)
         self.uut_table_widget.update_table(self.uuts)
+        self.debug_console.populate_uuts(self.uuts)
         self.log(f"  Loaded {len(self.uuts)} simulated UUTs")
 
         # Update UI state
@@ -569,6 +652,7 @@ class MultiUUTTestGUI(QMainWindow):
                 return
             self.uuts.append(uut)
             self.uut_table_widget.update_table(self.uuts)
+            self.debug_console.populate_uuts(self.uuts)
             self.log(f"✓ Added UUT {uut.serial_number}  ({uut.ip_address}:{uut.port}  relay D{uut.relay_line})")
 
     def edit_uut(self):
@@ -603,6 +687,7 @@ class MultiUUTTestGUI(QMainWindow):
                 return
             self.uuts[row] = updated
             self.uut_table_widget.update_table(self.uuts)
+            self.debug_console.populate_uuts(self.uuts)
             self.log(f"✓ Updated UUT {updated.serial_number}")
 
     def remove_uut(self):
@@ -622,6 +707,7 @@ class MultiUUTTestGUI(QMainWindow):
         ) == QMessageBox.Yes:
             self.uuts.pop(row)
             self.uut_table_widget.update_table(self.uuts)
+            self.debug_console.populate_uuts(self.uuts)
             self.log(f"Removed UUT {uut.serial_number}")
 
     def save_uut_config(self):

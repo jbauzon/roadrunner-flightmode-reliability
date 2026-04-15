@@ -34,9 +34,13 @@ class DebugConsoleWidget(QWidget):
     
     Signals:
         command_sent(str): Emitted with a description whenever a command is sent
+        connect_requested(str, str, int): Emitted with (serial, ip, port) to connect to a UUT
+        disconnect_requested(): Emitted to disconnect the current debug connection
     """
     
     command_sent = pyqtSignal(str)
+    connect_requested = pyqtSignal(str, str, int)   # (serial, ip, port)
+    disconnect_requested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,6 +57,8 @@ class DebugConsoleWidget(QWidget):
         self._master_lock = master_lock
         self._uut_serial = uut_serial
         self._update_enabled()
+        self._connect_btn.setEnabled(False)
+        self._disconnect_btn.setEnabled(True)
         self._log(f"Connected to {uut_serial}", 'info')
     
     def clear_connection(self) -> None:
@@ -61,11 +67,38 @@ class DebugConsoleWidget(QWidget):
         self._master_lock = None
         self._uut_serial = None
         self._update_enabled()
-        self._log("Connection cleared", 'warn')
+        self._connect_btn.setEnabled(self._uut_combo.count() > 0)
+        self._disconnect_btn.setEnabled(False)
+        self._log("Disconnected", 'warn')
 
     def set_test_active(self, active: bool) -> None:
         """Show/hide the test-active warning banner."""
         self._active_warning.setVisible(active)
+    
+    def populate_uuts(self, uuts: list) -> None:
+        """Populate the UUT dropdown from the configured UUT list."""
+        self._uut_combo.clear()
+        for uut in uuts:
+            self._uut_combo.addItem(
+                f"{uut.serial_number}  ({uut.ip_address}:{uut.port})",
+                userData=(uut.serial_number, uut.ip_address, uut.port)
+            )
+        # Only enable Connect if there are UUTs and we're not already connected
+        self._connect_btn.setEnabled(len(uuts) > 0 and not self._disconnect_btn.isEnabled())
+
+    def _on_connect_clicked(self) -> None:
+        """Emit connect_requested for the selected UUT."""
+        idx = self._uut_combo.currentIndex()
+        if idx < 0:
+            return
+        serial, ip, port = self._uut_combo.itemData(idx)
+        self._log(f"Connecting to {serial} ({ip}:{port})...", 'info')
+        self.connect_requested.emit(serial, ip, port)
+
+    def _on_disconnect_clicked(self) -> None:
+        """Emit disconnect_requested."""
+        self._log("Disconnecting...", 'warn')
+        self.disconnect_requested.emit()
     
     def _update_enabled(self) -> None:
         """Enable/disable command buttons based on connection state."""
@@ -75,7 +108,7 @@ class DebugConsoleWidget(QWidget):
             w.setEnabled(connected)
         status = (
             f"Connected: {self._uut_serial}" if connected
-            else "Not connected — start a test first"
+            else "Not connected"
         )
         self._status_label.setText(status)
         self._status_label.setStyleSheet(
@@ -113,6 +146,62 @@ class DebugConsoleWidget(QWidget):
         title_row.addStretch()
         title_row.addWidget(self._status_label)
         layout.addWidget(title_bar)
+
+        # ── Connection bar ────────────────────────────────────────────────
+        conn_bar = QWidget()
+        conn_bar.setStyleSheet(
+            f"background: {T.BG_ELEVATED}; border-bottom: 1px solid {T.BORDER};"
+        )
+        conn_layout = QHBoxLayout(conn_bar)
+        conn_layout.setContentsMargins(12, 6, 12, 6)
+        conn_layout.setSpacing(8)
+
+        conn_layout.addWidget(_label("UUT:", T.TEXT_SECONDARY))
+
+        self._uut_combo = QComboBox()
+        self._uut_combo.setMinimumWidth(140)
+        self._uut_combo.setToolTip("Select a configured UUT to connect to")
+        self._uut_combo.setStyleSheet(
+            f"QComboBox {{ background: {T.BG_BASE}; color: {T.TEXT_PRIMARY}; "
+            f"border: 1px solid {T.BORDER}; border-radius: 4px; "
+            f"padding: 2px 8px; font-size: {T.FONT_SIZE_SM}; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background: {T.BG_BASE}; color: {T.TEXT_PRIMARY}; }}"
+        )
+        conn_layout.addWidget(self._uut_combo)
+
+        self._connect_btn = QPushButton("Connect")
+        self._connect_btn.setFixedHeight(28)
+        self._connect_btn.setFixedWidth(90)
+        self._connect_btn.setToolTip("Connect to selected UUT without starting a test")
+        self._connect_btn.setStyleSheet(
+            f"QPushButton {{ background: {T.GREEN}; color: {T.BG_BASE}; "
+            f"border: none; border-radius: 4px; "
+            f"font-size: {T.FONT_SIZE_SM}; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: #3d9c4e; }}"
+            f"QPushButton:disabled {{ background: {T.BG_ELEVATED}; color: {T.TEXT_DISABLED}; }}"
+        )
+        self._connect_btn.setEnabled(False)
+        self._connect_btn.clicked.connect(self._on_connect_clicked)
+        conn_layout.addWidget(self._connect_btn)
+
+        self._disconnect_btn = QPushButton("Disconnect")
+        self._disconnect_btn.setFixedHeight(28)
+        self._disconnect_btn.setFixedWidth(90)
+        self._disconnect_btn.setEnabled(False)
+        self._disconnect_btn.setStyleSheet(
+            f"QPushButton {{ background: {T.BG_ELEVATED}; color: {T.TEXT_DISABLED}; "
+            f"border: 1px solid {T.BORDER}; border-radius: 4px; "
+            f"font-size: {T.FONT_SIZE_SM}; }}"
+            f"QPushButton:enabled {{ background: {T.BG_ELEVATED}; color: {T.RED}; "
+            f"border-color: {T.RED}; }}"
+            f"QPushButton:enabled:hover {{ background: {T.RED}; color: {T.BG_BASE}; }}"
+        )
+        self._disconnect_btn.clicked.connect(self._on_disconnect_clicked)
+        conn_layout.addWidget(self._disconnect_btn)
+        conn_layout.addStretch()
+
+        layout.addWidget(conn_bar)
 
         # Warning: test is running
         self._active_warning = QLabel(

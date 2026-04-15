@@ -1,0 +1,46 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "test": {
+      "description": "Run the full functional test suite",
+      "command": "python tests/functional_test.py"
+    },
+    "test-quick": {
+      "description": "Run quick functional tests (no SITL)",
+      "command": "python tests/functional_test.py --quick"
+    },
+    "test-sitl": {
+      "description": "Run SITL integration tests (68 tests)",
+      "command": "python tests/test_sitl.py --verbose"
+    },
+    "test-perms": {
+      "description": "Run combinatorial permutation tests",
+      "command": "python tests/test_permutations.py --quick"
+    },
+    "test-edge": {
+      "description": "Run edge case tests",
+      "command": "python tests/edge_case_tests.py"
+    },
+    "test-gui": {
+      "description": "Run GUI live test with SITL",
+      "command": "python tests/test_gui_live.py"
+    },
+    "sitl": {
+      "description": "Launch the SITL simulator",
+      "command": "python run_sim.py"
+    },
+    "app": {
+      "description": "Launch the GUI application",
+      "command": "python main.py"
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "rm -rf *": "deny",
+      "git push*": "ask",
+      "git push --force*": "deny"
+    },
+    "edit": "allow"
+  }
+}
