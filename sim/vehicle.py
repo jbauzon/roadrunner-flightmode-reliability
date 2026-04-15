@@ -442,6 +442,11 @@ class PandionVehicleSim:
                 if s and not force:
                     _log(self.sysid, f"ARM REJECTED -- {len(s)} monitors")
                     self._tx.command_ack(400, 1)
+                    # Send STATUSTEXT identifying blocking monitors for debug visibility
+                    self._tx.statustext(
+                        f"ARM rejected: {len(s)} monitor(s) SET — "
+                        f"IDs: {sorted(s)}"
+                    )
                     return
                 self.flight_regime = FlightRegime.ARMED
                 if self.has_tau_elevons:
@@ -501,7 +506,12 @@ class PandionVehicleSim:
             # Fix #4: Firmware requires armed state for non-OFF mode requests
             _armed = (self.flight_regime >= FlightRegime.ARMED)
             if not _armed and req != ActuationState.OFF:
-                return  # Silently reject
+                # Real firmware silently ignores, but send STATUSTEXT for debug visibility
+                target_name = ActuationState.NAMES.get(req, str(req))
+                self._tx.statustext(
+                    f"Mode request rejected: {target_name} requires vehicle to be ARMED"
+                )
+                return
 
             # Fix #5: Nest-connected restricts to IBIT (and OFF) only
             _use_nest_active = (
@@ -509,7 +519,11 @@ class PandionVehicleSim:
                 and self.flight_regime >= FlightRegime.ARMED
             )
             if _use_nest_active and req != ActuationState.IBIT and req != ActuationState.OFF:
-                return  # Silently reject
+                target_name = ActuationState.NAMES.get(req, str(req))
+                self._tx.statustext(
+                    f"Mode request rejected: {target_name} not allowed when nest is connected"
+                )
+                return
 
             cur = self.act_state
 
@@ -537,7 +551,11 @@ class PandionVehicleSim:
                 if req == ActuationState.IBIT:
                     since = time.time() - self._last_ibit_end
                     if self._last_ibit_end > 0 and since < self.ibit_cooldown * self.scale:
-                        _log(self.sysid, f"IBIT REJECTED -- cooldown")
+                        remaining = (self.ibit_cooldown * self.scale) - since
+                        _log(self.sysid, f"IBIT REJECTED -- cooldown ({remaining:.1f}s remaining)")
+                        self._tx.statustext(
+                            f"IBIT rejected: cooldown active ({remaining:.1f}s remaining)"
+                        )
                         return
 
                 time.sleep(self.mode_delay * self.scale)
@@ -554,7 +572,12 @@ class PandionVehicleSim:
                     self._ibit_direct = False  # IBIT uses real servo dynamics for mistracking detection
                     threading.Thread(target=self._run_ibit, daemon=True).start()
             else:
-                _log(self.sysid, f"Mode REJECTED: {N.get(cur, '?')} -> {N.get(req, '?')}")
+                from_name = N.get(cur, str(cur))
+                to_name = N.get(req, str(req))
+                _log(self.sysid, f"Mode REJECTED: {from_name} -> {to_name}")
+                self._tx.statustext(
+                    f"Mode request rejected: {from_name} -> {to_name} is not a valid transition"
+                )
 
     def _handle_monitor_override(self, msg):
         if msg.override_cmd == MONITOR_OVERRIDE_CANCEL:
