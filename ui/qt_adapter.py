@@ -37,6 +37,8 @@ class QtExecutorBridge(QObject):
     sig_armed_state = pyqtSignal(bool, int)
     sig_mode = pyqtSignal(int)
     sig_actuator_feedback = pyqtSignal(dict)
+    sig_relay_state = pyqtSignal(bool)
+    sig_mistracking_update = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,6 +60,8 @@ class QtExecutorBridge(QObject):
         self._callbacks.on_armed_state = self.sig_armed_state.emit
         self._callbacks.on_mode = self.sig_mode.emit
         self._callbacks.on_actuator_feedback = self.sig_actuator_feedback.emit
+        self._callbacks.on_relay_state = self.sig_relay_state.emit
+        self._callbacks.on_mistracking_update = self.sig_mistracking_update.emit
 
     @property
     def callbacks(self) -> ExecutorCallbacks:

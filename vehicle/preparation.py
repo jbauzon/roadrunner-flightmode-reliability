@@ -23,6 +23,7 @@ from .constants import (
     ActuationMode, FlightRegime, CommandResult, MsgType, USE_NEST_ENABLED,
     MONITOR_OVERRIDE_CANCEL, MONITOR_OVERRIDE_SUPPRESS,
     get_mode_name, get_flight_regime_name, get_command_result_name, is_armed,
+    safe_int_field,
 )
 # Lazy import to avoid circular dependency (testing -> vehicle -> testing)
 _build_actuator_feedback_dict = None
@@ -112,16 +113,18 @@ class UUTPreparation:
             # Query USE_NEST parameter
             self.cb.on_progress("Querying USE_NEST parameter...")
             use_nest = self._query_use_nest()
-            
+
             if use_nest is None:
                 self.cb.on_log(
-                    "  ⚠ USE_NEST parameter not found (may not exist on this vehicle)"
+                    "  \u26a0 USE_NEST query failed \u2014 will defensively disable USE_NEST on next iteration"
                 )
-                self.initial_state.use_nest = 0
+                self.initial_state.use_nest = None  # Unknown, not 0
+                self.initial_state.use_nest_query_failed = True
             else:
                 self.initial_state.use_nest = use_nest
+                self.initial_state.use_nest_query_failed = False
                 self.cb.on_log(
-                    f"  ✓ USE_NEST = {use_nest} "
+                    f"  \u2713 USE_NEST = {use_nest} "
                     f"({'ENABLED' if use_nest == USE_NEST_ENABLED else 'DISABLED'})"
                 )
             
@@ -147,7 +150,7 @@ class UUTPreparation:
             if not pandion_status:
                 raise Exception("Failed to receive PANDION_STATUS")
             
-            flight_regime = pandion_status.flight_regime
+            flight_regime = safe_int_field(pandion_status, 'flight_regime', FlightRegime.INVALID)
             self.initial_state.flight_regime = flight_regime
             self.initial_state.armed = is_armed(flight_regime)
             
@@ -447,7 +450,19 @@ class UUTPreparation:
     # ── prepare_for_test sub-steps ──────────────────────────────────────
 
     def _disable_use_nest_if_needed(self) -> None:
-        """Step 1: Disable USE_NEST if it is currently enabled."""
+        """Step 1: Disable USE_NEST if it is currently enabled or unknown."""
+        if getattr(self.initial_state, 'use_nest_query_failed', False):
+            # Query failed — defensively set to 0 to be safe
+            self.cb.on_log(
+                "\u2192 USE_NEST state unknown (query failed) \u2014 defensively setting to 0"
+            )
+            success, msg = self._set_use_nest(0)
+            if success:
+                self.cb.on_log(f"  \u2713 {msg}")
+            else:
+                self.cb.on_log(f"  \u26a0 Could not set USE_NEST: {msg}")
+            return
+
         if self.initial_state.use_nest is not None:
             if self.initial_state.use_nest != 0:
                 self.cb.on_progress("Disabling USE_NEST...")
@@ -538,6 +553,20 @@ class UUTPreparation:
         self.cb.on_log(
             f"  ⚠ Vehicle did not enter OPERATE mode within {timeout}s"
         )
+        # Don't alert here — this is expected for TAU elevons (POS_CHECK takes time)
+        # Log to CSV and JSONL for traceability
+        if self.telemetry_logger:
+            self.telemetry_logger.log_test_event(
+                'OPERATE_WAIT_TIMEOUT',
+                f'Vehicle did not enter OPERATE within {timeout}s — proceeding'
+            )
+        if self.error_log:
+            self.error_log.info(
+                'ARM',
+                getattr(self, '_serial', 'unknown'),
+                getattr(self, '_iteration', lambda: 0)(),
+                f'OPERATE mode not confirmed within {timeout}s after ARM — proceeding',
+            )
         self.cb.on_log(f"  → Proceeding to clear monitors anyway...")
 
     def _clear_monitors_timed(self, duration: float, label: str, event_type: str) -> None:
@@ -582,6 +611,14 @@ class UUTPreparation:
                     'MONITOR_WARNING',
                     f'{len(final_set)} monitors still SET {label}: {final_set}'
                 )
+            if self.error_log:
+                self.error_log.warning(
+                    'MONITOR',
+                    getattr(self, '_serial', 'unknown'),
+                    getattr(self, '_iteration', lambda: 0)(),
+                    f'{len(final_set)} monitors still SET after clearing {label}: {final_set}',
+                    {'monitors': list(final_set), 'label': label},
+                )
         else:
             self.cb.on_log(f"  ✓ All monitors clear")
 
@@ -609,6 +646,11 @@ class UUTPreparation:
         self.cb.on_log(
             f"  Sending {target_name} mode request (mode {int(target)})..."
         )
+        # Flush stale actuation status messages from before the mode request.
+        # The queue may contain many OPERATE messages from the monitor clearing
+        # phase — we don't want to mistake them for the post-transition state.
+        if self._msg_queues is not None:
+            self._msg_queues[MsgType.ACTUATION_SYS_STATUS].clear()
         with self.master_lock:
             self.master.mav.pandion_rr_actuation_request_mode_send(
                 requested_mode=int(target)
@@ -739,19 +781,6 @@ class UUTPreparation:
                     getattr(self, '_serial', 'unknown'),
                     0,
                     'Vehicle in TERMINAL mode \u2014 power cycle required before retesting',
-                )
-            raise Exception(
-                "Vehicle in TERMINAL mode. Power cycle required. "
-                "Disable relay for 10+ seconds then re-enable."
-            )
-            self.cb.on_alert(
-                "TERMINAL MODE DETECTED — Power cycle vehicle before retesting. "
-                "Disable relay, wait 10s, re-enable relay."
-            )
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'TERMINAL_MODE',
-                    'Vehicle in TERMINAL mode — power cycle required'
                 )
             raise Exception(
                 "Vehicle in TERMINAL mode. Power cycle required. "
@@ -1063,6 +1092,23 @@ class UUTPreparation:
             self.cb.on_log(
                 f"  These monitors could not be cleared - likely hardware faults"
             )
+            if 52 in final_set:
+                self.cb.on_alert(
+                    "THERMAL SHUTDOWN MONITOR SET — servo over-temperature. "
+                    "Allow vehicle to cool before next test attempt."
+                )
+                if self.error_log:
+                    self.error_log.critical(
+                        'IBIT',
+                        getattr(self, '_serial', 'unknown'),
+                        getattr(self, '_iteration', lambda: 0)(),
+                        'ARM blocked by thermal shutdown monitor (monitor 52)',
+                        {'monitors_set': list(final_set)},
+                    )
+                return False, (
+                    f"ARM blocked by THERMAL SHUTDOWN monitor — vehicle over-temperature. "
+                    f"Allow to cool. Other monitors SET: {final_set - {52}}"
+                )
             return False, (
                 f"ARM failed - {len(final_set)} monitors cannot be cleared "
                 f"(hardware faults)"
@@ -1253,15 +1299,29 @@ class UUTPreparation:
         return len(still_set) == 0, still_set
     
     def _get_current_set_monitors(self) -> List[int]:
-        """Get list of currently SET monitors"""
+        """Get list of currently SET monitors.
+
+        S-9: If no message received, log a one-time warning and return empty
+        list. Returning empty (rather than blocking) is safer — it means we
+        proceed without clearing monitors rather than stalling the preparation
+        sequence. Firmware that does not support this message is treated as
+        having no monitors to clear.
+        """
         monitor_msg = self._wait_for_message(
             MsgType.MONITOR_STATUS,
             timeout=2.0
         )
-        
+
         if not monitor_msg:
+            # Increment miss counter (first miss only logs a warning)
+            self._monitor_query_misses = getattr(self, '_monitor_query_misses', 0) + 1
+            if self._monitor_query_misses == 1:
+                self.cb.on_log(
+                    "  \u26a0 PANDION_MONITOR_CURRENT_STATUS not received \u2014 "
+                    "monitor state unknown (firmware may not support this message)"
+                )
             return []
-        
+
         return self._extract_monitors_from_msg(monitor_msg.currently_set)
     
     def _get_current_overridden_monitors(self) -> List[int]:

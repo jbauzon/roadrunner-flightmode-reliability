@@ -19,9 +19,15 @@ if sys.platform == 'win32':
 from sim.vehicle import PandionVehicleSim
 from sim.mock_daq import MockDAQController
 
-sim1 = PandionVehicleSim(vehicle_port=19995, sysid=1, ibit_pass=True,
+# Use time-based port allocation to avoid port reuse collisions between runs
+import time as _time
+_PORT_BASE = 19200 + (int(_time.time()) % 100) * 2
+SIM_PORT_1 = _PORT_BASE
+SIM_PORT_2 = _PORT_BASE + 1
+
+sim1 = PandionVehicleSim(vehicle_port=SIM_PORT_1, sysid=1, ibit_pass=True,
     boot_time_s=1.5, ibit_duration_scale=0.3, boot_monitors=[0, 1, 2, 3])
-sim2 = PandionVehicleSim(vehicle_port=19996, sysid=2, ibit_pass=False,
+sim2 = PandionVehicleSim(vehicle_port=SIM_PORT_2, sysid=2, ibit_pass=False,
     mistracking_flags=0xC0, boot_time_s=1.5, ibit_duration_scale=0.3,
     boot_monitors=[0, 1, 2, 3])
 threading.Thread(target=sim1.start, daemon=True).start()
@@ -62,8 +68,8 @@ win = MultiUUTTestGUI()
 win.daq = MockDAQController()
 win.daq.initialize('MockDAQ')
 
-uut1 = UUT('RR-PASS-001', '127.0.0.1', 19995, 0)
-uut2 = UUT('RR-FAIL-002', '127.0.0.1', 19996, 1)
+uut1 = UUT('RR-PASS-001', '127.0.0.1', SIM_PORT_1, 0)
+uut2 = UUT('RR-FAIL-002', '127.0.0.1', SIM_PORT_2, 1)
 win.uuts = [uut1, uut2]
 win.uut_table_widget.update_table(win.uuts)
 win.resize(1600, 900)

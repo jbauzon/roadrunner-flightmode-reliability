@@ -1,7 +1,7 @@
 """Vehicle status panel — link, armed, mode indicators."""
 from __future__ import annotations
 
-from PyQt5.QtWidgets import QGroupBox, QGridLayout
+from PyQt5.QtWidgets import QGroupBox, QGridLayout, QHBoxLayout, QLabel
 
 from .. import theme as T
 from .primitives import StatusBadge, LED, _label
@@ -41,6 +41,15 @@ class StatusPanelWidget(QGroupBox):
         self.mode_badge.set_color(T.BG_ELEVATED, T.TEXT_DISABLED)
         layout.addWidget(self.mode_badge, 2, 1, 1, 2)
 
+        # Relay state LED
+        layout.addWidget(_label("Relay", T.TEXT_SECONDARY), 3, 0)
+        self._relay_led   = LED()
+        self._relay_led.set_state(None)  # grey = unknown
+        self._relay_label = StatusBadge("UNKNOWN")
+        self._relay_label.set_color(T.BG_ELEVATED, T.TEXT_DISABLED)
+        layout.addWidget(self._relay_led,   3, 1)
+        layout.addWidget(self._relay_label, 3, 2)
+
     def set_connection_health(self, is_healthy):
         """Update the connection LED and label."""
         if is_healthy:
@@ -74,6 +83,15 @@ class StatusPanelWidget(QGroupBox):
         bg, fg = colors.get(mode, (T.BG_ELEVATED, T.TEXT_DISABLED))
         self.mode_badge.set_text_color(name, bg, fg)
 
+    def set_relay_state(self, on: bool) -> None:
+        """Update relay state LED."""
+        if on:
+            self._relay_led.set_state('red')
+            self._relay_label.set_text_color("ON", T.RED_DIM, T.RED)
+        else:
+            self._relay_led.set_state('green')
+            self._relay_label.set_text_color("OFF", T.GREEN_DIM, T.GREEN)
+
     def reset(self):
         """Reset all indicators to idle/offline state."""
         self.connection_led.set_state(None)
@@ -81,3 +99,5 @@ class StatusPanelWidget(QGroupBox):
         self.armed_led.set_state(None)
         self.armed_label.set_text_color("DISARMED", T.GREEN_DIM, T.GREEN)
         self.mode_badge.set_text_color("---", T.BG_ELEVATED, T.TEXT_DISABLED)
+        self._relay_led.set_state(None)
+        self._relay_label.set_text_color("UNKNOWN", T.BG_ELEVATED, T.TEXT_DISABLED)

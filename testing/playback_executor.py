@@ -65,7 +65,7 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         message = ""
 
         try:
-            if time.time() >= self.batch_end_time:
+            if time.monotonic() >= self.batch_end_time:
                 self.cb.on_time_expired()
                 return
 
@@ -109,10 +109,18 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             # Stream profile
             mistracking_flags, max_delta = self._stream_profile(profile)
 
-            # Disable relay
-            self.daq.set_line(self.uut.relay_line, False)
-            self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
-            self.cb.on_log(f"\u2713 Relay {self.uut.relay_line} DISABLED")
+            # S-13: Disable relay with failure check
+            ok, disable_msg = self._set_line_with_timeout(self.uut.relay_line, False)
+            if ok:
+                self.cb.on_relay_state(False)
+                if self.telemetry_logger:
+                    self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
+                self.cb.on_log(f"\u2713 Relay {self.uut.relay_line} DISABLED")
+            else:
+                self.cb.on_log(
+                    f"\u26a0 Relay disable failed: {disable_msg} \u2014 using emergency procedure"
+                )
+                self._emergency_relay_disable()
 
             # Evaluate pass/fail
             success, message = self._evaluate_result(mistracking_flags, max_delta)
@@ -465,11 +473,12 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         timeout = 30.0
         start = time.time()
         while time.time() - start < timeout:
-            with self.master_lock:
-                hb = self.master.wait_heartbeat(timeout=2.0)
+            # S-16: use queue-based _wait_for_message instead of wait_heartbeat
+            # under lock — avoids holding master_lock for up to 2s blocking recv.
+            hb = self._wait_for_message(MsgType.HEARTBEAT, timeout=2.0)
             if hb:
                 self.cb.on_log(
-                    f"  ✓ Heartbeat received after "
+                    f"  \u2713 Heartbeat received after "
                     f"{time.time() - start:.1f}s"
                 )
                 time.sleep(2.0)  # Allow boot to settle

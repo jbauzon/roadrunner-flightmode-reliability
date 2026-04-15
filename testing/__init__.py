@@ -11,6 +11,7 @@ from .error_logger import ErrorLogger
 from .callbacks import ExecutorCallbacks, PreparationCallbacks
 from .helpers import _build_actuator_feedback_dict
 from .watchdog import BatchWatchdog
+from .recovery import RecoveryManager, FailureClass, RecoveryAction
 
 __all__ = [
     'UUTTestExecutor',
@@ -23,4 +24,7 @@ __all__ = [
     'ExecutorCallbacks',
     'PreparationCallbacks',
     'BatchWatchdog',
+    'RecoveryManager',
+    'FailureClass',
+    'RecoveryAction',
 ]

@@ -34,6 +34,10 @@ import time
 from datetime import datetime
 from typing import Any, Callable, List, Optional
 
+from vehicle.constants import (
+    SERVO_TEMP_WARN_DEGC, SERVO_TEMP_CRITICAL_DEGC, SERVO_TEMP_SHUTDOWN_DEGC,
+)
+
 
 class BatchWatchdog:
     """
@@ -112,6 +116,9 @@ class BatchWatchdog:
                 # Memory check
                 self._check_memory()
 
+                # Temperature check
+                self._check_temperatures()
+
                 # Hourly summary
                 if now - self._last_summary >= self.HOURLY_SUMMARY_S:
                     self._last_summary = now
@@ -129,10 +136,12 @@ class BatchWatchdog:
         if not self.daq or not getattr(self.daq, 'do_task', None):
             return
         try:
-            stuck = [
-                line for line, state in getattr(self.daq, '_line_states', {}).items()
-                if state
-            ]
+            try:
+                line_states = self.daq.get_line_states()
+            except AttributeError:
+                # DAQ doesn't support get_line_states() — skip check
+                return
+            stuck = [line for line, state in line_states.items() if state]
             if stuck:
                 self.on_log(
                     f"  ⚠ Watchdog: relay(s) {stuck} still ON when not testing — forcing OFF"
@@ -161,12 +170,58 @@ class BatchWatchdog:
                     f"DISK CRITICAL: Only {free_gb:.2f}GB free ({free_pct:.1f}%). "
                     f"Free disk space immediately."
                 )
+                self._cleanup_old_logs(free_pct)  # try to free space
             elif free_pct < self.DISK_WARN_PCT:
-                self.on_log(
-                    f"  ⚠ Watchdog: Low disk space ({free_gb:.1f}GB / {free_pct:.1f}% free)"
-                )
+                self.on_log(f"  ⚠ Watchdog: Low disk space ({free_gb:.1f}GB / {free_pct:.1f}% free) — auto-cleaning old logs")
+                self._cleanup_old_logs(free_pct)
         except Exception:
             pass  # Disk check not critical
+
+    def _cleanup_old_logs(self, free_pct: float) -> None:
+        """Auto-delete oldest CSV logs when disk is below warning threshold.
+
+        S-15: Never deletes a log file that is currently open by a UUT.
+        """
+        try:
+            csv_files = sorted(
+                [os.path.join(self.log_directory, f)
+                 for f in os.listdir(self.log_directory)
+                 if f.endswith('.csv')],
+                key=os.path.getmtime
+            )
+            if not csv_files:
+                return
+
+            # S-15: Build set of currently-open log files so we never delete them
+            open_logs = set()
+            for uut in self.uuts:
+                log_file = getattr(uut, 'log_file', None)
+                if log_file:
+                    open_logs.add(os.path.abspath(log_file))
+
+            # Delete oldest 20% of files (skipping open ones)
+            n_delete = max(1, len(csv_files) // 5)
+            deleted_mb = 0.0
+            deleted_count = 0
+
+            for path in csv_files[:n_delete]:
+                if os.path.abspath(path) in open_logs:
+                    continue  # S-15: never delete a currently-open log
+                try:
+                    size_mb = os.path.getsize(path) / 1024 / 1024
+                    os.remove(path)
+                    deleted_mb += size_mb
+                    deleted_count += 1
+                except OSError:
+                    pass
+
+            if deleted_count:
+                self.on_log(
+                    f"  \u2713 Watchdog: Auto-cleanup removed {deleted_count} old log files "
+                    f"({deleted_mb:.1f}MB freed) \u2014 disk was at {free_pct:.1f}%"
+                )
+        except Exception as e:
+            self.on_log(f"  \u26a0 Watchdog: Log cleanup error: {e}")
 
     def _check_memory(self) -> None:
         """Check process memory usage and force GC if needed."""
@@ -189,6 +244,30 @@ class BatchWatchdog:
                 pass
         elif mem_mb > self.MEM_WARN_MB:
             self.on_log(f"  ⚠ Watchdog: Memory usage {mem_mb:.0f}MB")
+
+    def _check_temperatures(self) -> None:
+        """Check servo temperatures from UUT last_feedback."""
+        for uut in self.uuts:
+            feedback = getattr(uut, 'last_feedback', None)
+            if not feedback:
+                continue
+            for temp_key in ('left_elevon_motor_temp_degC', 'right_elevon_motor_temp_degC'):
+                temp = feedback.get(temp_key, 0)
+                if isinstance(temp, (int, float)) and temp > 0:
+                    if temp >= SERVO_TEMP_SHUTDOWN_DEGC:
+                        self.on_alert(
+                            f"CRITICAL TEMPERATURE: {uut.serial_number} "
+                            f"{temp_key}: {temp}°C — SERVO SHUTDOWN IMMINENT"
+                        )
+                        self.on_log(
+                            f"  ✗ Watchdog: {uut.serial_number} servo temp CRITICAL: "
+                            f"{temp}°C (limit {SERVO_TEMP_SHUTDOWN_DEGC}°C)"
+                        )
+                    elif temp >= SERVO_TEMP_CRITICAL_DEGC:
+                        self.on_log(
+                            f"  ⚠ Watchdog: {uut.serial_number} servo temp high: "
+                            f"{temp}°C (warn at {SERVO_TEMP_WARN_DEGC}°C)"
+                        )
 
     def _log_hourly_summary(self) -> None:
         """Log a periodic health summary."""

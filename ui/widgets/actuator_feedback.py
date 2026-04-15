@@ -154,3 +154,43 @@ class ActuatorFeedbackWidget(QGroupBox):
         self.last_update_label.setStyleSheet(
             f"color: {T.AMBER}; font-size: {T.FONT_SIZE_SM}; font-style: italic;"
         )
+
+    # Mapping from mistracking flag bit to row key in self._rows
+    _FLAG_TO_ROW = {
+        64:  'left_elevon',
+        128: 'right_elevon',
+        1:   'dorsal_rudder',
+        2:   'ventral_rudder',
+        4:   'left_tvc_upper',
+        8:   'left_tvc_lower',
+        16:  'right_tvc_upper',
+        32:  'right_tvc_lower',
+    }
+
+    def highlight_mistracking(self, flags: int) -> None:
+        """Highlight surfaces with active mistracking in red during IBIT."""
+        for bit, row_key in self._FLAG_TO_ROW.items():
+            if row_key not in self._rows:
+                continue
+            fb_label = self._rows[row_key].get('fb')
+            if fb_label is None:
+                continue
+            if flags & bit:
+                # Red highlight — mistracking detected
+                fb_label.setStyleSheet(
+                    f"color: {T.RED}; font-weight: bold; background: transparent;"
+                )
+            else:
+                # Normal color — tracking OK
+                fb_label.setStyleSheet(
+                    f"color: {T.GREEN}; background: transparent;"
+                )
+
+    def clear_mistracking_highlights(self) -> None:
+        """Remove all mistracking highlights (called after IBIT completes)."""
+        for row in self._rows.values():
+            fb_label = row.get('fb')
+            if fb_label:
+                fb_label.setStyleSheet(
+                    f"color: {T.GREEN}; background: transparent;"
+                )

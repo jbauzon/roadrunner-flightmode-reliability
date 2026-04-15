@@ -35,6 +35,8 @@ class ExecutorCallbacks:
         self.on_armed_state: Callable[[bool, int], None] = lambda armed, regime: None
         self.on_mode: Callable[[int], None] = lambda mode: None
         self.on_actuator_feedback: Callable[[dict], None] = lambda d: None
+        self.on_relay_state: Callable[[bool], None] = lambda on: None
+        self.on_mistracking_update: Callable[[int], None] = lambda flags: None
 
 
 class PreparationCallbacks:

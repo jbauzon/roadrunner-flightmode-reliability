@@ -12,12 +12,14 @@ from .base_executor import _ExecutorMixin
 from .tracker import IBITPhaseTracker, TestStatistics
 from .helpers import _build_actuator_feedback_dict
 from .callbacks import ExecutorCallbacks
+from .recovery import RecoveryManager, FailureClass, RecoveryAction
 from vehicle.constants import (
     ActuationMode, IBITSubstate, MsgType,
     IBIT_SUBSTATE_DISPLAY_NAMES,
-    get_mode_name, get_failed_surfaces, is_armed,
+    get_mode_name, get_failed_surfaces, is_armed, safe_int_field,
     DEFAULT_IBIT_TIMEOUT, DEFAULT_PHASE_TIMEOUT,
     MAX_CONSECUTIVE_TELEMETRY_ERRORS, OPERATE_WAIT_TIMEOUT,
+    SERVO_TEMP_WARN_DEGC, SERVO_TEMP_CRITICAL_DEGC, SERVO_TEMP_SHUTDOWN_DEGC,
 )
 
 
@@ -48,6 +50,9 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         self.statistics = TestStatistics()
         self.phase_tracker = IBITPhaseTracker()
         self.current_ibit_substate = None
+        self._recovery = None  # created lazily on first failure
+        self._soft_recovery_count = 0
+        self._post_ibit_operate_confirmed = True  # S-6: cleared if OPERATE not confirmed
     
     def run(self):
         """Execute IBIT test with full state management and logging."""
@@ -56,7 +61,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         message = ""
         
         try:
-            if time.time() >= self.batch_end_time:
+            if time.monotonic() >= self.batch_end_time:
                 self.cb.on_time_expired()
                 return
             
@@ -104,8 +109,8 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
                 # Verify IBIT was entered — firmware may require PLAYBACK first
                 mode_msg = self._wait_for_message(MsgType.ACTUATION_SYS_STATUS, timeout=5.0)
-                if mode_msg and mode_msg.actuation_state != ActuationMode.IBIT:
-                    current = mode_msg.actuation_state
+                if mode_msg and safe_int_field(mode_msg, 'actuation_state', ActuationMode.OFF) != ActuationMode.IBIT:
+                    current = safe_int_field(mode_msg, 'actuation_state', ActuationMode.OFF)
                     self.cb.on_log(
                         f"  ⚠ IBIT request not accepted (mode={current}/{get_mode_name(current)})"
                     )
@@ -135,11 +140,44 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         except Exception as e:
             success = False
             message = f"Test failed: {str(e)}"
+
+            # Classify the failure and decide recovery action
+            recovery = RecoveryManager(
+                on_log=self.cb.on_log,
+                on_alert=self.cb.on_alert,
+                error_log=self.error_log,
+            )
+            decision = recovery.classify(
+                str(e), self.uut,
+                attempt=getattr(self.uut, 'consecutive_failures', 0) + 1
+            )
+
+            # Log the recovery decision
+            self.cb.on_log(f"\n  Recovery: {decision.action.value} — {decision.reason}")
+
+            # Execute recovery (SKIP is handled by main_window via message prefix)
+            # S-14: guard against recovery.execute() itself raising
+            try:
+                if decision.action != RecoveryAction.SKIP:
+                    recovery.execute(decision, self.master, self.master_lock)
+            except Exception as recover_err:
+                self.cb.on_log(f"\u26a0 Recovery execute failed: {recover_err} \u2014 proceeding with cleanup")
+
+            # Soft failures don't count toward the 3x permanent skip threshold
+            if not decision.counts_toward_permanent:
+                message = f"[SOFT] Test failed: {str(e)}"
+
             self.cb.on_log(f"\u2717 Error: {e}")
             self.cb.on_alert(f"TEST FAILED: {str(e)}")
 
             if self.daq:
                 self._emergency_relay_disable()
+            else:
+                self.cb.on_log("\u26a0 No DAQ available \u2014 cannot disable relay electronically")
+                self.cb.on_alert(
+                    "WARNING: DAQ not initialized \u2014 relay cannot be disabled electronically. "
+                    "Verify vehicle is safe manually."
+                )
 
             if self.telemetry_logger:
                 self.telemetry_logger.log_test_event(
@@ -147,20 +185,18 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                 )
 
             # Classify and persist to error log
-            err_msg = str(e)
-            if 'timeout' in err_msg.lower() and 'ibit' in err_msg.lower():
-                category = 'IBIT'
-            elif 'phase timeout' in err_msg.lower():
-                category = 'IBIT'
-            elif 'relay' in err_msg.lower():
+            err_msg = str(e).lower()
+            if 'relay' in err_msg:
                 category = 'RELAY'
-            elif 'heartbeat' in err_msg.lower() or 'connection' in err_msg.lower():
-                category = 'CONNECTION'
-            elif 'arm' in err_msg.lower() or 'disarm' in err_msg.lower():
-                category = 'ARM'
-            elif 'terminal' in err_msg.lower():
+            elif 'terminal' in err_msg:
                 category = 'STATE'
-            elif 'playback' in err_msg.lower():
+            elif 'heartbeat' in err_msg or 'connection' in err_msg or 'link' in err_msg:
+                category = 'CONNECTION'
+            elif 'arm' in err_msg or 'disarm' in err_msg:
+                category = 'ARM'
+            elif 'monitor' in err_msg:
+                category = 'MONITOR'
+            elif 'ibit' in err_msg or 'playback' in err_msg or 'operate' in err_msg or 'phase' in err_msg or 'timeout' in err_msg:
                 category = 'IBIT'
             else:
                 category = 'SYSTEM'
@@ -168,7 +204,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                 category,
                 self.uut.serial_number,
                 self.uut.iterations_completed,
-                err_msg,
+                str(e),
             )
         
         finally:
@@ -198,7 +234,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
         self._ibit_monitor_loop()
 
-        if time.time() >= self.batch_end_time:
+        if time.monotonic() >= self.batch_end_time:
             self.cb.on_log("Batch time expired during IBIT")
             return
         if not self.phase_tracker.reached_complete:
@@ -209,6 +245,12 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
         self._wait_for_operate_after_ibit()
         self._log_ibit_summary(test_start)
+
+        # S-6: warn if OPERATE mode was not confirmed after IBIT
+        if not self._post_ibit_operate_confirmed:
+            self.cb.on_log(
+                "  \u26a0 IBIT PASS but post-IBIT OPERATE mode not confirmed"
+            )
 
     # ── IBIT sub-methods ────────────────────────────────────────────────
 
@@ -246,22 +288,34 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         # any transient fault flags.
         self._accumulated_mistracking = 0
 
-        # Flush stale actuation status messages that arrived BEFORE IBIT started.
-        # Pre-IBIT messages (during monitor clearing, PLAYBACK, etc.) may have
-        # non-zero ibit_mon_status fields from hardware tests; we don't want them
-        # contaminating the accumulator for this iteration.
-        self._msg_queues[MsgType.ACTUATION_SYS_STATUS].clear()
+        # NOTE: Do NOT flush the queue here. The queue flush already happened
+        # in _enter_mode() before the IBIT mode request was sent.
+        # Any messages in the queue now are from AFTER IBIT entry was confirmed —
+        # we want to process them, not discard them.
 
-        # Pre-loop: check if vehicle is already in OPERATE (instantaneous IBIT)
-        initial_msg = self._wait_for_message(MsgType.ACTUATION_SYS_STATUS, timeout=0.5)
-        if initial_msg and initial_msg.actuation_state == ActuationMode.OPERATE:
-            # IBIT may have completed before we could observe it
-            self.cb.on_log("  → Vehicle already in OPERATE — checking if IBIT completed instantly")
-            # Treat this as an IBIT completion (mistracking = 0 since we saw no IBIT messages)
-            self._handle_ibit_completion(initial_msg, 0)
-            return  # Exit loop — completion handled
+        # Pre-loop: check if vehicle transitioned through IBIT and back to OPERATE
+        # before we could observe it (possible with fast IBIT scale or slow startup).
+        # Read messages for up to 2 seconds to determine the current state.
+        pre_loop_deadline = time.monotonic() + 2.0
+        saw_ibit = False
+        while time.monotonic() < pre_loop_deadline:
+            msg = self._wait_for_message(MsgType.ACTUATION_SYS_STATUS, timeout=0.3)
+            if msg is None:
+                break
+            mode = safe_int_field(msg, 'actuation_state', -1)
+            if mode == ActuationMode.IBIT:
+                saw_ibit = True
+                # Vehicle is currently in IBIT — let main loop handle it
+                # Put message back by re-queuing (can't, but main loop will get next one)
+                break
+            elif mode == ActuationMode.OPERATE and saw_ibit:
+                # Saw IBIT then OPERATE — instantaneous completion
+                self.cb.on_log("  → IBIT completed instantly (saw IBIT→OPERATE transition)")
+                self._handle_ibit_completion(msg, 0)
+                return
+        # If saw_ibit is False here, continue to main loop normally
 
-        while self.running and time.time() < self.batch_end_time:
+        while self.running and time.monotonic() < self.batch_end_time:
             now = time.time()
             # Check timeouts
             if now - ibit_start_time > ibit_timeout:
@@ -280,8 +334,8 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             )
 
             if status_msg:
-                current_mode = status_msg.actuation_state
-                current_substate = getattr(status_msg, 'actuation_ibit_substate', -1)
+                current_mode = safe_int_field(status_msg, 'actuation_state', ActuationMode.OFF)
+                current_substate = safe_int_field(status_msg, 'actuation_ibit_substate', -1)
 
                 # Initialize on first iteration
                 if self._last_mode is None:
@@ -289,18 +343,21 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                     self._last_substate = current_substate
                     # If vehicle is already in OPERATE on first message, IBIT may have completed instantly
                     if current_mode == ActuationMode.OPERATE:
-                        self.cb.on_log("  ⚠ Vehicle in OPERATE on first message — IBIT may have completed instantly")
+                        self.cb.on_log("  \u26a0 Vehicle in OPERATE on first message \u2014 IBIT may have completed instantly")
                         self._handle_ibit_completion(status_msg, current_substate)
                         break
                     continue  # Skip rest of loop for first message
 
-                # Detect IBIT run restarts (TVC → BEGIN/SETTLE)
+                # Detect IBIT run restarts — any regression from a more-advanced
+                # substate to an earlier one (reboot or multi-cycle firmware restart)
                 if self._last_mode == ActuationMode.IBIT and current_mode == ActuationMode.IBIT:
-                    if self._last_substate in (IBITSubstate.RUDDERS, IBITSubstate.TVC) and current_substate in (IBITSubstate.BEGIN, IBITSubstate.WAIT_FOR_SETTLE):
+                    if (self._last_substate is not None
+                            and self._last_substate > IBITSubstate.WAIT_FOR_SETTLE
+                            and current_substate <= IBITSubstate.WAIT_FOR_SETTLE):
                         self._ibit_run_count += 1
                         self.cb.on_log(
-                            f"\n→ IBIT Run #{self._ibit_run_count + 1} detected "
-                            f"(vehicle performing multiple cycles)"
+                            f"\n\u2192 IBIT Run #{self._ibit_run_count + 1} detected "
+                            f"(substate regression: {self._last_substate} \u2192 {current_substate})"
                         )
 
                 # CRITICAL: IBIT completion detected by mode transition IBIT → OPERATE
@@ -332,8 +389,11 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                     # Accumulate mistracking flags while in IBIT.
                     # Firmware zeros this field on mode exit, so we must
                     # capture it every message while still in IBIT.
-                    ibit_mon = getattr(status_msg, 'actuation_ibit_mon_status', 0)
+                    ibit_mon = safe_int_field(status_msg, 'actuation_ibit_mon_status')
                     self._accumulated_mistracking |= ibit_mon
+
+                    if ibit_mon:
+                        self.cb.on_mistracking_update(self._accumulated_mistracking)
 
                     last_logged_phase = self._track_ibit_substate(
                         status_msg, last_logged_phase
@@ -371,13 +431,22 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                     f'{", ".join(failed_surfaces)} '
                     f'(flags=0x{mistracking:02X})'
                 )
+            # Get current servo temps from actuator feedback cache
+            temp_data = {}
+            try:
+                temp_data = {
+                    'left_elevon_temp': self.uut.last_feedback.get('left_elevon_motor_temp_degC', 'N/A') if hasattr(self.uut, 'last_feedback') else 'N/A',
+                    'right_elevon_temp': self.uut.last_feedback.get('right_elevon_motor_temp_degC', 'N/A') if hasattr(self.uut, 'last_feedback') else 'N/A',
+                }
+            except Exception:
+                pass
             # Persist mistracking failure to error log
             self.error_log.error(
                 'IBIT',
                 self.uut.serial_number,
                 self.uut.iterations_completed,
                 f"IBIT FAIL — mistracking on: {', '.join(failed_surfaces)} (flags=0x{mistracking:02X})",
-                {'mistracking_flags': mistracking, 'failed_surfaces': failed_surfaces},
+                {'mistracking_flags': mistracking, 'failed_surfaces': failed_surfaces, **temp_data},
             )
             raise Exception(
                 f"IBIT FAIL — mistracking on: "
@@ -397,6 +466,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         self.cb.on_log("="*60)
         self.cb.on_log("✓ IBIT PASS — Vehicle ready for flight!")
         self.cb.on_log("="*60)
+        self.cb.on_ibit_state("✓ PASS")
 
         # Mark tracker as complete
         self.phase_tracker.reached_complete = True
@@ -412,7 +482,9 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
     def _track_ibit_substate(self, status_msg, last_logged_phase):
         """Track IBIT substate transitions and update the GUI. Returns updated last_logged_phase."""
         if hasattr(status_msg, 'actuation_ibit_substate'):
-            substate = status_msg.actuation_ibit_substate
+            substate = safe_int_field(status_msg, 'actuation_ibit_substate', -1)
+            if substate < 0:
+                return last_logged_phase
             self.phase_tracker.update(substate)
             current_phase = self.phase_tracker.get_current_phase_name()
 
@@ -429,6 +501,8 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                 f"UNKNOWN({substate})"
             )
             self.cb.on_ibit_state(display_name)
+            # Emit mistracking status every tick during IBIT so UI can highlight surfaces
+            self.cb.on_mistracking_update(self._accumulated_mistracking)
         return last_logged_phase
 
     def _log_phase_summary(self, total_runs):
@@ -460,6 +534,10 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             "✓ IBIT sequence finished - removing load from vehicle"
         )
 
+        # Note: relays apply electrical load to actuators, NOT main vehicle power.
+        # Vehicle continues sending heartbeats after relay-off — this is expected.
+        # A welded-relay check based on heartbeat loss would produce false positives.
+
         ok, msg = self.daq.set_line(self.uut.relay_line, False)
         if ok:
             if self.telemetry_logger:
@@ -467,6 +545,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                     self.uut.relay_line,
                     False
                 )
+            self.cb.on_relay_state(False)
             self.cb.on_log(
                 f"✓ Relay {self.uut.relay_line} DISABLED - Load removed"
             )
@@ -493,7 +572,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             )
 
             if mode_msg:
-                current_mode = mode_msg.actuation_state
+                current_mode = safe_int_field(mode_msg, 'actuation_state', ActuationMode.OFF)
 
                 if current_mode == ActuationMode.OPERATE:
                     returned_to_operate = True
@@ -511,19 +590,42 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             final_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=2.0
             )
-            fm = final_msg.actuation_state if final_msg else -1
+            fm = safe_int_field(final_msg, 'actuation_state', -1) if final_msg else -1
             self.cb.on_log(
-                f"  ⚠ Vehicle did not return to OPERATE within {operate_timeout}s"
+                f"  \u26a0 Vehicle did not return to OPERATE within {operate_timeout}s"
             )
             self.cb.on_log(
                 f"  Final mode: {fm} ({get_mode_name(fm)})"
             )
+            # S-6: set flag so _log_ibit_summary can note the uncertainty
+            self._post_ibit_operate_confirmed = False
+            # Alert operator — this is an anomalous post-IBIT state
+            self.cb.on_alert(
+                f"\u26a0 Post-IBIT: vehicle did not return to OPERATE (mode={get_mode_name(fm)}). "
+                f"Relay is OFF. Manual state verification recommended."
+            )
+            # Log to CSV
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'POST_IBIT_OPERATE_TIMEOUT',
+                    f'Vehicle did not return to OPERATE after IBIT \u2014 final mode: {get_mode_name(fm)}'
+                )
+            # Log to error JSONL
+            self.error_log.warning(
+                'IBIT',
+                self.uut.serial_number,
+                self.uut.iterations_completed,
+                f'Post-IBIT OPERATE timeout \u2014 vehicle in {get_mode_name(fm)} mode',
+                {'final_mode': fm, 'operate_timeout': operate_timeout},
+            )
             self.cb.on_log(
-                "  → Proceeding with cleanup (relay already OFF, vehicle safe)"
+                "  \u2192 Proceeding with cleanup (relay already OFF, vehicle safe)"
             )
             # Note: relay is already OFF at this point (disabled in _handle_ibit_completion).
             # This is a post-IBIT state ambiguity, not a safety hazard.
             # Log the warning but do not abort — cleanup and state restoration continue.
+        else:
+            self._post_ibit_operate_confirmed = True  # S-6
 
     def _log_ibit_summary(self, test_start):
         """Record metrics and log final IBIT summary."""
@@ -608,7 +710,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
                     # Armed state from PANDION_STATUS
                     if msg_type == MsgType.PANDION_STATUS:
-                        flight_regime = msg.flight_regime
+                        flight_regime = getattr(msg, 'flight_regime', None)
                         armed = is_armed(flight_regime)
                         self.cb.on_armed_state(armed, flight_regime)
 
@@ -628,6 +730,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                         try:
                             actuator_data = _build_actuator_feedback_dict(msg)
                             self.cb.on_actuator_feedback(actuator_data)
+                            self.uut.last_feedback = actuator_data  # Store for error log context
                         except AttributeError:
                             pass
                 else:
@@ -685,12 +788,23 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
                         getattr(self.uut, 'iterations_completed', 0),
                         f"GCS link lost for {elapsed}s during IBIT",
                     )
+                    # Add CSV row
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            'GCS_LINK_LOST',
+                            f'GCS link lost for {elapsed}s during IBIT'
+                        )
             else:
                 if consecutive_unhealthy > 0:
                     self.cb.on_log(
                         f"✓ Connection restored after {consecutive_unhealthy * 5}s"
                     )
                     self.cb.on_connection_health(True)
+                    if self.telemetry_logger:
+                        self.telemetry_logger.log_test_event(
+                            'GCS_LINK_RESTORED',
+                            f'GCS link restored after {consecutive_unhealthy * 5}s'
+                        )
                 consecutive_unhealthy = 0
     
     def _log_size_monitor(self):

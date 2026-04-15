@@ -71,6 +71,9 @@ class _ExecutorMixin:
         # Sysid filter — set after connection in _connect_and_start_heartbeat
         self._expected_sysid = None
 
+        # BAD_DATA streak counter for dispatch worker
+        self._bad_data_streak = 0
+
     # ── Connection helpers ──────────────────────────────────────────────
 
     def _connect_and_start_heartbeat(self) -> None:
@@ -87,8 +90,23 @@ class _ExecutorMixin:
         # (dispatch worker would consume the heartbeat otherwise)
         hb = self.master.recv_match(type='HEARTBEAT', blocking=True, timeout=3.0)
         if hb and hb.get_srcSystem() != 255:
-            self._expected_sysid = hb.get_srcSystem()
-            self.cb.on_log(f"  Vehicle sysid: {self._expected_sysid}")
+            candidate_sysid = hb.get_srcSystem()
+            # Verify with a second heartbeat to avoid stale buffer packets (S-1)
+            hb2 = self.master.recv_match(type='HEARTBEAT', blocking=True, timeout=2.0)
+            if hb2 and hb2.get_srcSystem() != 255:
+                if hb2.get_srcSystem() == candidate_sysid:
+                    self._expected_sysid = candidate_sysid
+                    self.cb.on_log(f"  Vehicle sysid: {self._expected_sysid} (verified)")
+                else:
+                    # Two different sysids — take the more recent one
+                    self._expected_sysid = hb2.get_srcSystem()
+                    self.cb.on_log(
+                        f"  \u26a0 Sysid mismatch in buffer ({candidate_sysid} vs "
+                        f"{hb2.get_srcSystem()}) \u2014 using {self._expected_sysid}"
+                    )
+            else:
+                self._expected_sysid = candidate_sysid
+                self.cb.on_log(f"  Vehicle sysid: {self._expected_sysid}")
 
         # Start dispatch worker AFTER learning sysid — preparation
         # uses _wait_for_message which reads from queues populated by this worker.
@@ -148,7 +166,7 @@ class _ExecutorMixin:
         self.cb.on_log("ENABLING LOAD RELAY")
         self.cb.on_log("=" * 60)
 
-        ok, msg = self.daq.set_line(self.uut.relay_line, True)
+        ok, msg = self._set_line_with_timeout(self.uut.relay_line, True)
         if not ok:
             raise Exception(f"Failed to enable relay: {msg}")
         if self.telemetry_logger:
@@ -157,6 +175,7 @@ class _ExecutorMixin:
         self.cb.on_log(
             f"\u2713 Relay {self.uut.relay_line} ENABLED - Load applied"
         )
+        self.cb.on_relay_state(True)
         self.cb.on_log(
             f"  Waiting {self.stabilization_delay}s for stabilization..."
         )
@@ -167,6 +186,27 @@ class _ExecutorMixin:
             raise Exception("Lost connection after applying load")
         self.cb.on_log("\u2713 Vehicle responsive under load")
         self.cb.on_log("=" * 60 + "\n")
+
+    def _set_line_with_timeout(self, line: int, state: bool,
+                                timeout_s: float = 10.0):
+        """Call set_line with a hard timeout to prevent DAQ hangs (S-3).
+
+        Returns:
+            (ok: bool, msg: str)
+        """
+        result = [None, None]
+
+        def _call():
+            result[0], result[1] = self.daq.set_line(line, state)
+
+        t = threading.Thread(target=_call, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+        if t.is_alive():
+            return False, f"set_line timed out after {timeout_s}s (DAQ may be hung)"
+        if result[0] is None:
+            return False, "set_line returned no result"
+        return result[0], result[1]
 
     # ── Heartbeat ───────────────────────────────────────────────────────
 
@@ -207,8 +247,10 @@ class _ExecutorMixin:
                     self.cb.on_log(
                         f"  \u2764 Heartbeat active ({self.heartbeat_count} sent)"
                     )
-            except Exception as e:
-                self.cb.on_log(f"\u26a0 Heartbeat send error: {e}")
+            except BaseException as e:
+                self.cb.on_log(f"\u26a0 Heartbeat send error: {type(e).__name__}: {e}")
+                if not self.running:
+                    break
             time.sleep(1.0)
 
         self.cb.on_log(
@@ -239,7 +281,7 @@ class _ExecutorMixin:
         for attempt in range(1, max_attempts + 1):
             try:
                 self.cb.on_log(f"  Attempt {attempt}/{max_attempts}...")
-                ok, msg = self.daq.set_line(self.uut.relay_line, False)
+                ok, msg = self._set_line_with_timeout(self.uut.relay_line, False)
                 if ok:
                     self.cb.on_log(
                         f"  \u2713 Relay {self.uut.relay_line} DISABLED "
@@ -254,6 +296,7 @@ class _ExecutorMixin:
                             self.cb.on_log(
                                 f"  \u26a0 Logging error: {log_err}"
                             )
+                    self.cb.on_relay_state(False)
                     self.cb.on_log(
                         "\u2713 Emergency relay disable SUCCESSFUL"
                     )
@@ -263,7 +306,7 @@ class _ExecutorMixin:
                     self.cb.on_log(
                         f"  \u2717 Attempt {attempt} failed: {msg}"
                     )
-            except Exception as err:
+            except BaseException as err:
                 self.cb.on_log(
                     f"  \u2717 Attempt {attempt} exception: "
                     f"{type(err).__name__}: {err}"
@@ -320,30 +363,62 @@ class _ExecutorMixin:
 
         This is the ONLY thread that calls recv_match on the socket.
         All other consumers read from _msg_queues or _all_msgs_queue.
+
+        C-3: No master_lock held during recv — dispatch worker is the sole
+        reader, so no lock is needed.  master_lock is kept only for SEND
+        operations (heartbeat, mode requests).
         """
-        while self.running:
-            try:
-                with self.master_lock:
+        try:
+            while self.running:
+                try:
+                    # Don't hold master_lock during recv — dispatch worker is
+                    # the sole reader; no other thread calls recv_match.
                     msg = self.master.recv_match(blocking=False)
-                if msg:
-                    msg_type = msg.get_type()
-                    if msg_type != 'BAD_DATA':
-                        # Filter by expected vehicle sysid if known
-                        if self._expected_sysid is None or msg.get_srcSystem() == self._expected_sysid:
-                            self._msg_queues[msg_type].append(msg)
-                            self._all_msgs_queue.append(msg)
-                        # else: silently discard foreign sysid messages
-                else:
-                    time.sleep(0.002)  # 2 ms idle — 500 Hz max polling rate
-            except OSError as e:
-                # WinError 10054: ICMP port-unreachable from sim restart.
-                # The socket is still usable — just skip this recv.
-                if getattr(e, 'winerror', None) == 10054:
+                    if msg:
+                        msg_type = msg.get_type()
+                        if msg_type != 'BAD_DATA':
+                            # Filter by expected vehicle sysid if known
+                            if self._expected_sysid is None or msg.get_srcSystem() == self._expected_sysid:
+                                self._msg_queues[msg_type].append(msg)
+                                self._all_msgs_queue.append(msg)
+                            # else: silently discard foreign sysid messages
+                            self._bad_data_streak = 0
+                        else:
+                            self._bad_data_streak = getattr(self, '_bad_data_streak', 0) + 1
+                            if self._bad_data_streak % 100 == 0:
+                                self.cb.on_log(
+                                    f"\u26a0 {self._bad_data_streak} consecutive BAD_DATA messages "
+                                    f"\u2014 check MAVLink dialect version"
+                                )
+                    else:
+                        time.sleep(0.002)  # 2 ms idle — 500 Hz max polling rate
+                except OSError as e:
+                    # WinError 10054: ICMP port-unreachable from sim restart.
+                    # The socket is still usable — just skip this recv.
+                    if getattr(e, 'winerror', None) == 10054:
+                        time.sleep(0.01)
+                        continue
+                    raise
+                except Exception:
                     time.sleep(0.01)
-                    continue
-                raise
+        except BaseException as e:
+            # Dispatch worker died — this is critical, abort the test
+            try:
+                self.cb.on_log(
+                    f"\u2717 CRITICAL: Message dispatch worker died: {type(e).__name__}: {e}"
+                )
+                self.cb.on_alert(
+                    "CRITICAL: Message dispatch worker died \u2014 aborting test and disabling relay"
+                )
+                self.error_log.critical(
+                    'SYSTEM', getattr(self.uut, 'serial_number', 'unknown'), 0,
+                    f'Dispatch worker died: {type(e).__name__}: {e}',
+                )
             except Exception:
-                time.sleep(0.01)
+                pass
+            # Stop the executor and emergency-disable relay
+            self.running = False
+            self._emergency_relay_disable()
 
     def _wait_for_message(self, msg_type: str, timeout: float = 5.0) -> Optional[Any]:
         """Wait for a specific MAVLink message type from the dispatch queue."""

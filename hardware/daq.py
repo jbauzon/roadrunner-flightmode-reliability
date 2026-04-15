@@ -343,3 +343,8 @@ class SimpleDAQController:
         time.sleep(1.0)
         
         return self.initialize(device, num_lines)
+
+    def get_line_states(self) -> dict:
+        """Return a copy of all relay line states. Safe for external inspection."""
+        with self._state_lock:
+            return {i: bool(s) for i, s in enumerate(self._output_states)}

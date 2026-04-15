@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PyQt5.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QLineEdit, QCheckBox, QRadioButton, QButtonGroup,
+    QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit, QCheckBox, QRadioButton, QButtonGroup,
     QWidget, QFileDialog,
 )
 from PyQt5.QtCore import pyqtSignal, Qt
@@ -292,6 +292,25 @@ class TestConfigWidget(QGroupBox):
             setattr(self, attr, w)
             adv_layout.addWidget(w, i, 1)
 
+        # Temperature (°C) — for thermal chamber correlation
+        row_temp = len(params)
+        adv_layout.addWidget(_label("Temperature (°C):", T.TEXT_SECONDARY), row_temp, 0)
+        self.test_temperature_input = QDoubleSpinBox()
+        self.test_temperature_input.setRange(-60.0, 100.0)
+        self.test_temperature_input.setValue(25.0)
+        self.test_temperature_input.setSingleStep(1.0)
+        self.test_temperature_input.setSuffix(" °C")
+        self.test_temperature_input.setSpecialValueText("(not set)")
+        self.test_temperature_input.setToolTip(
+            "Ambient/chamber temperature for this test run (for correlation)"
+        )
+        adv_layout.addWidget(self.test_temperature_input, row_temp, 1)
+        # Track whether the operator has explicitly set a temperature
+        self._temp_explicitly_set = False
+        self.test_temperature_input.valueChanged.connect(
+            lambda _: setattr(self, '_temp_explicitly_set', True)
+        )
+
         self._adv_widget.setVisible(False)
         root.addWidget(self._adv_widget)
         root.addStretch()
@@ -376,6 +395,7 @@ class TestConfigWidget(QGroupBox):
             'test_mode':          self.get_test_mode(),
             'playback_csv':       self.get_playback_csv(),
             'playback_type':      self.get_playback_type(),
+            'test_temperature_c': self.test_temperature_input.value() if self._temp_explicitly_set else None,
         }
 
     def get_all_settings(self):
@@ -391,6 +411,7 @@ class TestConfigWidget(QGroupBox):
             'test_mode':           self.get_test_mode(),
             'playback_csv':        self.get_playback_csv(),
             'playback_type':       self.get_playback_type(),
+            'test_temperature_c':  self.test_temperature_input.value() if self._temp_explicitly_set else None,
         }
 
     def load_settings(self, settings):
@@ -402,6 +423,9 @@ class TestConfigWidget(QGroupBox):
         self.phase_timeout_input.setValue(settings.get('phase_timeout', 90))
         self.arm_timeout_input.setValue(settings.get('arm_timeout', 60))
         self.max_arm_iterations_input.setValue(settings.get('max_arm_iterations', 20))
+        if settings.get('test_temperature_c') is not None:
+            self.test_temperature_input.setValue(settings['test_temperature_c'])
+            self._temp_explicitly_set = True
         if settings.get('test_mode', TestMode.IBIT) == TestMode.PLAYBACK:
             self.mode_playback_radio.setChecked(True)
         else:

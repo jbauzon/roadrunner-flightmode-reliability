@@ -23,7 +23,7 @@ from hardware.daq import SimpleDAQController
 from vehicle.connection import UUT
 from vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
 from version import __version__
-from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog
+from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog, ErrorLogger
 from . import theme as T
 from .widgets import (
     HeaderBanner,
@@ -48,8 +48,23 @@ class MultiUUTTestGUI(QMainWindow):
         self.project_root  = os.path.abspath(os.path.join(self.script_dir, ".."))
         self.log_directory = os.path.abspath(os.path.join(self.project_root, "logs"))
         self.report_directory = os.path.abspath(os.path.join(self.project_root, "reports"))
-        os.makedirs(self.log_directory, exist_ok=True)
-        os.makedirs(self.report_directory, exist_ok=True)
+        try:
+            os.makedirs(self.log_directory, exist_ok=True)
+        except OSError as e:
+            import tempfile
+            fallback = os.path.join(tempfile.gettempdir(), 'RoadrunnerLogs')
+            os.makedirs(fallback, exist_ok=True)
+            self.log_directory = fallback
+            # Can't log yet (GUI not built), but print to console
+            print(f"⚠ Log directory path too long or invalid: {e}")
+            print(f"  Using fallback: {fallback}")
+        try:
+            os.makedirs(self.report_directory, exist_ok=True)
+        except OSError as e:
+            import tempfile
+            fallback = os.path.join(tempfile.gettempdir(), 'RoadrunnerReports')
+            os.makedirs(fallback, exist_ok=True)
+            self.report_directory = fallback
 
         # ── Hardware ──────────────────────────────────────────────────────
         self.daq = SimpleDAQController()
@@ -59,13 +74,16 @@ class MultiUUTTestGUI(QMainWindow):
         self.current_test_executor = None
         self.current_uut_index     = -1
         self.batch_start_datetime  = None
-        self.batch_end_time        = None
+        self.batch_end_time        = None    # time.monotonic() deadline (C-9)
+        self._batch_end_wall       = None    # wall-clock deadline (for display)
         self.testing_active        = False
         self.current_statistics    = None
         self.test_mode             = TestMode.IBIT
         self.playback_csv          = ''
         self.playback_type         = 'Actuation'
         self._watchdog: Optional[BatchWatchdog] = None
+        self._starting_uut         = False  # S-5: re-entrancy guard
+        self._last_timer_tick      = time.monotonic()  # C-9: hibernation detection
 
         self.test_config = {
             'ibit_timeout':       300.0,
@@ -618,16 +636,22 @@ class MultiUUTTestGUI(QMainWindow):
         for uut in self.uuts:
             uut.status = UUTStatus.READY
             uut.iterations_completed = 0
+            uut.consecutive_failures = 0  # S-8: reset on batch restart
+            uut.soft_failures = 0         # C-2: reset soft failure count on restart
         self.uut_table_widget.update_table(self.uuts)
 
         self.batch_start_datetime = datetime.now()
-        self.batch_end_time       = self.batch_start_datetime.timestamp() + duration_seconds
+        # C-9: use monotonic clock for deadline — immune to system-clock changes
+        self.batch_end_time    = time.monotonic() + duration_seconds
+        self._batch_end_wall   = self.batch_start_datetime.timestamp() + duration_seconds
+        self._last_timer_tick  = time.monotonic()
         self.current_uut_index    = -1
         self.test_mode            = test_mode
         self.playback_csv         = playback_csv
         self.playback_type        = playback_type
 
         self.test_config.update(self.test_config_widget.get_config())
+        self._test_temperature_c = self.test_config.get('test_temperature_c', None)
         self.alert_banner.hide()
 
         self.log("═" * 56)
@@ -659,7 +683,27 @@ class MultiUUTTestGUI(QMainWindow):
                 pass
 
     def start_next_uut(self):
-        if time.time() >= self.batch_end_time:
+        # S-5: prevent re-entrant calls (e.g. double-fired QTimer.singleShot)
+        if getattr(self, '_starting_uut', False):
+            return
+        self._starting_uut = True
+        try:
+            self._start_next_uut_impl()
+        finally:
+            self._starting_uut = False
+
+    def _start_next_uut_impl(self):
+        if not self.testing_active:
+            return  # Guard against stale QTimer callbacks after stop
+
+        if time.monotonic() >= self.batch_end_time:
+            self.batch_complete()
+            return
+
+        # C-6: Check if ALL UUTs are permanently failed
+        active = [u for u in self.uuts if u.status != UUTStatus.FAILED_PERMANENT]
+        if not active:
+            self.log("\u26a0 All UUTs permanently failed \u2014 ending batch early")
             self.batch_complete()
             return
 
@@ -680,6 +724,11 @@ class MultiUUTTestGUI(QMainWindow):
         self.progress_widget.set_current_uut(
             f"UUT {self.current_uut_index+1}/{len(self.uuts)}  —  {uut.serial_number}"
         )
+
+        # Add log divider so operator can easily find each UUT's test start
+        self.log("─" * 56)
+        self.log(f"  UUT {self.current_uut_index+1}/{len(self.uuts)}: {uut.serial_number}")
+        self.log("─" * 56)
 
         skip = self.test_config_widget.get_skip_state_management()
 
@@ -720,6 +769,8 @@ class MultiUUTTestGUI(QMainWindow):
         bridge.sig_mode.connect(self.status_panel.set_mode)
         bridge.sig_actuator_feedback.connect(self.actuator_display.update_feedback)
         bridge.sig_status.connect(self._on_prep_status)
+        bridge.sig_relay_state.connect(self.status_panel.set_relay_state)
+        bridge.sig_mistracking_update.connect(self.actuator_display.highlight_mistracking)
 
         if self.test_mode == TestMode.IBIT:
             bridge.sig_iteration.connect(self.progress_widget.set_iteration)
@@ -733,38 +784,79 @@ class MultiUUTTestGUI(QMainWindow):
     def on_uut_test_complete(self, success, message):
         uut = self.uuts[self.current_uut_index]
 
+        # Check if this was a soft failure (doesn't count toward permanent skip)
+        is_soft_failure = message.startswith('[SOFT]')
+        display_message = message.replace('[SOFT] ', '', 1)
+
         if not success and "Batch time expired" not in message:
-            uut.consecutive_failures = getattr(uut, 'consecutive_failures', 0) + 1
-            if uut.consecutive_failures >= 3:
-                uut.status = UUTStatus.FAILED_PERMANENT
-                self.log(f"⚠ {uut.serial_number} failed 3× — permanently skipping")
-                if self.daq:
-                    ok, msg = self.daq.set_line(uut.relay_line, False)
-                    self.log(f"  Relay D{uut.relay_line} {'disabled' if ok else 'ERROR: ' + msg}")
-            else:
+            if is_soft_failure:
+                # C-2: Soft failure — track separately with a cap of 6
+                uut.soft_failures = getattr(uut, 'soft_failures', 0) + 1
                 uut.status = UUTStatus.RETRY
                 self.log(
-                    f"⚠ {uut.serial_number} failed "
-                    f"({uut.consecutive_failures}/3) — will retry"
+                    f"\u26a0 {uut.serial_number} soft failure "
+                    f"({uut.soft_failures}/6) \u2014 auto-recovery applied"
                 )
+                if uut.soft_failures >= 6:
+                    uut.status = UUTStatus.FAILED_PERMANENT
+                    self.log(
+                        f"\u2717 {uut.serial_number} soft-failed {uut.soft_failures}\u00d7 "
+                        f"\u2014 permanently skipping "
+                        f"(likely persistent infrastructure problem)"
+                    )
+                    err_log = ErrorLogger(self.log_directory)
+                    err_log.error(
+                        'SYSTEM', uut.serial_number, uut.iterations_completed,
+                        f'UUT permanently skipped after {uut.soft_failures} soft failures',
+                        {'soft_failures': uut.soft_failures},
+                    )
+            else:
+                uut.consecutive_failures = getattr(uut, 'consecutive_failures', 0) + 1
+                if uut.consecutive_failures >= 3:
+                    uut.status = UUTStatus.FAILED_PERMANENT
+                    self.log(f"\u26a0 {uut.serial_number} failed 3\u00d7 \u2014 permanently skipping")
+                    if self.daq:
+                        ok, msg = self.daq.set_line(uut.relay_line, False)
+                        self.log(f"  Relay D{uut.relay_line} {'disabled' if ok else 'ERROR: ' + msg}")
+                    # Log to error JSONL — permanent failure is a significant event
+                    err_log = ErrorLogger(self.log_directory)
+                    err_log.error(
+                        'IBIT',
+                        uut.serial_number,
+                        uut.iterations_completed,
+                        f'UUT permanently failed after 3 consecutive failures \u2014 skipping for remainder of batch',
+                        {'consecutive_failures': uut.consecutive_failures},
+                    )
+                else:
+                    uut.status = UUTStatus.RETRY
+                    self.log(
+                        f"\u26a0 {uut.serial_number} failed "
+                        f"({uut.consecutive_failures}/3) \u2014 will retry"
+                    )
         else:
             uut.consecutive_failures = 0
             if success:
                 uut.status = UUTStatus.COMPLETE
 
-        self.log(f"{'✓' if success else '✗'}  {uut.serial_number}: {message}")
+        self.log(f"{'✓' if success else '✗'}  {uut.serial_number}: {display_message}")
         self.uut_table_widget.update_table(self.uuts)
+        self.actuator_display.clear_mistracking_highlights()
 
         if success:
             self.alert_banner.hide()
 
-        if self.testing_active and time.time() < self.batch_end_time:
+        # C-9: use monotonic clock for batch deadline comparison
+        if self.testing_active and time.monotonic() < self.batch_end_time:
             QTimer.singleShot(2000, self.start_next_uut)
         elif self.testing_active:
             self.batch_complete()
 
     def on_batch_time_expired(self):
         self.log("⏱ Batch time expired — waiting for current test to complete safely")
+        self.show_alert(
+            "Batch time expired — completing current test then stopping",
+            severity=AlertSeverity.INFO,
+        )
         # Don't call batch_complete() here — the executor's finally block will clean up
         # and then call on_uut_test_complete which will detect expired time and call batch_complete
         if self.current_test_executor:
@@ -902,12 +994,27 @@ class MultiUUTTestGUI(QMainWindow):
 
     def update_elapsed_time(self):
         if self.batch_start_datetime and self.testing_active:
+            # C-9: hibernation detection — if timer fired late by >5s, system may
+            # have suspended/hibernated and the monotonic deadline drifted too far.
+            now = time.monotonic()
+            tick_gap = now - self._last_timer_tick
+            if tick_gap > 5.0:
+                self.log(
+                    f"\u26a0 Timer gap of {tick_gap:.0f}s detected \u2014 system may have hibernated. "
+                    f"Batch deadline adjusted."
+                )
+                # Extend monotonic batch deadline by the hibernation gap
+                self.batch_end_time += tick_gap - 1.0
+            self._last_timer_tick = now
+
+            # Compute elapsed/remaining using wall clock for display accuracy
             elapsed   = time.time() - self.batch_start_datetime.timestamp()
-            remaining = max(0, self.batch_end_time - time.time())
+            remaining = max(0, self._batch_end_wall - time.time()) if self._batch_end_wall else 0
             self.progress_widget.set_elapsed(elapsed)
             self.progress_widget.set_remaining(remaining)
-            total = self.batch_end_time - self.batch_start_datetime.timestamp()
-            self.progress_widget.set_progress(min(100, int(elapsed/total*100)))
+            total = (self._batch_end_wall - self.batch_start_datetime.timestamp()
+                     if self._batch_end_wall else 1)
+            self.progress_widget.set_progress(min(100, int(elapsed / max(total, 1) * 100)))
 
     def _on_statistics(self, statistics):
         self.current_statistics = statistics
@@ -956,6 +1063,8 @@ class MultiUUTTestGUI(QMainWindow):
             'duration_s':  time.time() - self.batch_start_datetime.timestamp(),
             'log_dir':     self.log_directory,
             'test_config': self.test_config,
+            'test_temperature_c': getattr(self, '_test_temperature_c', None),
+            'test_environment': 'thermal_chamber' if getattr(self, '_test_temperature_c', None) is not None else 'ambient',
             'uuts': [{
                 'serial':     u.serial_number,
                 'ip':         u.ip_address,
@@ -1122,11 +1231,15 @@ class MultiUUTTestGUI(QMainWindow):
         for uut in self.uuts:
             uut.status = UUTStatus.READY
             uut.iterations_completed = 0
+            uut.soft_failures = 0
         self.uut_table_widget.update_table(self.uuts)
 
         self.testing_active = True
         self.batch_start_datetime = datetime.now()
-        self.batch_end_time = self.batch_start_datetime.timestamp() + duration_seconds
+        # C-9: use monotonic clock for batch deadline
+        self.batch_end_time    = time.monotonic() + duration_seconds
+        self._batch_end_wall   = self.batch_start_datetime.timestamp() + duration_seconds
+        self._last_timer_tick  = time.monotonic()
         self.current_uut_index = -1
         self.test_mode = test_mode
         self.playback_csv = playback_csv
@@ -1140,10 +1253,37 @@ class MultiUUTTestGUI(QMainWindow):
         self.log(f"  BATCH START  --  {mode_label}  ({duration_seconds}s)")
         self.log("=" * 56)
 
+        self._watchdog = BatchWatchdog(
+            uuts=self.uuts,
+            daq=self.daq,
+            log_directory=self.log_directory,
+            on_alert=lambda msg: self.show_alert(msg, severity=AlertSeverity.WARNING),
+            on_log=self.log,
+            is_testing=lambda: self.testing_active,
+            current_uut_index=lambda: self.current_uut_index,
+        )
+        self._watchdog.start()
+
         self.elapsed_timer.start(1000)
         self.start_next_uut()
 
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+                self.log("✓ Windows sleep prevention active")
+            except Exception:
+                pass
+
     def closeEvent(self, event):
+        # S-12: Force all relays OFF immediately before asking user
+        if self.testing_active and self.daq:
+            try:
+                self.daq.set_all_low()
+                self.log("\u26a0 Window closing \u2014 all relays forced OFF")
+            except Exception:
+                pass  # Best effort
+
         if self.testing_active:
             reply = QMessageBox.question(
                 self, "Test Running",
@@ -1153,7 +1293,15 @@ class MultiUUTTestGUI(QMainWindow):
             if reply != QMessageBox.Yes:
                 event.ignore()
                 return
+
+        if self._watchdog:
+            self._watchdog.stop()
+        if self.current_test_executor:
+            self.current_test_executor.stop()
         self.save_settings()
         if self.daq:
-            self.daq.close()
+            try:
+                self.daq.close()
+            except Exception:
+                pass
         event.accept()

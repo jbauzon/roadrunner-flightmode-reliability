@@ -121,6 +121,10 @@ class TelemetryLogger:
         Filename includes test mode (IBIT or Playback) so the two can be
         distinguished in the logs folder.
 
+        S-11: If the generated filename already exists, append a microsecond
+        suffix to avoid collisions when multiple iterations run on the same
+        second (e.g. after rapid power cycle).
+
         Args:
             date_obj: Date object
 
@@ -131,10 +135,20 @@ class TelemetryLogger:
         day_str = f"day{day_num:02d}"
         date_str = date_obj.strftime('%Y%m%d')
         mode_tag = "IBIT" if self.test_mode == TestMode.IBIT else "Playback"
+        iter_tag = f"_iter{self.iteration_number:04d}" if self.iteration_number else ""
         filename = (
-            f"UUT_{self.uut_serial}_{day_str}_{date_str}_{mode_tag}_Test.csv"
+            f"UUT_{self.uut_serial}_{day_str}_{date_str}_{mode_tag}{iter_tag}_Test.csv"
         )
-        return os.path.join(self.log_directory, filename)
+        path = os.path.join(self.log_directory, filename)
+        # S-11: avoid timestamp collision — append microseconds if file exists
+        if os.path.exists(path):
+            from datetime import datetime as _dt
+            usec = _dt.now().strftime('%f')
+            filename = (
+                f"UUT_{self.uut_serial}_{day_str}_{date_str}_{mode_tag}{iter_tag}_{usec}_Test.csv"
+            )
+            path = os.path.join(self.log_directory, filename)
+        return path
     
     def open(self) -> bool:
         """

@@ -59,13 +59,9 @@ class MockDAQController:
         old = self._line_states.get(line, False)
         self._line_states[line] = state
 
-        # Trigger sim power cycle if vehicle is registered
-        vehicle = self._vehicles.get(line)
-        if vehicle:
-            if state and not old:
-                vehicle.power_on()
-            elif not state and old:
-                vehicle.power_off()
+        # Note: relays apply test load to actuators, NOT main vehicle power.
+        # The sim vehicle continues running regardless of relay state.
+        # We do NOT call vehicle.power_on()/power_off() here.
 
         action = "ON " if state else "OFF"
         change = "  (no change)" if old == state else ""
@@ -95,4 +91,8 @@ class MockDAQController:
         return self._line_states.get(line, False)
 
     def get_all_states(self):
+        return dict(self._line_states)
+
+    def get_line_states(self) -> dict:
+        """Return a copy of all relay line states."""
         return dict(self._line_states)

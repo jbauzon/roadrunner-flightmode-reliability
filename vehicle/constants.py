@@ -7,7 +7,7 @@ This module is the **single source of truth** for all magic numbers, display
 names, and lookup tables used throughout the production test system.  Every
 other module imports from here rather than defining its own inline dicts.
 """
-from typing import List
+from typing import Any, List
 
 from enum import IntEnum
 
@@ -304,6 +304,11 @@ MONITOR_OVERRIDE_CANCEL = 0            # Cancel override, return to normal monit
 MONITOR_OVERRIDE_SUPPRESS = 1          # Override to HEALTHY (suppresses fault — use to clear SET monitors)
 MONITOR_OVERRIDE_FORCE_FAULT = 2       # Override to FAULTED (forces fault — DO NOT use for clearing)
 
+# Thermal chamber limits
+SERVO_TEMP_WARN_DEGC     = 70   # Warn at 70°C
+SERVO_TEMP_CRITICAL_DEGC = 85   # Critical at 85°C
+SERVO_TEMP_SHUTDOWN_DEGC = 95   # Emergency stop at 95°C
+
 # Network defaults
 DEFAULT_VEHICLE_PORT = 13002           # QGC MAVLink channel on real hardware (was 9985)
 
@@ -362,6 +367,38 @@ def get_failed_surfaces(mistracking_flags: int) -> List[str]:
     ]
 
 
-def is_armed(flight_regime: int) -> bool:
-    """True if vehicle is armed (motors can spin)."""
-    return flight_regime >= FlightRegime.GROUND_ARMED and flight_regime != FlightRegime.INVALID
+def is_armed(flight_regime: Any) -> bool:
+    """True if vehicle is armed (motors can spin).
+
+    Returns False for None, invalid inputs, or unrecognized regime values.
+    Only regimes GROUND_ARMED through TAXI (1-22) are considered armed.
+    """
+    if flight_regime is None:
+        return False
+    try:
+        fr = int(flight_regime)
+    except (TypeError, ValueError):
+        return False
+    # Only accept known armed regimes (1-22), not undocumented values
+    return (FlightRegime.GROUND_ARMED <= fr <= FlightRegime.TAXI
+            and fr != FlightRegime.INVALID)
+
+
+def safe_int_field(msg: Any, field: str, default: int = 0) -> int:
+    """Safely read an integer MAVLink field, defaulting if None or missing.
+
+    Args:
+        msg: MAVLink message object
+        field: Attribute name to read
+        default: Value to return when field is absent, None, or non-numeric
+
+    Returns:
+        Integer field value, or ``default`` on any error.
+    """
+    val = getattr(msg, field, default)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
