@@ -44,9 +44,13 @@ class MultiUUTTestGUI(QMainWindow):
     # Emitted from background thread when SITL sims are ready
     _sitl_ready_signal = _pyqtSignal(object)  # payload: MockDAQController instance
 
+    # Emitted from DebugConnection dispatch thread — routes to Qt main thread
+    _debug_msg_signal  = _pyqtSignal(object)  # payload: MAVLink message
+
     def __init__(self):
         super().__init__()
         self._sitl_ready_signal.connect(self._on_sitl_ready)
+        self._debug_msg_signal.connect(self._on_debug_message)
 
         # ── Directories ───────────────────────────────────────────────────
         # script_dir is ui/ — project root is one level up
@@ -384,61 +388,9 @@ class MultiUUTTestGUI(QMainWindow):
         self._debug_conn.on_log = self.log
         self._debug_conn.on_error = lambda msg: self.show_alert(msg, severity=AlertSeverity.ERROR)
 
-        # Wire incoming messages to telemetry panel
-        def _on_message(msg):
-            msg_type = msg.get_type()
-            try:
-                from vehicle.constants import MsgType
-                if msg_type == MsgType.ACTUATION_SYS_STATUS:
-                    from testing.helpers import _build_actuator_feedback_dict
-                    from vehicle.constants import safe_int_field
-                    self.telemetry_panel.update_actuator_feedback(
-                        _build_actuator_feedback_dict(msg)
-                    )
-                    mode = safe_int_field(msg, 'actuation_state')
-                    self._last_mode = mode
-                    self.telemetry_panel.update_vehicle_status(mode, 0, False)
-                elif msg_type == MsgType.PANDION_STATUS:
-                    from vehicle.constants import safe_int_field, is_armed
-                    regime = safe_int_field(msg, 'flight_regime', 255)
-                    armed = is_armed(regime)
-                    mode = getattr(self, '_last_mode', 0)
-                    self.telemetry_panel.update_vehicle_status(mode, regime, armed)
-                elif msg_type == MsgType.ENGINE_STATUS:
-                    self.telemetry_panel.update_engine(
-                        getattr(msg, 'eng_1_speed', 0) or 0,
-                        getattr(msg, 'eng_1_egt_temp_degC', 0) or 0,
-                        getattr(msg, 'eng_1_fuel_pump_curr_mA', 0) or 0,
-                    )
-                elif msg_type == MsgType.STATUSTEXT:
-                    # Show vehicle status messages in the response log
-                    text = getattr(msg, 'text', '') or ''
-                    if text:
-                        self.debug_console._log(f"[VEHICLE] {text}", 'info')
-                elif msg_type == 'COMMAND_ACK':
-                    cmd = getattr(msg, 'command', 0)
-                    result = getattr(msg, 'result', -1)
-                    result_names = {0: 'ACCEPTED', 1: 'TEMPORARILY_REJECTED',
-                                    2: 'DENIED', 3: 'UNSUPPORTED', 4: 'FAILED'}
-                    result_str = result_names.get(result, str(result))
-                    level = 'send' if result == 0 else 'error'
-                    self.debug_console._log(
-                        f"ACK cmd={cmd}: {result_str}", level
-                    )
-
-                # Add to message stream
-                key_fields = []
-                for field in ('actuation_state', 'flight_regime', 'eng_1_speed', 'text'):
-                    val = getattr(msg, field, None)
-                    if val is not None:
-                        display = str(val)[:30] if field == 'text' else f"{field}={val}"
-                        key_fields.append(display)
-                        break  # just show first interesting field
-                summary = key_fields[0] if key_fields else ''
-                self.telemetry_panel.add_message(msg_type, summary)
-            except Exception:
-                pass
-        self._debug_conn.on_message = _on_message
+        # Route all messages through the signal — NEVER update Qt widgets
+        # from the dispatch thread directly (causes freeze on Windows)
+        self._debug_conn.on_message = self._debug_msg_signal.emit
 
         def _on_connected(serial):
             # Give debug console the connection
@@ -467,6 +419,71 @@ class MultiUUTTestGUI(QMainWindow):
             ).start()
             self._debug_conn = None
         self.telemetry_panel.reset()
+
+    def _on_debug_message(self, msg) -> None:
+        """Process a MAVLink message from the debug connection on the Qt main thread.
+
+        This is a slot connected to _debug_msg_signal. All Qt widget updates
+        MUST happen here, not in the dispatch thread callback.
+        """
+        from vehicle.constants import MsgType, safe_int_field, is_armed
+        msg_type = msg.get_type()
+        try:
+            if msg_type == MsgType.ACTUATION_SYS_STATUS:
+                from testing.helpers import _build_actuator_feedback_dict
+                self.telemetry_panel.update_actuator_feedback(
+                    _build_actuator_feedback_dict(msg)
+                )
+                mode = safe_int_field(msg, 'actuation_state')
+                self._last_mode = mode
+                self.telemetry_panel.update_vehicle_status(mode, 0, False)
+
+            elif msg_type == MsgType.PANDION_STATUS:
+                regime = safe_int_field(msg, 'flight_regime', 255)
+                armed  = is_armed(regime)
+                mode   = getattr(self, '_last_mode', 0)
+                self.telemetry_panel.update_vehicle_status(mode, regime, armed)
+
+            elif msg_type == MsgType.ENGINE_STATUS:
+                self.telemetry_panel.update_engine(
+                    getattr(msg, 'eng_1_speed', 0) or 0,
+                    getattr(msg, 'eng_1_egt_temp_degC', 0) or 0,
+                    getattr(msg, 'eng_1_fuel_pump_curr_mA', 0) or 0,
+                )
+
+            elif msg_type == MsgType.STATUSTEXT:
+                text = getattr(msg, 'text', '') or ''
+                if text:
+                    self.debug_console._log(f"[VEHICLE] {text}", 'info')
+
+            elif msg_type == 'COMMAND_ACK':
+                cmd    = getattr(msg, 'command', 0)
+                result = getattr(msg, 'result', -1)
+                result_names = {0: 'ACCEPTED', 1: 'TEMPORARILY_REJECTED',
+                                2: 'DENIED',   3: 'UNSUPPORTED', 4: 'FAILED'}
+                result_str = result_names.get(result, str(result))
+                level = 'send' if result == 0 else 'error'
+                self.debug_console._log(f"ACK cmd={cmd}: {result_str}", level)
+
+            elif msg_type == MsgType.BMS_DATA:
+                self.telemetry_panel.update_battery(
+                    getattr(msg, 'pack_voltage_mV', 0) or 0,
+                    getattr(msg, 'pack_current_cA', 0) or 0,
+                    getattr(msg, 'state_of_charge_percent', 0) or 0,
+                )
+
+            # Add to message stream
+            for field in ('actuation_state', 'flight_regime', 'eng_1_speed', 'text'):
+                val = getattr(msg, field, None)
+                if val is not None:
+                    summary = str(val)[:30] if field == 'text' else f"{field}={val}"
+                    self.telemetry_panel.add_message(msg_type, summary)
+                    break
+            else:
+                self.telemetry_panel.add_message(msg_type, '')
+
+        except Exception:
+            pass
 
     # ═══════════════════════════════════════════════════════════════════════
     # DAQ management
