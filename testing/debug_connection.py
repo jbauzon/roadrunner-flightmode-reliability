@@ -12,7 +12,7 @@ import time
 from collections import defaultdict, deque
 from typing import Callable, Optional, Any
 
-from vehicle.connection import connect_to_vehicle
+import vehicle.connection as _vehicle_conn
 from vehicle.constants import MsgType
 
 
@@ -56,7 +56,7 @@ class DebugConnection:
         """Connect to the vehicle. Returns True on success."""
         try:
             self.on_log(f"Connecting to {self.serial} ({self.ip}:{self.port})...")
-            self.master = connect_to_vehicle(self.ip, self.port, self.connection_timeout)
+            self.master = _vehicle_conn.connect_to_vehicle(self.ip, self.port, self.connection_timeout)
             self.on_log(f"  \u2713 Connected to {self.serial}")
 
             # Learn sysid before starting dispatch
