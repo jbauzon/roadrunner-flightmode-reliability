@@ -12,6 +12,7 @@ from .controls import ControlButtonsWidget
 from .log_widget import LogWidget
 from .dialogs import AddUUTDialog
 from .debug_console import DebugConsoleWidget
+from .telemetry_panel import TelemetryPanelWidget
 
 __all__ = [
     'StatusBadge', 'LED',
@@ -27,4 +28,5 @@ __all__ = [
     'LogWidget',
     'AddUUTDialog',
     'DebugConsoleWidget',
+    'TelemetryPanelWidget',
 ]

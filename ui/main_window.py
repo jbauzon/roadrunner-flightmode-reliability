@@ -14,7 +14,8 @@ from typing import Optional
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QMessageBox, QFileDialog, QApplication, QScrollArea, QShortcut
+    QMessageBox, QFileDialog, QApplication, QScrollArea, QShortcut,
+    QStackedWidget, QPushButton,
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QKeySequence
@@ -30,7 +31,7 @@ from .widgets import (
     DAQSetupWidget, TestConfigWidget, UUTTableWidget,
     StatusPanelWidget, IBITDisplayWidget, ActuatorFeedbackWidget,
     AlertBannerWidget, ProgressWidget, ControlButtonsWidget,
-    LogWidget, AddUUTDialog, DebugConsoleWidget
+    LogWidget, AddUUTDialog, DebugConsoleWidget, TelemetryPanelWidget
 )
 from .qt_adapter import QtExecutorBridge
 from .command_server import CommandServer
@@ -93,6 +94,8 @@ class MultiUUTTestGUI(QMainWindow):
             'skip_arm_for_ibit':   False,
         }
 
+        self._last_mode            = 0      # tracks last mode int for telemetry panel
+
         # ── Timers ────────────────────────────────────────────────────────
         self.daq_health_timer = QTimer()
         self.elapsed_timer    = QTimer()
@@ -154,15 +157,50 @@ class MultiUUTTestGUI(QMainWindow):
         self.alert_banner = AlertBannerWidget()
         root_layout.addWidget(self.alert_banner)
 
-        # ── Main content (splitter: left | centre | right) ─────────────
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(2)
-        splitter.setStyleSheet(
+        # ── Mode tab bar ──────────────────────────────────────────────────
+        mode_bar = QWidget()
+        mode_bar.setFixedHeight(40)
+        mode_bar.setStyleSheet(
+            f"background: {T.BG_ELEVATED}; border-bottom: 1px solid {T.BORDER};"
+        )
+        mode_bar_layout = QHBoxLayout(mode_bar)
+        mode_bar_layout.setContentsMargins(16, 0, 16, 0)
+        mode_bar_layout.setSpacing(4)
+
+        self._tab_test  = QPushButton("TEST MODE")
+        self._tab_debug = QPushButton("DEBUG MODE")
+
+        for btn in (self._tab_test, self._tab_debug):
+            btn.setCheckable(True)
+            btn.setFixedHeight(32)
+            btn.setFixedWidth(140)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {T.TEXT_DISABLED}; "
+                f"border: none; border-radius: 4px; font-size: {T.FONT_SIZE_SM}; "
+                f"font-weight: bold; letter-spacing: 1px; }}"
+                f"QPushButton:checked {{ background: {T.BG_SURFACE}; color: {T.TEXT_PRIMARY}; "
+                f"border-bottom: 2px solid {T.GREEN}; }}"
+                f"QPushButton:hover:!checked {{ color: {T.TEXT_SECONDARY}; }}"
+            )
+
+        self._tab_test.setChecked(True)
+        self._tab_test.clicked.connect(lambda: self._switch_mode(0))
+        self._tab_debug.clicked.connect(lambda: self._switch_mode(1))
+
+        mode_bar_layout.addWidget(self._tab_test)
+        mode_bar_layout.addWidget(self._tab_debug)
+        mode_bar_layout.addStretch()
+        root_layout.addWidget(mode_bar)
+
+        # ── Main area: left column + stacked content ──────────────────────
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setHandleWidth(2)
+        main_splitter.setStyleSheet(
             f"QSplitter::handle {{ background: {T.BORDER}; }}"
         )
-        root_layout.addWidget(splitter, 1)
+        root_layout.addWidget(main_splitter, 1)
 
-        # ── Left column ────────────────────────────────────────────────
+        # ── Left column (shared — always visible) ─────────────────────
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(0)
@@ -179,9 +217,21 @@ class MultiUUTTestGUI(QMainWindow):
         left_layout.addWidget(self.test_config_widget)
         left_layout.addStretch()
         left_scroll.setWidget(left_panel)
-        splitter.addWidget(left_scroll)
+        main_splitter.addWidget(left_scroll)
 
-        # ── Centre column ─────────────────────────────────────────────
+        # ── Stacked content area ───────────────────────────────────────
+        self._content_stack = QStackedWidget()
+        main_splitter.addWidget(self._content_stack)
+        main_splitter.setSizes([340, 1460])
+
+        # ── Page 0: TEST MODE — existing centre + right columns ───────
+        test_page = QSplitter(Qt.Horizontal)
+        test_page.setHandleWidth(2)
+        test_page.setStyleSheet(
+            f"QSplitter::handle {{ background: {T.BORDER}; }}"
+        )
+
+        # Centre column
         centre_panel = QWidget()
         centre_layout = QVBoxLayout(centre_panel)
         centre_layout.setContentsMargins(6, 12, 6, 12)
@@ -194,9 +244,9 @@ class MultiUUTTestGUI(QMainWindow):
         centre_layout.addWidget(self.uut_table_widget, 3)
         centre_layout.addWidget(self.progress_widget)
         centre_layout.addWidget(self.log_widget, 2)
-        splitter.addWidget(centre_panel)
+        test_page.addWidget(centre_panel)
 
-        # ── Right column ──────────────────────────────────────────────
+        # Right column
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setFrameShape(0)
@@ -215,31 +265,38 @@ class MultiUUTTestGUI(QMainWindow):
         right_layout.addWidget(self.actuator_display, 1)
         right_layout.addStretch()
         right_scroll.setWidget(right_panel)
-        splitter.addWidget(right_scroll)
+        test_page.addWidget(right_scroll)
 
-        # Proportional column widths
-        splitter.setSizes([340, 820, 540])
+        test_page.setSizes([820, 540])
+        self._content_stack.addWidget(test_page)   # index 0
 
-        # ── Debug Console (hidden by default, Ctrl+D to toggle) ──────────────
-        self._debug_panel = QWidget()
-        debug_layout = QVBoxLayout(self._debug_panel)
+        # ── Page 1: DEBUG MODE — commands | telemetry ─────────────────
+        debug_page = QWidget()
+        debug_layout = QHBoxLayout(debug_page)
         debug_layout.setContentsMargins(0, 0, 0, 0)
         debug_layout.setSpacing(0)
 
-        debug_divider = QWidget()
-        debug_divider.setFixedHeight(1)
-        debug_divider.setStyleSheet(f"background: {T.BORDER};")
-        debug_layout.addWidget(debug_divider)
-
+        # Debug commands (left half)
+        debug_cmd_scroll = QScrollArea()
+        debug_cmd_scroll.setWidgetResizable(True)
+        debug_cmd_scroll.setFrameShape(0)
+        debug_cmd_scroll.setStyleSheet(
+            f"background: {T.BG_BASE}; border-right: 1px solid {T.BORDER};"
+        )
         self.debug_console = DebugConsoleWidget()
         self.debug_console.command_sent.connect(
             lambda msg: self.log(f"[DEBUG] {msg}")
         )
-        debug_layout.addWidget(self.debug_console)
-        self._debug_panel.setFixedHeight(280)
-        self._debug_panel.hide()  # Hidden by default
+        debug_cmd_scroll.setWidget(self.debug_console)
 
-        root_layout.addWidget(self._debug_panel)
+        # Live telemetry (right half)
+        self.telemetry_panel = TelemetryPanelWidget()
+
+        debug_cmd_scroll.setMaximumWidth(500)
+        debug_cmd_scroll.setMinimumWidth(440)
+        debug_layout.addWidget(debug_cmd_scroll, 0)   # fixed width
+        debug_layout.addWidget(self.telemetry_panel, 1)  # stretches
+        self._content_stack.addWidget(debug_page)  # index 1
 
         # ── Bottom bar ─────────────────────────────────────────────────
         bottom_bar = QWidget()
@@ -290,14 +347,22 @@ class MultiUUTTestGUI(QMainWindow):
 
         self.elapsed_timer.timeout.connect(self.update_elapsed_time)
 
-    def _toggle_debug_console(self) -> None:
-        """Toggle the debug console panel (Ctrl+D)."""
-        visible = self._debug_panel.isVisible()
-        self._debug_panel.setVisible(not visible)
-        if not visible:
-            self.log("Debug console opened (Ctrl+D to close)")
+    def _switch_mode(self, index: int) -> None:
+        """Switch between Test (0) and Debug (1) mode tabs."""
+        self._content_stack.setCurrentIndex(index)
+        self._tab_test.setChecked(index == 0)
+        self._tab_debug.setChecked(index == 1)
+
+        if index == 1:
+            self.log("Switched to Debug Mode — commands bypass all safety checks")
         else:
-            self.log("Debug console closed")
+            self.log("Switched to Test Mode")
+
+    def _toggle_debug_console(self) -> None:
+        """Ctrl+D: switch to debug mode tab."""
+        self._switch_mode(1)
+        self._tab_debug.setChecked(True)
+        self._tab_test.setChecked(False)
 
     # ═══════════════════════════════════════════════════════════════════════
     # DAQ management
@@ -810,13 +875,34 @@ class MultiUUTTestGUI(QMainWindow):
         else:
             bridge.sig_progress.connect(self.ibit_display.set_playback_progress)
 
+        # ── Wire signals to telemetry panel (active in debug mode) ────────
+        def _update_mode(m):
+            self._last_mode = m
+        bridge.sig_mode.connect(_update_mode)
+        bridge.sig_mode.connect(
+            lambda m: self.telemetry_panel.update_vehicle_status(
+                m, self._last_regime if hasattr(self, '_last_regime') else 0,
+                self._last_armed if hasattr(self, '_last_armed') else False)
+        )
+        bridge.sig_armed_state.connect(
+            lambda armed, regime: (
+                setattr(self, '_last_armed', armed),
+                setattr(self, '_last_regime', regime),
+                self.telemetry_panel.update_vehicle_status(self._last_mode, regime, armed),
+            )
+        )
+        bridge.sig_relay_state.connect(self.telemetry_panel.update_relay_state)
+        bridge.sig_actuator_feedback.connect(self.telemetry_panel.update_actuator_feedback)
+        bridge.sig_ibit_state.connect(self.telemetry_panel.update_ibit_state)
+        bridge.sig_mistracking_update.connect(self.telemetry_panel.update_mistracking)
+
         self.current_test_executor.start()
+        self.debug_console.set_test_active(True)
 
         # Give debug console access to the active connection
         # (executor thread updates it after connecting)
         def _update_debug_connection():
             if hasattr(self.current_test_executor, 'master') and self.current_test_executor.master:
-                import threading
                 self.debug_console.set_connection(
                     self.current_test_executor.master,
                     self.current_test_executor.master_lock,
@@ -887,6 +973,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.uut_table_widget.update_table(self.uuts)
         self.actuator_display.clear_mistracking_highlights()
         self.debug_console.clear_connection()
+        self.debug_console.set_test_active(False)
 
         if success:
             self.alert_banner.hide()
@@ -937,6 +1024,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.status_panel.reset()
         self.ibit_display.reset()
         self.actuator_display.reset()
+        self.telemetry_panel.reset()
 
         total = sum(u.iterations_completed for u in self.uuts)
         QMessageBox.information(
@@ -995,6 +1083,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.status_panel.reset()
         self.ibit_display.reset()
         self.actuator_display.reset()
+        self.telemetry_panel.reset()
         self.alert_banner.hide()
         self.log("✓ Stop complete")
 

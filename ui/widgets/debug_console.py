@@ -62,6 +62,10 @@ class DebugConsoleWidget(QWidget):
         self._uut_serial = None
         self._update_enabled()
         self._log("Connection cleared", 'warn')
+
+    def set_test_active(self, active: bool) -> None:
+        """Show/hide the test-active warning banner."""
+        self._active_warning.setVisible(active)
     
     def _update_enabled(self) -> None:
         """Enable/disable command buttons based on connection state."""
@@ -83,60 +87,59 @@ class DebugConsoleWidget(QWidget):
     
     def _init_ui(self) -> None:
         self.setStyleSheet(f"background: {T.BG_BASE};")
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 8, 12, 8)
-        main_layout.setSpacing(8)
-        
-        # Header row
-        header_row = QHBoxLayout()
-        title = QLabel("⚙ Debug Console")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Title bar with amber background for visibility
+        title_bar = QWidget()
+        title_bar.setFixedHeight(36)
+        title_bar.setStyleSheet(
+            f"background: {T.BG_ELEVATED}; border-bottom: 1px solid {T.BORDER}; border-radius: 0;"
+        )
+        title_row = QHBoxLayout(title_bar)
+        title_row.setContentsMargins(12, 0, 12, 0)
+        title = QLabel("⚙  MANUAL COMMANDS")
         title.setStyleSheet(
-            f"color: {T.AMBER}; font-size: {T.FONT_SIZE}; "
-            f"font-weight: bold; background: transparent;"
+            f"color: {T.AMBER}; font-size: {T.FONT_SIZE_SM}; font-weight: bold; "
+            f"background: transparent; letter-spacing: 1px;"
         )
         self._status_label = QLabel("Not connected")
         self._status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self._status_label.setStyleSheet(
-            f"color: {T.AMBER}; font-size: {T.FONT_SIZE_SM}; background: transparent;"
+            f"color: {T.TEXT_DISABLED}; font-size: {T.FONT_SIZE_SM}; background: transparent;"
         )
-        header_row.addWidget(title)
-        header_row.addStretch()
-        header_row.addWidget(self._status_label)
-        main_layout.addLayout(header_row)
-        
-        warn = QLabel(
-            "⚠ Commands sent here bypass all safety checks. "
-            "Only use when testing is not active."
+        title_row.addWidget(title)
+        title_row.addStretch()
+        title_row.addWidget(self._status_label)
+        layout.addWidget(title_bar)
+
+        # Warning: test is running
+        self._active_warning = QLabel(
+            "⚠  TEST IS RUNNING — commands will interrupt the sequence"
         )
-        warn.setStyleSheet(
-            f"color: {T.RED}; font-size: {T.FONT_SIZE_SM}; "
-            f"background: transparent; padding: 2px 0;"
+        self._active_warning.setStyleSheet(
+            f"background: #2e1a1a; color: {T.RED}; padding: 6px 12px; "
+            f"font-size: {T.FONT_SIZE_SM}; font-weight: bold; "
+            f"border-bottom: 1px solid {T.RED};"
         )
-        main_layout.addWidget(warn)
-        
-        # Two-column command area
-        cols = QHBoxLayout()
-        cols.setSpacing(12)
-        
-        # Left: mode + arm/disarm + params
-        left = QVBoxLayout()
-        left.setSpacing(8)
-        left.addWidget(self._build_mode_group())
-        left.addWidget(self._build_arm_group())
-        left.addWidget(self._build_param_group())
-        left.addStretch()
-        
-        # Right: monitor overrides + raw + response log
-        right = QVBoxLayout()
-        right.setSpacing(8)
-        right.addWidget(self._build_monitor_group())
-        right.addWidget(self._build_raw_group())
-        right.addWidget(self._build_log(), 1)
-        
-        cols.addLayout(left, 1)
-        cols.addLayout(right, 1)
-        main_layout.addLayout(cols, 1)
-        
+        self._active_warning.hide()
+        layout.addWidget(self._active_warning)
+
+        # Single scrollable column — all groups stacked vertically
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(12, 8, 12, 8)
+        main_layout.setSpacing(8)
+        layout.addLayout(main_layout)
+
+        main_layout.addWidget(self._build_mode_group())
+        main_layout.addWidget(self._build_arm_group())
+        main_layout.addWidget(self._build_param_group())
+        main_layout.addWidget(self._build_monitor_group())
+        main_layout.addWidget(self._build_raw_group())
+        main_layout.addWidget(self._build_log(), 1)
+        main_layout.addStretch()
+
         self._update_enabled()
     
     def _build_mode_group(self) -> QGroupBox:
@@ -155,16 +158,28 @@ class DebugConsoleWidget(QWidget):
             ("POS CHECK",     6, T.BLUE),
             ("TERMINAL",      7, T.RED),
         ]
+        DIM_COLORS = {
+            0: (T.TEXT_DISABLED, T.BG_ELEVATED),    # OFF — grey
+            2: (T.GREEN,  '#1a2e1a'),                # OPERATE — green
+            4: (T.BLUE,   '#1a1a2e'),                # PLAYBACK — blue
+            1: (T.AMBER,  '#2e2a1a'),                # IBIT — amber
+            3: (T.PURPLE, '#261a2e'),                # MANUAL — purple
+            5: (T.TEXT_SECONDARY, T.BG_ELEVATED),   # TRIM — grey
+            6: (T.BLUE,   '#1a1a2e'),                # POS CHECK — blue
+            7: (T.RED,    '#2e1a1a'),                # TERMINAL — red
+        }
         for i, (name, mode_id, color) in enumerate(modes):
             btn = QPushButton(name)
             btn.setFixedHeight(28)
             btn.setToolTip(f"Send pandion_rr_actuation_request_mode (requested_mode={mode_id})")
+            color, bg = DIM_COLORS.get(mode_id, (T.TEXT_SECONDARY, T.BG_ELEVATED))
             btn.setStyleSheet(
-                f"QPushButton {{ background: {T.BG_ELEVATED}; color: {color}; "
+                f"QPushButton {{ background: {bg}; color: {color}; "
                 f"border: 1px solid {color}; border-radius: 4px; "
-                f"padding: 2px 8px; font-size: {T.FONT_SIZE_SM}; font-weight: bold; }}"
+                f"padding: 4px 8px; font-size: {T.FONT_SIZE_SM}; font-weight: bold; }}"
                 f"QPushButton:hover {{ background: {color}; color: {T.BG_BASE}; }}"
-                f"QPushButton:disabled {{ opacity: 0.4; }}"
+                f"QPushButton:disabled {{ background: {T.BG_BASE}; color: {T.TEXT_DISABLED}; "
+                f"border-color: {T.BORDER}; }}"
             )
             btn.clicked.connect(lambda _, m=mode_id, n=name: self._send_mode_request(m, n))
             grid.addWidget(btn, i // 4, i % 4)
