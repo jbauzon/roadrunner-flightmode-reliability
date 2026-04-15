@@ -117,6 +117,12 @@
         <entry value="3" name="PANDION_RR_ACTUATION_STATE_MANUAL" />
         <entry value="4" name="PANDION_RR_ACTUATION_STATE_PLAYBACK" />
         <entry value="5" name="PANDION_RR_ACTUATION_STATE_TRIM" />
+        <entry value="6" name="PANDION_RR_ACTUATION_STATE_POS_CHECK">
+            <description>Position check — pre-OPERATE verification (TAU Mk2 elevon vehicles)</description>
+        </entry>
+        <entry value="7" name="PANDION_RR_ACTUATION_STATE_TERMINAL">
+            <description>Terminal/shutdown mode — requires power cycle to recover</description>
+        </entry>
     </enum>
     <enum name="PANDION_RR_ACTUATION_IBIT_SUBSTATE">
         <entry value="0" name="PANDION_RR_ACTUATION_IBIT_BEGIN" />

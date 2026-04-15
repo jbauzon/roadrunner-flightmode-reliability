@@ -30,7 +30,7 @@ from .widgets import (
     DAQSetupWidget, TestConfigWidget, UUTTableWidget,
     StatusPanelWidget, IBITDisplayWidget, ActuatorFeedbackWidget,
     AlertBannerWidget, ProgressWidget, ControlButtonsWidget,
-    LogWidget, AddUUTDialog
+    LogWidget, AddUUTDialog, DebugConsoleWidget
 )
 from .qt_adapter import QtExecutorBridge
 from .command_server import CommandServer
@@ -128,6 +128,7 @@ class MultiUUTTestGUI(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Q"), self, self.stop_test)
         QShortcut(QKeySequence("Ctrl+E"), self, self.emergency_stop)
         QShortcut(QKeySequence("F5"), self, self.detect_daq_devices)
+        QShortcut(QKeySequence("Ctrl+D"), self, self._toggle_debug_console)
 
     # ═══════════════════════════════════════════════════════════════════════
     # UI construction
@@ -219,6 +220,27 @@ class MultiUUTTestGUI(QMainWindow):
         # Proportional column widths
         splitter.setSizes([340, 820, 540])
 
+        # ── Debug Console (hidden by default, Ctrl+D to toggle) ──────────────
+        self._debug_panel = QWidget()
+        debug_layout = QVBoxLayout(self._debug_panel)
+        debug_layout.setContentsMargins(0, 0, 0, 0)
+        debug_layout.setSpacing(0)
+
+        debug_divider = QWidget()
+        debug_divider.setFixedHeight(1)
+        debug_divider.setStyleSheet(f"background: {T.BORDER};")
+        debug_layout.addWidget(debug_divider)
+
+        self.debug_console = DebugConsoleWidget()
+        self.debug_console.command_sent.connect(
+            lambda msg: self.log(f"[DEBUG] {msg}")
+        )
+        debug_layout.addWidget(self.debug_console)
+        self._debug_panel.setFixedHeight(280)
+        self._debug_panel.hide()  # Hidden by default
+
+        root_layout.addWidget(self._debug_panel)
+
         # ── Bottom bar ─────────────────────────────────────────────────
         bottom_bar = QWidget()
         bottom_bar.setStyleSheet(
@@ -267,6 +289,15 @@ class MultiUUTTestGUI(QMainWindow):
         self.control_buttons.emergency_clicked.connect(self.emergency_stop)
 
         self.elapsed_timer.timeout.connect(self.update_elapsed_time)
+
+    def _toggle_debug_console(self) -> None:
+        """Toggle the debug console panel (Ctrl+D)."""
+        visible = self._debug_panel.isVisible()
+        self._debug_panel.setVisible(not visible)
+        if not visible:
+            self.log("Debug console opened (Ctrl+D to close)")
+        else:
+            self.log("Debug console closed")
 
     # ═══════════════════════════════════════════════════════════════════════
     # DAQ management
@@ -781,6 +812,20 @@ class MultiUUTTestGUI(QMainWindow):
 
         self.current_test_executor.start()
 
+        # Give debug console access to the active connection
+        # (executor thread updates it after connecting)
+        def _update_debug_connection():
+            if hasattr(self.current_test_executor, 'master') and self.current_test_executor.master:
+                import threading
+                self.debug_console.set_connection(
+                    self.current_test_executor.master,
+                    self.current_test_executor.master_lock,
+                    uut.serial_number,
+                )
+        bridge.sig_connection_health.connect(
+            lambda h: _update_debug_connection() if h else self.debug_console.clear_connection()
+        )
+
     def on_uut_test_complete(self, success, message):
         uut = self.uuts[self.current_uut_index]
 
@@ -841,6 +886,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.log(f"{'✓' if success else '✗'}  {uut.serial_number}: {display_message}")
         self.uut_table_widget.update_table(self.uuts)
         self.actuator_display.clear_mistracking_highlights()
+        self.debug_console.clear_connection()
 
         if success:
             self.alert_banner.hide()

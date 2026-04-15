@@ -11,6 +11,7 @@ from .progress import ProgressWidget
 from .controls import ControlButtonsWidget
 from .log_widget import LogWidget
 from .dialogs import AddUUTDialog
+from .debug_console import DebugConsoleWidget
 
 __all__ = [
     'StatusBadge', 'LED',
@@ -25,4 +26,5 @@ __all__ = [
     'ControlButtonsWidget',
     'LogWidget',
     'AddUUTDialog',
+    'DebugConsoleWidget',
 ]

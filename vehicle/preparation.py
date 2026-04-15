@@ -325,6 +325,16 @@ class UUTPreparation:
             param_bytes = param_name.encode('utf-8')
             param_bytes = param_bytes + b'\x00' * (16 - len(param_bytes))
 
+            # Flush any stale param responses before sending PARAM_SET so that
+            # a leftover response for a different parameter cannot falsely pass
+            # or fail verification of this one.
+            if self._msg_queues is not None:
+                for qt in ('PANDION_RR_PARAM_VALUE', MsgType.PARAM_VALUE):
+                    try:
+                        self._msg_queues[qt].clear()
+                    except Exception:
+                        pass
+
             with self.master_lock:
                 self.master.mav.param_set_send(
                     self.master.target_system,
@@ -351,15 +361,19 @@ class UUTPreparation:
                 # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
                 # not standard PARAM_VALUE.  Try custom message first,
                 # then fall back to standard for SITL compatibility.
-                msg = self._wait_for_message('PANDION_RR_PARAM_VALUE', timeout=0.1)
+                # Use a 1.0s poll timeout to avoid a tight loop that can
+                # race past a slow firmware response.
+                msg = self._wait_for_message('PANDION_RR_PARAM_VALUE', timeout=1.0)
                 if msg is None:
-                    msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.1)
+                    msg = self._wait_for_message(MsgType.PARAM_VALUE, timeout=0.5)
                 if msg:
                     name = (
                         msg.param_id.decode('utf-8').rstrip('\x00')
                         if isinstance(msg.param_id, bytes)
                         else str(msg.param_id).rstrip('\x00')
                     )
+                    # Only accept a response whose param_id matches what we set.
+                    # A stale response for a different parameter must be ignored.
                     if name == param_name:
                         actual = int(msg.param_value)
                         if actual == int(value):

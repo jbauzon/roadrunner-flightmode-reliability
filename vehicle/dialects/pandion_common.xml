@@ -780,6 +780,8 @@
       <field type="uint8_t" name="gnss_compass">GNSS compass available</field>
       <field type="uint8_t" name="mission_operation_mode">Mission mode of operation</field>
       <field type="uint16_t" name="asset_id">Asset ID</field>
+      <field type="uint16_t" name="gcs_asset_id" display="bitmask">GCS asset ID for this vehicle</field>
+      <field type="uint8_t" name="gnss_rf_status_flags">GNSS RF status flags</field>
     </message>
     <message id="606" name="PANDION_VERSION_INFO">
       <description>Pandion version information.</description>

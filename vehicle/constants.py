@@ -288,7 +288,9 @@ MAX_CONSECUTIVE_TELEMETRY_ERRORS = 10
 OPERATE_WAIT_TIMEOUT = 10.0            # seconds after IBIT completion
 
 # Heartbeat configuration
-HEARTBEAT_INTERVAL = 1.0               # seconds (1 Hz)
+# GCS heartbeat send rate — 1 Hz per MAVLink spec for GCS type
+# Note: the vehicle (Pandion) sends heartbeats at 4 Hz — this is the GCS→vehicle rate only
+HEARTBEAT_INTERVAL = 1.0               # seconds (GCS sends at 1 Hz)
 HEARTBEAT_INITIAL_BURST = 3            # Number of initial heartbeats
 HEARTBEAT_BURST_INTERVAL = 0.1         # seconds between burst heartbeats
 
@@ -304,10 +306,22 @@ MONITOR_OVERRIDE_CANCEL = 0            # Cancel override, return to normal monit
 MONITOR_OVERRIDE_SUPPRESS = 1          # Override to HEALTHY (suppresses fault — use to clear SET monitors)
 MONITOR_OVERRIDE_FORCE_FAULT = 2       # Override to FAULTED (forces fault — DO NOT use for clearing)
 
+# Monitor IDs — verified against vehicle/cm_config.xml in pandion_roadrunner repo
+# Assigned sequentially by position in cm_config.xml
+MONITOR_ID_ACTUATOR_THERMAL_LIMIT    = 9   # "Actuator Controller Thermal Limit Active" (≥95°C PCB / ≥125°C stator)
+MONITOR_ID_ACTUATOR_TEMP_CRITICAL    = 7   # "Actuator Controller Temp Critical" (≥105°C PCB)
+MONITOR_ID_ACTUATOR_TEMP_WARNING     = 6   # "Actuator Controller Temp Warning" (≥95°C PCB)
+MONITOR_ID_ELEVON_CTRL_LIMIT         = 52  # "Elevon Controller Internal Limit Active" (NOT thermal)
+MONITOR_ID_SERVO_IBIT_MISTRACKING    = 55  # "Servo IBIT Mistracking" (feedback vs command)
+
+# NOTE: MONITOR_ID_THERMAL_SHUTDOWN now correctly points to ID 9 (Thermal Limit Active),
+# not ID 52 (which is Elevon Controller Internal Limit Active — a different fault).
+MONITOR_ID_THERMAL_SHUTDOWN = MONITOR_ID_ACTUATOR_THERMAL_LIMIT  # = 9
+
 # Thermal chamber limits
 SERVO_TEMP_WARN_DEGC     = 70   # Warn at 70°C
 SERVO_TEMP_CRITICAL_DEGC = 85   # Critical at 85°C
-SERVO_TEMP_SHUTDOWN_DEGC = 95   # Emergency stop at 95°C
+SERVO_TEMP_SHUTDOWN_DEGC = 95   # Emergency stop at 95°C (matches firmware thermal limit trigger)
 
 # Network defaults
 DEFAULT_VEHICLE_PORT = 13002           # QGC MAVLink channel on real hardware (was 9985)
