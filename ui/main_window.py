@@ -4,11 +4,13 @@ from __future__ import annotations
 Main Window - Roadrunner Flight Test operator console.
 """
 import os
+import sys
 import json
 import time
 import platform
 import subprocess
 from datetime import datetime
+from typing import Optional
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
@@ -21,7 +23,7 @@ from hardware.daq import SimpleDAQController
 from vehicle.connection import UUT
 from vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
 from version import __version__
-from testing.executor import UUTTestExecutor, PlaybackTestExecutor
+from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog
 from . import theme as T
 from .widgets import (
     HeaderBanner,
@@ -63,6 +65,7 @@ class MultiUUTTestGUI(QMainWindow):
         self.test_mode             = TestMode.IBIT
         self.playback_csv          = ''
         self.playback_type         = 'Actuation'
+        self._watchdog: Optional[BatchWatchdog] = None
 
         self.test_config = {
             'ibit_timeout':       300.0,
@@ -225,6 +228,7 @@ class MultiUUTTestGUI(QMainWindow):
     def _connect_signals(self):
         self.daq_widget.detect_clicked.connect(self.detect_daq_devices)
         self.daq_widget.initialize_clicked.connect(self.initialize_daq)
+        self.daq_widget.sitl_clicked.connect(self.launch_sitl)
 
         self.test_config_widget.log_dir_changed.connect(self.on_log_dir_changed)
         self.test_config_widget.browse_clicked.connect(self.browse_log_directory)
@@ -289,25 +293,137 @@ class MultiUUTTestGUI(QMainWindow):
             self.daq_widget.set_status(False, "Error")
             self.log(f"✗ DAQ initialization failed: {message}")
 
+    def launch_sitl(self):
+        """Start SITL simulation mode from within the GUI."""
+        import threading
+        from sim.vehicle import PandionVehicleSim
+        from sim.mock_daq import MockDAQController
+        from vehicle.connection import UUT
+        import vehicle.connection as conn_mod
+
+        self.log("="*56)
+        self.log("  LAUNCHING SITL SIMULATION")
+        self.log("="*56)
+
+        # Start 2 sim vehicles
+        self._sitl_sims = []
+        sim_configs = [
+            {'serial': 'RR-SIM-001', 'port': 19901, 'relay': 0,
+             'ibit_pass': True, 'sysid': 1},
+            {'serial': 'RR-SIM-002', 'port': 19902, 'relay': 1,
+             'ibit_pass': False, 'mistracking_flags': 0xC0, 'sysid': 2},
+        ]
+
+        for cfg in sim_configs:
+            sim = PandionVehicleSim(
+                vehicle_port=cfg['port'],
+                sysid=cfg['sysid'],
+                ibit_pass=cfg['ibit_pass'],
+                mistracking_flags=cfg.get('mistracking_flags', 0),
+                boot_time_s=2.0,
+                ibit_duration_scale=0.5,
+                boot_monitors=[0, 1, 2, 3],
+            )
+            t = threading.Thread(target=sim.start, daemon=True,
+                                 name=f"sitl-{cfg['port']}")
+            t.start()
+            self._sitl_sims.append(sim)
+            self.log(f"  Started sim vehicle {cfg['serial']} on port {cfg['port']}"
+                     f" ({'PASS' if cfg['ibit_pass'] else 'FAIL'})")
+
+        # Wait for sims to boot
+        self.log("  Waiting for sim vehicles to boot...")
+        import time
+        time.sleep(2.5)
+
+        # Inject MockDAQ
+        mock_daq = MockDAQController()
+        mock_daq.initialize('SimDAQ/SITL')
+        for i, cfg in enumerate(sim_configs):
+            mock_daq.register_vehicle(cfg['relay'], self._sitl_sims[i])
+        self.daq = mock_daq
+        self.log("  MockDAQ controller initialized")
+
+        # Patch connection for loopback
+        _HERE = os.path.dirname(os.path.abspath(__file__))
+        _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+        dialect_dir = os.path.join(_ROOT, "vehicle", "dialects")
+
+        def _sitl_connect(ip_address, port, timeout=10.0):
+            if dialect_dir not in sys.path:
+                sys.path.insert(0, dialect_dir)
+            from pymavlink import mavutil
+            m = mavutil.mavlink_connection(
+                f"udpout:{ip_address}:{port}",
+                dialect="pandion_vehicle_roadrunner",
+                source_system=255, source_component=190,
+            )
+            for _ in range(5):
+                try:
+                    m.mav.heartbeat_send(
+                        mavutil.mavlink.MAV_TYPE_GCS,
+                        mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                        0, 0, mavutil.mavlink.MAV_STATE_ACTIVE)
+                except OSError:
+                    pass
+                hb = m.recv_match(type='HEARTBEAT', blocking=True, timeout=1.0)
+                if hb and hb.get_srcSystem() != 255:
+                    return m
+            raise Exception(f"SITL vehicle not responding on {ip_address}:{port}")
+
+        conn_mod.connect_to_vehicle = _sitl_connect
+        self.log("  Connection patched for loopback (SITL mode)")
+
+        # Pre-load UUTs
+        self.uuts = []
+        for cfg in sim_configs:
+            uut = UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
+            self.uuts.append(uut)
+        self.uut_table_widget.update_table(self.uuts)
+        self.log(f"  Loaded {len(self.uuts)} simulated UUTs")
+
+        # Update UI state
+        self.daq_widget.set_sitl_active()
+        self.log("")
+        self.log("  SITL mode ready — click Start to begin testing")
+        self.log("  (Vehicle 1: PASS, Vehicle 2: FAIL with elevon mistracking)")
+        self.log("="*56)
+
     def check_daq_health(self):
-        if not self.testing_active or not self.daq or not self.daq.do_task:
+        if not self.daq or not self.daq.do_task:
             return
+
+        if not self.testing_active:
+            return
+
         if not self.daq.verify_connection():
-            self.log("⚠ DAQ connection lost — attempting reconnect...")
-            success, msg = self.daq.reconnect()
-            if success:
-                self.log(f"✓ DAQ reconnected: {msg}")
-            else:
-                self.log(f"✗ DAQ reconnection failed: {msg}")
-                self.alert_banner.show_alert(
-                    f"DAQ OFFLINE — {msg}", severity=AlertSeverity.CRITICAL
-                )
-                QMessageBox.critical(
-                    self, "DAQ Connection Lost",
-                    f"DAQ lost and could not reconnect.\n\n{msg}\n\n"
-                    "Test will stop for safety."
-                )
-                self.stop_test()
+            try:
+                self.daq.reconnect()
+                if not self.daq.verify_connection():
+                    # Reconnect failed — force all relays off before stopping
+                    self.log("⚠ DAQ connection lost — forcing all relays OFF")
+                    try:
+                        self.daq.set_all_low()
+                        self.log("✓ All relays disabled (DAQ reconnect failed)")
+                    except Exception as relay_err:
+                        self.log(f"✗ Relay force-off failed: {relay_err}")
+                        self.alert_banner.show_alert(
+                            "DAQ DISCONNECTED AND RELAY FORCE-OFF FAILED. "
+                            "Manually disconnect all vehicle power immediately.",
+                            severity=AlertSeverity.CRITICAL
+                        )
+                    self.stop_test()
+                    QMessageBox.critical(
+                        self, "DAQ Connection Lost",
+                        "The NI-DAQmx device is no longer responding.\n"
+                        "All relays have been set to OFF.\n"
+                        "The test has been stopped.\n\n"
+                        "Reconnect the DAQ device and restart to continue."
+                    )
+                else:
+                    self.log("✓ DAQ reconnected successfully")
+            except Exception as e:
+                self.log(f"⚠ DAQ health check error: {e}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # UUT management
@@ -327,6 +443,16 @@ class MultiUUTTestGUI(QMainWindow):
                     "Each UUT must have a unique relay line."
                 )
                 return
+            # Check for duplicate IP:port
+            endpoint_conflicts = [u for u in self.uuts if u.ip_address == uut.ip_address and u.port == uut.port]
+            if endpoint_conflicts:
+                QMessageBox.critical(
+                    self, "Configuration Error",
+                    f"UUT {endpoint_conflicts[0].serial_number} already uses "
+                    f"{uut.ip_address}:{uut.port}.\n\nDuplicate IP:port will cause message "
+                    f"interleaving and false PASS results."
+                )
+                return
             self.uuts.append(uut)
             self.uut_table_widget.update_table(self.uuts)
             self.log(f"✓ Added UUT {uut.serial_number}  ({uut.ip_address}:{uut.port}  relay D{uut.relay_line})")
@@ -340,11 +466,36 @@ class MultiUUTTestGUI(QMainWindow):
         dialog = AddUUTDialog(self, uut)
         if dialog.exec_() == dialog.Accepted:
             updated = dialog.get_uut()
+            # Validate relay line range
+            if self.daq.do_task and not (0 <= updated.relay_line < self.daq.num_lines):
+                QMessageBox.warning(
+                    self, "Invalid Relay Line",
+                    f"Relay line {updated.relay_line} is out of range "
+                    f"(0–{self.daq.num_lines - 1} available)."
+                )
+                return
+            # Check for duplicate IP:port (excluding the row being edited)
+            endpoint_conflicts = [
+                u for i, u in enumerate(self.uuts)
+                if i != row and u.ip_address == updated.ip_address and u.port == updated.port
+            ]
+            if endpoint_conflicts:
+                QMessageBox.critical(
+                    self, "Configuration Error",
+                    f"UUT {endpoint_conflicts[0].serial_number} already uses "
+                    f"{updated.ip_address}:{updated.port}.\n\nDuplicate IP:port will cause message "
+                    f"interleaving and false PASS results."
+                )
+                return
             self.uuts[row] = updated
             self.uut_table_widget.update_table(self.uuts)
             self.log(f"✓ Updated UUT {updated.serial_number}")
 
     def remove_uut(self):
+        if self.testing_active:
+            QMessageBox.warning(self, "Test Running",
+                "Cannot remove a UUT while testing is active.\nStop the test first.")
+            return
         row = self.uut_table_widget.get_selected_row()
         if row == -1:
             QMessageBox.information(self, "No Selection", "Select a UUT to remove.")
@@ -390,6 +541,10 @@ class MultiUUTTestGUI(QMainWindow):
     # ═══════════════════════════════════════════════════════════════════════
 
     def start_all_tests(self):
+        # Guard against double-click Start
+        if self.testing_active:
+            return
+
         # Prerequisites
         if not self.daq.do_task:
             QMessageBox.warning(self, "DAQ Not Ready",
@@ -431,6 +586,20 @@ class MultiUUTTestGUI(QMainWindow):
                 "Each UUT must have a unique relay line.")
             return
 
+        # Check for duplicate IP:port combinations
+        seen_endpoints = {}
+        for uut in self.uuts:
+            endpoint = (uut.ip_address, uut.port)
+            if endpoint in seen_endpoints:
+                QMessageBox.critical(
+                    self, "Configuration Error",
+                    f"UUTs {seen_endpoints[endpoint]} and {uut.serial_number} share the same "
+                    f"IP:port ({uut.ip_address}:{uut.port}).\n\nThis will cause message interleaving "
+                    f"and false PASS results. Fix the configuration before testing."
+                )
+                return
+            seen_endpoints[endpoint] = uut.serial_number
+
         if QMessageBox.question(
             self, "Confirm Start",
             f"Start  {mode_label}\n"
@@ -441,13 +610,16 @@ class MultiUUTTestGUI(QMainWindow):
         ) != QMessageBox.Yes:
             return
 
+        # Atomically set testing_active BEFORE spawning any executors
+        self.testing_active = True
+        self.control_buttons.set_testing_mode(True)
+
         # Reset
         for uut in self.uuts:
             uut.status = UUTStatus.READY
             uut.iterations_completed = 0
         self.uut_table_widget.update_table(self.uuts)
 
-        self.testing_active       = True
         self.batch_start_datetime = datetime.now()
         self.batch_end_time       = self.batch_start_datetime.timestamp() + duration_seconds
         self.current_uut_index    = -1
@@ -456,7 +628,6 @@ class MultiUUTTestGUI(QMainWindow):
         self.playback_type        = playback_type
 
         self.test_config.update(self.test_config_widget.get_config())
-        self.control_buttons.set_testing_mode(True)
         self.alert_banner.hide()
 
         self.log("═" * 56)
@@ -464,6 +635,17 @@ class MultiUUTTestGUI(QMainWindow):
         self.log(f"  {self.batch_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}  "
                  f"Duration: {duration_value} {unit}")
         self.log("═" * 56)
+
+        self._watchdog = BatchWatchdog(
+            uuts=self.uuts,
+            daq=self.daq,
+            log_directory=self.log_directory,
+            on_alert=lambda msg: self.show_alert(msg, severity=AlertSeverity.WARNING),
+            on_log=self.log,
+            is_testing=lambda: self.testing_active,
+            current_uut_index=lambda: self.current_uut_index,
+        )
+        self._watchdog.start()
 
         self.elapsed_timer.start(1000)
         self.start_next_uut()
@@ -582,11 +764,19 @@ class MultiUUTTestGUI(QMainWindow):
             self.batch_complete()
 
     def on_batch_time_expired(self):
-        self.batch_complete()
+        self.log("⏱ Batch time expired — waiting for current test to complete safely")
+        # Don't call batch_complete() here — the executor's finally block will clean up
+        # and then call on_uut_test_complete which will detect expired time and call batch_complete
+        if self.current_test_executor:
+            self.current_test_executor.stop()
 
     def batch_complete(self):
         self.testing_active = False
         self.elapsed_timer.stop()
+
+        if self._watchdog:
+            self._watchdog.stop()
+            self._watchdog = None
 
         if 0 <= self.current_uut_index < len(self.uuts):
             uut = self.uuts[self.current_uut_index]
@@ -673,6 +863,9 @@ class MultiUUTTestGUI(QMainWindow):
     def emergency_stop(self):
         self.log("⚠⚠⚠ EMERGENCY STOP")
         self.testing_active = False
+        if self._watchdog:
+            self._watchdog.stop()
+            self._watchdog = None
         if self.current_test_executor:
             self.current_test_executor.stop()
         if self.daq.do_task:
@@ -694,6 +887,10 @@ class MultiUUTTestGUI(QMainWindow):
     # ═══════════════════════════════════════════════════════════════════════
 
     def on_test_mode_changed(self, mode):
+        if self.testing_active:
+            # Don't allow mode switch during an active batch — revert and warn
+            self.log("⚠ Cannot switch test mode during an active batch")
+            return
         self.test_mode = mode
         self.ibit_display.set_mode(mode)
         self.control_buttons.set_test_mode_label(mode)
@@ -739,8 +936,9 @@ class MultiUUTTestGUI(QMainWindow):
         elif 'Stopping' in text or 'stop' in text.lower():
             self.ibit_display.set_substate('STOPPING')
 
-    def show_alert(self, message):
-        severity = AlertSeverity.CRITICAL if 'CRITICAL' in message.upper() else AlertSeverity.WARNING
+    def show_alert(self, message, severity=None):
+        if severity is None:
+            severity = AlertSeverity.CRITICAL if 'CRITICAL' in message.upper() else AlertSeverity.WARNING
         self.alert_banner.show_alert(message, severity=severity)
 
     def generate_batch_report(self):
@@ -752,7 +950,7 @@ class MultiUUTTestGUI(QMainWindow):
         report = {
             'test_type':   f'{tag}_v{__version__}',
             'version':     __version__,
-            'test_mode':   self.test_mode,
+            'test_mode':   str(self.test_mode),       # TestMode enum → string
             'start':       self.batch_start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
             'end':         datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'duration_s':  time.time() - self.batch_start_datetime.timestamp(),
@@ -761,14 +959,14 @@ class MultiUUTTestGUI(QMainWindow):
             'uuts': [{
                 'serial':     u.serial_number,
                 'ip':         u.ip_address,
-                'status':     u.status,
+                'status':     str(u.status),          # UUTStatus enum → string
                 'iterations': u.iterations_completed,
-                'log_file':   u.log_file,
+                'log_file':   getattr(u, 'log_file', ''),
             } for u in self.uuts],
         }
         try:
             with open(path, 'w') as f:
-                json.dump(report, f, indent=2)
+                json.dump(report, f, indent=2, default=str)
             self.log(f"✓ Report saved: {path}")
             self.alert_banner.show_alert(
                 f"Batch report saved: {os.path.basename(path)}",

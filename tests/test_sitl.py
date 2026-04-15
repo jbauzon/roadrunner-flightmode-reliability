@@ -53,8 +53,8 @@ setattr(_v10, 'pandion_vehicle_roadrunner', _d)
 from pymavlink import mavutil
 from sim.vehicle import PandionVehicleSim
 
-PASS_PORT = 39901
-FAIL_PORT = 39902
+PASS_PORT = 14501
+FAIL_PORT = 14502
 
 _results = []
 

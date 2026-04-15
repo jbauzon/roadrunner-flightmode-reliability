@@ -260,9 +260,7 @@ class PandionVehicleSim:
                              "Engine 2 RPM Low")
         m.register_condition(27, lambda: False,
                              "Actuation Bus Fault")
-        m.register_condition(28,
-                             lambda: (max(self._bms.get_cell_voltage())
-                                      - min(self._bms.get_cell_voltage()) > 500),
+        m.register_condition(28, self._cell_imbalance,
                              "BMS Cell Imbalance")
         m.register_condition(29, lambda: any(s.cur > 5000 for s in self.servos.values()),
                              "Servo Overcurrent")
@@ -274,6 +272,11 @@ class PandionVehicleSim:
                              "Power Bus Undervoltage")
         m.register_condition(52, lambda: any(s.temp > 95 for s in self.servos.values()),
                              "Thermal Shutdown Imminent")
+
+    def _cell_imbalance(self):
+        """Return True when BMS cell voltage spread exceeds 500 mV."""
+        v = self._bms.get_cell_voltage()
+        return (max(v) - min(v)) > 500
 
     # ═══════════════════════════════════════════════════════════════════
     # Boot / power
@@ -367,9 +370,16 @@ class PandionVehicleSim:
         # RX loop (blocking)
         try:
             while self._running:
-                msg = self._conn.recv_match(blocking=True, timeout=0.05)
-                if msg and msg.get_type() != 'BAD_DATA':
-                    self._dispatch(msg)
+                try:
+                    msg = self._conn.recv_match(blocking=True, timeout=0.05)
+                    if msg and msg.get_type() != 'BAD_DATA':
+                        self._dispatch(msg)
+                except OSError as e:
+                    # WinError 10054: ICMP "port unreachable" from udpout client
+                    # disconnecting. Safe to ignore — next packet will work.
+                    if getattr(e, 'winerror', None) == 10054:
+                        continue
+                    raise
         except KeyboardInterrupt:
             pass
         finally:
@@ -1008,7 +1018,8 @@ class PandionVehicleSim:
                 imon = self.ibit_mon_status
                 svs = self.servos
 
-            drop = random.random() < self.drop_rate
+            drop = self.drop_rate > 0.0 and random.random() < self.drop_rate
+            _mon_state = None  # lazy-computed once per tick if needed
 
             if not drop:
                 # ── Heartbeat: always (even before GCS, but we gated above) ──
@@ -1029,7 +1040,9 @@ class PandionVehicleSim:
 
                 # ── MONITOR_CURRENT_STATUS: always ────────────────────
                 if now - last['mon'] >= intervals['mon']:
-                    s, sg, o = self.monitors.get_state()
+                    if _mon_state is None:
+                        _mon_state = self.monitors.get_state()
+                    s, sg, o = _mon_state
                     self._tx.monitor_current_status(s, sg, o)
                     last['mon'] = now
 
@@ -1045,7 +1058,9 @@ class PandionVehicleSim:
 
                 # ── WCA: always ───────────────────────────────────────
                 if now - last['wca'] >= intervals['wca']:
-                    s, _, _ = self.monitors.get_state()
+                    if _mon_state is None:
+                        _mon_state = self.monitors.get_state()
+                    s, _, _ = _mon_state
                     eid, ets, efl = self.monitors.get_event()
                     self._tx.wca_monitor_status(s, eid, ets, efl)
                     last['wca'] = now

@@ -19,6 +19,7 @@ class MockDAQController:
         self._line_states = {}
         self._device_name = None
         self._initialized = False
+        self._vehicles    = {}     # relay_line -> PandionVehicleSim (for power cycle)
 
     # ── Static helpers (mirror real DAQ) ──────────────────────────────────────
 
@@ -45,6 +46,10 @@ class MockDAQController:
         print(f"[MockDAQ] Initialized {device_name} with {num_lines} relay lines")
         return True, f"Mock DAQ initialized: {device_name} ({num_lines} lines)"
 
+    def register_vehicle(self, relay_line, vehicle_sim):
+        """Register a sim vehicle for power cycle on relay toggle."""
+        self._vehicles[relay_line] = vehicle_sim
+
     def set_line(self, line, state):
         if not self._initialized:
             return False, "DAQ not initialized"
@@ -53,6 +58,14 @@ class MockDAQController:
 
         old = self._line_states.get(line, False)
         self._line_states[line] = state
+
+        # Trigger sim power cycle if vehicle is registered
+        vehicle = self._vehicles.get(line)
+        if vehicle:
+            if state and not old:
+                vehicle.power_on()
+            elif not state and old:
+                vehicle.power_off()
 
         action = "ON " if state else "OFF"
         change = "  (no change)" if old == state else ""

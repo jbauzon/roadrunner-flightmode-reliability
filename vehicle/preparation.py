@@ -24,6 +24,8 @@ from .constants import (
     MONITOR_OVERRIDE_CANCEL, MONITOR_OVERRIDE_SUPPRESS,
     get_mode_name, get_flight_regime_name, get_command_result_name, is_armed,
 )
+# Lazy import to avoid circular dependency (testing -> vehicle -> testing)
+_build_actuator_feedback_dict = None
 
 
 class UUTPreparation:
@@ -34,23 +36,33 @@ class UUTPreparation:
     Then restoration after test complete.
     """
     
-    def __init__(self, master: Any, config: Optional[dict] = None, telemetry_logger: Optional[Any] = None, callbacks: Optional[PreparationCallbacks] = None) -> None:
+    def __init__(self, master: Any, config: Optional[dict] = None,
+                 telemetry_logger: Optional[Any] = None,
+                 callbacks: Optional[PreparationCallbacks] = None,
+                 msg_queues: Optional[Any] = None,
+                 error_log: Optional[Any] = None) -> None:
         """
         Initialize preparation manager.
-        
+
         Args:
             master: MAVLink connection
             config: Configuration dictionary
             telemetry_logger: Optional logger for events
             callbacks: Optional PreparationCallbacks for UI communication
+            msg_queues: Optional shared dispatch queues from _ExecutorMixin.
+                        When provided, _wait_for_message reads from queues
+                        instead of the socket directly (no lock needed).
+            error_log: Optional ErrorLogger for persistent cross-session logging.
         """
         self.cb = callbacks or self._default_callbacks()
         self.master = master
         self.config = config or {}
         self.telemetry_logger = telemetry_logger
+        self.error_log = error_log  # Optional — may be None
         self.initial_state = UUTState()
         self.use_nest_cache = None
         self.master_lock = threading.Lock()
+        self._msg_queues = msg_queues
     
     @staticmethod
     def _default_callbacks() -> PreparationCallbacks:
@@ -384,7 +396,7 @@ class UUTPreparation:
             self._arm_vehicle_if_needed()
 
             # Step 3: Wait for automatic transition to OPERATE mode
-            self._wait_for_operate(timeout=5.0)
+            self._wait_for_operate(timeout=15.0)
 
             # Step 4: Continuously clear monitors before PLAYBACK
             self._clear_monitors_timed(
@@ -475,8 +487,9 @@ class UUTPreparation:
         else:
             self.cb.on_log("✓ Vehicle already armed, skipping")
 
-    def _wait_for_operate(self, timeout: float = 5.0) -> None:
-        """Step 3: Wait for automatic transition to OPERATE mode after ARM."""
+    def _wait_for_operate(self, timeout: float = 15.0) -> None:
+        """Step 3: Wait for OPERATE mode after ARM. POS_CHECK is accepted as an
+        intermediate state (TAU Mk2 elevon vehicles: OFF → POS_CHECK → OPERATE)."""
         self.cb.on_log("\n→ Waiting for vehicle to enter OPERATE mode...")
         self.cb.on_progress("Waiting for OPERATE mode...")
         if self.telemetry_logger:
@@ -492,19 +505,36 @@ class UUTPreparation:
             if mode_msg:
                 current_mode = mode_msg.actuation_state
                 if current_mode == ActuationMode.OPERATE:
-                    self.cb.on_log(f"  ✓ Vehicle entered OPERATE mode")
+                    self.cb.on_log("  ✓ Vehicle entered OPERATE mode")
                     if self.telemetry_logger:
                         self.telemetry_logger.log_test_event(
                             'MODE_CHANGE',
                             'Vehicle automatically transitioned to OPERATE mode'
                         )
                     return
+                elif current_mode == ActuationMode.POSITION_CHECK:
+                    # TAU Mk2 elevon vehicles perform position check before OPERATE
+                    self.cb.on_log("  → POS_CHECK in progress (TAU Mk2 elevons)...")
+                    self.cb.on_progress("Position check in progress (TAU Mk2)...")
+                    # Don't break — keep waiting for OPERATE
+                elif current_mode == ActuationMode.TERMINAL:
+                    self.cb.on_log(
+                        "  ✗ POS_CHECK FAILED — vehicle in TERMINAL mode"
+                    )
+                    self.cb.on_alert(
+                        "POS_CHECK FAILED — vehicle in TERMINAL mode. "
+                        "Power cycle required."
+                    )
+                    raise Exception(
+                        "POS_CHECK resulted in TERMINAL mode. Power cycle required."
+                    )
                 else:
                     self.cb.on_log(
                         f"  Current mode: {current_mode} "
                         f"({get_mode_name(current_mode)})"
                     )
             time.sleep(0.5)
+        # Timeout expired without OPERATE — log warning, don't abort (PLAYBACK will catch it)
         self.cb.on_log(
             f"  ⚠ Vehicle did not enter OPERATE mode within {timeout}s"
         )
@@ -617,29 +647,6 @@ class UUTPreparation:
                             f"{get_mode_name(current_mode)}, "
                             f"waiting for {target_name}..."
                         )
-            if mode_msg:
-                current_mode = mode_msg.actuation_state
-                if current_mode == target:
-                    elapsed = time.time() - start
-                    self.cb.on_log(
-                        f"  ✓ Vehicle entered {target_name} mode "
-                        f"after {elapsed:.1f} seconds"
-                    )
-                    if self.telemetry_logger:
-                        self.telemetry_logger.log_test_event(
-                            event_entered,
-                            f'Vehicle entered {target_name} mode '
-                            f'after {elapsed:.1f} seconds'
-                        )
-                    return
-                else:
-                    elapsed = time.time() - start
-                    if int(elapsed) % log_interval == 0 and elapsed > 0:
-                        self.cb.on_log(
-                            f"    [{elapsed:.0f}s] Current mode: "
-                            f"{get_mode_name(current_mode)}, "
-                            f"waiting for {target_name}..."
-                        )
             time.sleep(0.1)
 
         # Failed
@@ -713,6 +720,44 @@ class UUTPreparation:
         )
         current_mode = current_mode_msg.actuation_state if current_mode_msg else -1
         
+        if current_mode == ActuationMode.TERMINAL:
+            self.cb.on_log(
+                "\u2717 Vehicle is in TERMINAL mode \u2014 requires power cycle to recover"
+            )
+            self.cb.on_alert(
+                "TERMINAL MODE DETECTED \u2014 Power cycle vehicle before retesting. "
+                "Disable relay, wait 10s, re-enable relay."
+            )
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'TERMINAL_MODE',
+                    'Vehicle in TERMINAL mode \u2014 power cycle required'
+                )
+            if self.error_log:
+                self.error_log.critical(
+                    'STATE',
+                    getattr(self, '_serial', 'unknown'),
+                    0,
+                    'Vehicle in TERMINAL mode \u2014 power cycle required before retesting',
+                )
+            raise Exception(
+                "Vehicle in TERMINAL mode. Power cycle required. "
+                "Disable relay for 10+ seconds then re-enable."
+            )
+            self.cb.on_alert(
+                "TERMINAL MODE DETECTED — Power cycle vehicle before retesting. "
+                "Disable relay, wait 10s, re-enable relay."
+            )
+            if self.telemetry_logger:
+                self.telemetry_logger.log_test_event(
+                    'TERMINAL_MODE',
+                    'Vehicle in TERMINAL mode — power cycle required'
+                )
+            raise Exception(
+                "Vehicle in TERMINAL mode. Power cycle required. "
+                "Disable relay for 10+ seconds then re-enable."
+            )
+
         if current_mode == ActuationMode.IBIT:  # Still in IBIT
             self.cb.on_log(
                 f"⚠ Still in IBIT mode, requesting OPERATE first..."
@@ -803,7 +848,22 @@ class UUTPreparation:
                     if success:
                         self.cb.on_log(f"  ✓ {message}")
                     else:
-                        self.cb.on_log(f"  ⚠ {message}")
+                        self.cb.on_log(f"  ⚠ DISARM failed: {message}")
+                        self.cb.on_alert(
+                            f"⚠ DISARM FAILED — vehicle may remain ARMED. "
+                            f"Manual inspection required before next test."
+                        )
+                        self.cb.on_log(
+                            f"  ⚠ Proceeding to OFF mode — verify vehicle is physically safe"
+                        )
+                        if self.error_log:
+                            self.error_log.warning(
+                                'STATE',
+                                getattr(self, '_serial', 'unknown'),
+                                0,
+                                f"DISARM FAILED after 5 attempts — vehicle may remain ARMED",
+                                {'message': message},
+                            )
                         if self.telemetry_logger:
                             self.telemetry_logger.log_test_event(
                                 'DISARM_FAILED',
@@ -1231,14 +1291,24 @@ class UUTPreparation:
 
         try:
             # Drain any stale PARAM_VALUE / PANDION_RR_PARAM_VALUE messages
-            while True:
-                with self.master_lock:
-                    msg = self.master.recv_match(
-                        type=['PANDION_RR_PARAM_VALUE', MsgType.PARAM_VALUE],
-                        blocking=False, timeout=0.01
-                    )
-                if not msg:
-                    break
+            # so the response to our request is not confused with old ones.
+            if self._msg_queues is not None:
+                # Drain from dispatch queues — never touch the socket directly
+                for qt in ('PANDION_RR_PARAM_VALUE', MsgType.PARAM_VALUE):
+                    try:
+                        self._msg_queues[qt].clear()
+                    except Exception:
+                        pass
+            else:
+                # Legacy path: drain socket directly
+                while True:
+                    with self.master_lock:
+                        msg = self.master.recv_match(
+                            type=['PANDION_RR_PARAM_VALUE', MsgType.PARAM_VALUE],
+                            blocking=False, timeout=0.01
+                        )
+                    if not msg:
+                        break
 
             param_id_bytes = b'USE_NEST' + b'\x00' * (16 - len(b'USE_NEST'))
 
@@ -1404,9 +1474,12 @@ class UUTPreparation:
         """
         Wait for a specific message type.
 
-        Thread-safe wrapper around MAVLink recv_match.
-        All MAVLink recv calls MUST go through this method to prevent
-        concurrent access from the telemetry worker thread.
+        When shared dispatch queues are available (injected via ``msg_queues``
+        in __init__), reads from the per-type deque — no lock needed and no
+        risk of stealing messages from other consumers.
+
+        Falls back to direct socket access (short-poll, releases lock between
+        checks) when running standalone without a dispatch worker.
 
         Also emits vehicle status signals for live UI updates during
         the preparation phase.
@@ -1418,13 +1491,30 @@ class UUTPreparation:
         Returns:
             Message object or None if timeout
         """
-        with self.master_lock:
-            msg = self.master.recv_match(
-                type=msg_type, blocking=True, timeout=timeout
-            )
-        if msg:
-            self._emit_status_from_message(msg)
-        return msg
+        if self._msg_queues is not None:
+            # Use shared dispatch queues (no lock needed)
+            deadline = time.monotonic() + timeout
+            q = self._msg_queues[msg_type]
+            while time.monotonic() < deadline:
+                if q:
+                    msg = q.popleft()
+                    self._emit_status_from_message(msg)
+                    return msg
+                remaining = deadline - time.monotonic()
+                time.sleep(min(0.005, max(0.0, remaining)))
+            return None
+        else:
+            # Legacy: direct socket access — short-poll to avoid holding lock
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                with self.master_lock:
+                    msg = self.master.recv_match(type=msg_type, blocking=False)
+                if msg:
+                    self._emit_status_from_message(msg)
+                    return msg
+                remaining = deadline - time.monotonic()
+                time.sleep(min(0.01, max(0.0, remaining)))
+            return None
 
     def _emit_status_from_message(self, msg: Any) -> None:
         """Emit UI status signals from any received MAVLink message."""
@@ -1439,27 +1529,11 @@ class UUTPreparation:
                 self.cb.on_mode(msg.actuation_state)
                 self.cb.on_connection_health(True)
                 try:
-                    self.cb.on_actuator_feedback({
-                        'left_elevon_feedback_cdeg': msg.left_elevon_feedback_cdeg,
-                        'right_elevon_feedback_cdeg': msg.right_elevon_feedback_cdeg,
-                        'dorsal_rudder_feedback_cdeg': msg.dorsal_rudder_feedback_cdeg,
-                        'ventral_rudder_feedback_cdeg': msg.ventral_rudder_feedback_cdeg,
-                        'left_tvc_upper_feedback_cdeg': msg.left_tvc_upper_feedback_cdeg,
-                        'left_tvc_lower_feedback_cdeg': msg.left_tvc_lower_feedback_cdeg,
-                        'right_tvc_upper_feedback_cdeg': msg.right_tvc_upper_feedback_cdeg,
-                        'right_tvc_lower_feedback_cdeg': msg.right_tvc_lower_feedback_cdeg,
-                        'left_elevon_current_mA': msg.left_elevon_current_mA,
-                        'right_elevon_current_mA': msg.right_elevon_current_mA,
-                        'dorsal_rudder_current_mA': msg.dorsal_rudder_current_mA,
-                        'ventral_rudder_current_mA': msg.ventral_rudder_current_mA,
-                        'left_tvc_upper_current_mA': msg.left_tvc_upper_current_mA,
-                        'left_tvc_lower_current_mA': msg.left_tvc_lower_current_mA,
-                        'right_tvc_upper_current_mA': msg.right_tvc_upper_current_mA,
-                        'right_tvc_lower_current_mA': msg.right_tvc_lower_current_mA,
-                        'left_elevon_motor_temp_degC': msg.left_elevon_motor_temp_degC,
-                        'right_elevon_motor_temp_degC': msg.right_elevon_motor_temp_degC,
-                    })
-                except AttributeError:
+                    global _build_actuator_feedback_dict
+                    if _build_actuator_feedback_dict is None:
+                        from testing.helpers import _build_actuator_feedback_dict
+                    self.cb.on_actuator_feedback(_build_actuator_feedback_dict(msg))
+                except (AttributeError, ImportError):
                     pass
             elif msg_type == 'HEARTBEAT':
                 self.cb.on_connection_health(True)

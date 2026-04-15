@@ -158,7 +158,7 @@ class FunctionalTestRunner:
         )
         from vehicle.connection import UUT, UUTState, connect_to_vehicle
         from vehicle.preparation import UUTPreparation
-        from testing.executor import (
+        from testing import (
             UUTTestExecutor, PlaybackTestExecutor,
             IBITPhaseTracker, TestStatistics, IBITFailureDiagnostic,
         )
@@ -727,7 +727,7 @@ app.exec_()
 
     def test_phase_tracker(self):
         """Verify IBITPhaseTracker state machine transitions."""
-        from testing.executor import IBITPhaseTracker
+        from testing import IBITPhaseTracker
         from vehicle.constants import IBITSubstate
 
         tracker = IBITPhaseTracker()
@@ -749,7 +749,7 @@ app.exec_()
 
     def test_statistics(self):
         """Verify TestStatistics tracks metrics correctly."""
-        from testing.executor import TestStatistics
+        from testing import TestStatistics
 
         stats = TestStatistics()
         assert not stats.is_connection_healthy()  # no heartbeats yet

@@ -47,3 +47,4 @@ class PreparationCallbacks:
         self.on_mode: Callable[[int], None] = lambda mode: None
         self.on_connection_health: Callable[[bool], None] = lambda h: None
         self.on_actuator_feedback: Callable[[dict], None] = lambda d: None
+        self.on_alert: Callable[[str], None] = lambda msg: None

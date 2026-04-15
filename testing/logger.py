@@ -104,6 +104,7 @@ class TelemetryLogger:
         self.current_file_size = 0
         self.flush_interval = 2.0
         self.last_flush_time = datetime.now().timestamp()  # consistent with log_telemetry
+        self._row_template = {col: '' for col in self.ibit_columns}
         
         # Track current state
         self.current_ibit_phase = "UNKNOWN"
@@ -206,7 +207,7 @@ class TelemetryLogger:
             now = datetime.now()
             timestamp = now.timestamp()
             
-            row = {col: '' for col in self.ibit_columns}
+            row = self._row_template.copy()
             row['Date'] = now.strftime('%Y-%m-%d')
             row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
             row['Timestamp_Seconds'] = f"{timestamp:.3f}"
@@ -245,7 +246,7 @@ class TelemetryLogger:
             else:
                 description += " - Vehicle powered OFF, test complete"
             
-            row = {col: '' for col in self.ibit_columns}
+            row = self._row_template.copy()
             row['Date'] = now.strftime('%Y-%m-%d')
             row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
             row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
@@ -337,12 +338,7 @@ class TelemetryLogger:
             
             # Log actuation status
             if msg_type == 'PANDION_RR_ACTUATION_SYS_STATUS':
-                row = {col: '' for col in self.ibit_columns}
-                row['Date'] = now.strftime('%Y-%m-%d')
-                row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
-                row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
-                row['Event_Category'] = 'VEHICLE_DATA'
-                row['Event_Type'] = 'ACTUATOR_FEEDBACK'
+                row = self._row_template.copy()
                 
                 # Update phase tracking
                 if hasattr(msg, 'actuation_ibit_substate'):
@@ -422,7 +418,7 @@ class TelemetryLogger:
                 
                 # Only log if state changed
                 if old_armed != self.current_armed_state and old_armed != "UNKNOWN":
-                    row = {col: '' for col in self.ibit_columns}
+                    row = self._row_template.copy()
                     row['Date'] = now.strftime('%Y-%m-%d')
                     row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
                     row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
@@ -445,7 +441,7 @@ class TelemetryLogger:
                 monitors_set = self._count_set_monitors(msg.currently_set)
                 monitors_overridden = self._count_set_monitors(msg.currently_overridden)
                 
-                row = {col: '' for col in self.ibit_columns}
+                row = self._row_template.copy()
                 row['Date'] = now.strftime('%Y-%m-%d')
                 row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
                 row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
@@ -474,7 +470,7 @@ class TelemetryLogger:
             
             # Log status text messages
             elif msg_type == 'STATUSTEXT':
-                row = {col: '' for col in self.ibit_columns}
+                row = self._row_template.copy()
                 row['Date'] = now.strftime('%Y-%m-%d')
                 row['Time'] = now.strftime('%H:%M:%S.%f')[:-3]
                 row['Timestamp_Seconds'] = f"{now.timestamp():.3f}"
@@ -509,14 +505,13 @@ class TelemetryLogger:
         """
         row = [row_dict.get(col, '') for col in self.ibit_columns]
         self.csv_writer.writerow(row)
-        self.current_file_size = self.log_file.tell()
     
     def _count_set_monitors(self, byte_array: Any) -> int:
         """
         Count how many monitors are SET.
 
-        Uses bin().count('1') (popcount) — faster and simpler than
-        the nested loop approach.
+        Uses single string conversion — fastest popcount approach for
+        small byte arrays.
 
         Args:
             byte_array: Array of bytes representing monitor bits
@@ -524,7 +519,7 @@ class TelemetryLogger:
         Returns:
             int: Number of SET monitors
         """
-        return sum(bin(b).count('1') for b in byte_array)
+        return bin(int.from_bytes(bytes(byte_array), 'little')).count('1')
     
     def close(self) -> None:
         """Close log file with proper error handling and logging"""

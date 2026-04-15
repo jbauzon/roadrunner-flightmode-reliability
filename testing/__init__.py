@@ -1,15 +1,16 @@
 """
 Test execution and logging.
 """
-from .executor import (
-    UUTTestExecutor,
-    PlaybackTestExecutor,
-    IBITPhaseTracker,
-    TestStatistics,
-    IBITFailureDiagnostic,
-)
+from .tracker import IBITPhaseTracker, TestStatistics
+from .diagnostics import IBITFailureDiagnostic
+from .base_executor import _ExecutorMixin
+from .ibit_executor import UUTTestExecutor
+from .playback_executor import PlaybackTestExecutor
 from .logger import TelemetryLogger
+from .error_logger import ErrorLogger
 from .callbacks import ExecutorCallbacks, PreparationCallbacks
+from .helpers import _build_actuator_feedback_dict
+from .watchdog import BatchWatchdog
 
 __all__ = [
     'UUTTestExecutor',
@@ -18,6 +19,8 @@ __all__ = [
     'TestStatistics',
     'IBITFailureDiagnostic',
     'TelemetryLogger',
+    'ErrorLogger',
     'ExecutorCallbacks',
     'PreparationCallbacks',
+    'BatchWatchdog',
 ]
