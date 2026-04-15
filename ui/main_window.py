@@ -490,8 +490,12 @@ class MultiUUTTestGUI(QMainWindow):
             self.log(f"✗ DAQ initialization failed: {message}")
 
     def launch_sitl(self):
-        """Start SITL simulation mode from within the GUI."""
-        import threading
+        """Start SITL simulation mode from within the GUI.
+
+        Everything blocking runs on a daemon thread — the UI stays responsive.
+        Results are handed back to the Qt main thread via QTimer.singleShot(0).
+        """
+        import threading, time
         from sim.vehicle import PandionVehicleSim
         from sim.mock_daq import MockDAQController
         from vehicle.connection import UUT
@@ -501,46 +505,18 @@ class MultiUUTTestGUI(QMainWindow):
         self.log("  LAUNCHING SITL SIMULATION")
         self.log("="*56)
 
-        # Start 2 sim vehicles
-        self._sitl_sims = []
+        # Disable button immediately so operator can't double-click
+        self.daq_widget.sitl_btn.setEnabled(False)
+        self.daq_widget.sitl_btn.setText("Starting...")
+
         sim_configs = [
             {'serial': 'RR-SIM-001', 'port': 19901, 'relay': 0,
-             'ibit_pass': True, 'sysid': 1},
+             'ibit_pass': True,  'sysid': 1},
             {'serial': 'RR-SIM-002', 'port': 19902, 'relay': 1,
              'ibit_pass': False, 'mistracking_flags': 0xC0, 'sysid': 2},
         ]
 
-        for cfg in sim_configs:
-            sim = PandionVehicleSim(
-                vehicle_port=cfg['port'],
-                sysid=cfg['sysid'],
-                ibit_pass=cfg['ibit_pass'],
-                mistracking_flags=cfg.get('mistracking_flags', 0),
-                boot_time_s=2.0,
-                ibit_duration_scale=0.5,
-                boot_monitors=[0, 1, 2, 3],
-            )
-            t = threading.Thread(target=sim.start, daemon=True,
-                                 name=f"sitl-{cfg['port']}")
-            t.start()
-            self._sitl_sims.append(sim)
-            self.log(f"  Started sim vehicle {cfg['serial']} on port {cfg['port']}"
-                     f" ({'PASS' if cfg['ibit_pass'] else 'FAIL'})")
-
-        # Wait for sims to boot
-        self.log("  Waiting for sim vehicles to boot...")
-        import time
-        time.sleep(2.5)
-
-        # Inject MockDAQ
-        mock_daq = MockDAQController()
-        mock_daq.initialize('SimDAQ/SITL')
-        for i, cfg in enumerate(sim_configs):
-            mock_daq.register_vehicle(cfg['relay'], self._sitl_sims[i])
-        self.daq = mock_daq
-        self.log("  MockDAQ controller initialized")
-
-        # Patch connection for loopback
+        # Patch connection for loopback now (on main thread — fast, no sleep)
         _HERE = os.path.dirname(os.path.abspath(__file__))
         _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
         dialect_dir = os.path.join(_ROOT, "vehicle", "dialects")
@@ -568,23 +544,62 @@ class MultiUUTTestGUI(QMainWindow):
             raise Exception(f"SITL vehicle not responding on {ip_address}:{port}")
 
         conn_mod.connect_to_vehicle = _sitl_connect
-        self.log("  Connection patched for loopback (SITL mode)")
 
-        # Pre-load UUTs
-        self.uuts = []
-        for cfg in sim_configs:
-            uut = UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
-            self.uuts.append(uut)
-        self.uut_table_widget.update_table(self.uuts)
-        self.debug_console.populate_uuts(self.uuts)
-        self.log(f"  Loaded {len(self.uuts)} simulated UUTs")
+        def _on_ready(mock_daq):
+            """Called on Qt main thread after sims have booted."""
+            self.daq = mock_daq
 
-        # Update UI state
-        self.daq_widget.set_sitl_active()
-        self.log("")
-        self.log("  SITL mode ready — click Start to begin testing")
-        self.log("  (Vehicle 1: PASS, Vehicle 2: FAIL with elevon mistracking)")
-        self.log("="*56)
+            # Pre-load UUTs
+            self.uuts = []
+            for cfg in sim_configs:
+                self.uuts.append(
+                    UUT(cfg['serial'], '127.0.0.1', cfg['port'], cfg['relay'])
+                )
+            self.uut_table_widget.update_table(self.uuts)
+            self.debug_console.populate_uuts(self.uuts)
+
+            self.daq_widget.set_sitl_active()
+            self.log("  MockDAQ initialized, UUTs loaded")
+            self.log("  SITL ready — click Connect in Debug Mode or Start to test")
+            self.log("  (RR-SIM-001: PASS  ·  RR-SIM-002: FAIL — elevon mistracking)")
+            self.log("="*56)
+
+        def _background():
+            """Boot sims and build MockDAQ — runs entirely off the main thread."""
+            sims = []
+            for cfg in sim_configs:
+                sim = PandionVehicleSim(
+                    vehicle_port=cfg['port'],
+                    sysid=cfg['sysid'],
+                    ibit_pass=cfg['ibit_pass'],
+                    mistracking_flags=cfg.get('mistracking_flags', 0),
+                    boot_time_s=2.0,
+                    ibit_duration_scale=0.5,
+                    boot_monitors=[0, 1, 2, 3],
+                )
+                threading.Thread(target=sim.start, daemon=True,
+                                 name=f"sitl-{cfg['port']}").start()
+                sims.append(sim)
+                QTimer.singleShot(0, lambda s=cfg['serial'], p=cfg['port'],
+                                  ok=cfg['ibit_pass']:
+                    self.log(f"  Started {s} on port {p} "
+                             f"({'PASS' if ok else 'FAIL'})"))
+
+            self._sitl_sims = sims
+
+            # Wait for sims to boot off the main thread — UI stays live
+            time.sleep(2.5)
+
+            mock_daq = MockDAQController()
+            mock_daq.initialize('SimDAQ/SITL')
+            for i, cfg in enumerate(sim_configs):
+                mock_daq.register_vehicle(cfg['relay'], sims[i])
+
+            # Hand results back to the Qt main thread
+            QTimer.singleShot(0, lambda: _on_ready(mock_daq))
+
+        threading.Thread(target=_background, daemon=True,
+                         name='sitl-launcher').start()
 
     def check_daq_health(self):
         if not self.daq or not self.daq.do_task:
