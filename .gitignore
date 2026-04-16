@@ -46,3 +46,9 @@ sim_config.yaml
 
 # OpenCode local state
 .opencode/
+
+# Web frontend (build artifacts & dependencies)
+web/node_modules/
+web/dist/
+web/dist-electron/
+web/release/
