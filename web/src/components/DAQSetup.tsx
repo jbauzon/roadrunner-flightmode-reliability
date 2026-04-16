@@ -62,13 +62,15 @@ export function DAQSetup({ daq, send }: DAQSetupProps) {
         </button>
       </div>
 
-      {/* SITL button */}
+      {/* SITL — small, subtle, developer/test use only */}
       <button
-        className="btn-neutral text-xs w-full"
+        className="text-[10px] text-text-disabled hover:text-text-secondary
+                   transition-colors border-none bg-transparent cursor-pointer
+                   disabled:opacity-30 disabled:cursor-not-allowed w-full text-left px-1"
         onClick={() => send({ type: 'cmd.launch_sitl' })}
         disabled={daq.sitl_active}
       >
-        {daq.sitl_active ? 'SITL Active' : 'Simulate'}
+        {daq.sitl_active ? '● Simulation active' : '○ Simulate (no hardware)'}
       </button>
 
       {/* Status */}
@@ -77,7 +79,7 @@ export function DAQSetup({ daq, send }: DAQSetupProps) {
           className={cn(
             'led',
             daq.initialized ? 'led-green' :
-            daq.sitl_active ? 'led-blue' :
+            daq.sitl_active ? 'led-green' :
             'led-off'
           )}
         />
@@ -85,12 +87,12 @@ export function DAQSetup({ daq, send }: DAQSetupProps) {
           className={cn(
             'text-xs font-mono',
             daq.initialized ? 'text-green' :
-            daq.sitl_active ? 'text-blue' :
+            daq.sitl_active ? 'text-green' :
             'text-amber'
           )}
         >
           {daq.sitl_active
-            ? 'SITL Mode'
+            ? `Ready (simulated)`
             : daq.initialized
               ? `Ready (${daq.num_lines} lines)`
               : 'Not Initialized'}
