@@ -1165,8 +1165,19 @@ async def main(auto_sitl: bool = False) -> None:
 
     http_server = None
     if has_dist:
-        http_server = await asyncio.start_server(_http_handler, "0.0.0.0", HTTP_PORT)
-        _log.info("HTTP server ready on http://0.0.0.0:%d (serving web/dist/)", HTTP_PORT)
+        try:
+            http_server = await asyncio.start_server(
+                _http_handler, "0.0.0.0", HTTP_PORT,
+                reuse_address=True,
+            )
+            _log.info("HTTP server ready on http://0.0.0.0:%d (serving web/dist/)", HTTP_PORT)
+        except OSError as e:
+            _log.warning(
+                "Could not start HTTP server on port %d: %s — "
+                "is another instance already running? Use dev mode: npx vite",
+                HTTP_PORT, e,
+            )
+            http_server = None
     else:
         _log.warning("web/dist/ not found — run 'npx vite build' in web/ first. "
                       "HTTP file server disabled; use 'npx vite' for dev mode.")
@@ -1175,6 +1186,7 @@ async def main(auto_sitl: bool = False) -> None:
         lambda ws: ws_handler(ws, state, broadcaster, cmd_handler),
         "0.0.0.0",
         WS_PORT,
+        reuse_address=True,
     ):
         _log.info("WebSocket server ready on ws://0.0.0.0:%d", WS_PORT)
 

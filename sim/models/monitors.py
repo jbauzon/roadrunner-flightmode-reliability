@@ -94,15 +94,29 @@ class MonitorSystem:
             for mid in newly_set:
                 del self._setting[mid]
 
-            # Evaluate conditions
+            # Evaluate conditions — both SET and CLEAR transitions
             for mid, (name, fn) in merged.items():
                 if mid in self._overridden or mid in self._suppressed:
                     continue
                 try:
-                    if fn():
+                    condition_active = fn()
+                    if condition_active:
+                        # Condition is active — move to setting/set
                         if mid not in self._set and mid not in self._setting:
                             self._setting[mid] = now
                             events_to_emit.append(('setting', mid))
+                    else:
+                        # Condition cleared — auto-clear the monitor
+                        # (real firmware re-evaluates continuously and clears
+                        #  when the condition is no longer true)
+                        if mid in self._set:
+                            self._set.discard(mid)
+                            self._last_event_id = mid
+                            self._last_event_ts = int(now * 1000) & 0xFFFFFFFF
+                            self._last_event_flags = 2  # cleared event
+                            events_to_emit.append(('cleared', mid))
+                        if mid in self._setting:
+                            del self._setting[mid]
                 except Exception:
                     pass
 

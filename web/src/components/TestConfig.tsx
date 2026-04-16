@@ -132,13 +132,13 @@ export function TestConfig({ onConfigChange }: TestConfigProps) {
             value={durationValue}
             onChange={(e) => setDurationValue(Number(e.target.value))}
             min={1}
-            className="flex-1 bg-bg-elevated border border-border rounded px-2 py-1.5
+            className="w-20 bg-bg-elevated border border-border rounded px-2 py-1.5
                        text-sm font-mono text-text-primary focus:border-border-focus outline-none"
           />
           <select
             value={durationUnit}
             onChange={(e) => setDurationUnit(e.target.value)}
-            className="bg-bg-elevated border border-border rounded px-2 py-1.5
+            className="flex-1 min-w-0 bg-bg-elevated border border-border rounded px-2 py-1.5
                        text-sm text-text-primary focus:border-border-focus outline-none"
           >
             <option>Seconds</option>
