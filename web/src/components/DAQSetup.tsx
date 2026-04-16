@@ -62,17 +62,6 @@ export function DAQSetup({ daq, send }: DAQSetupProps) {
         </button>
       </div>
 
-      {/* SITL — small, subtle, developer/test use only */}
-      <button
-        className="text-[10px] text-text-disabled hover:text-text-secondary
-                   transition-colors border-none bg-transparent cursor-pointer
-                   disabled:opacity-30 disabled:cursor-not-allowed w-full text-left px-1"
-        onClick={() => send({ type: 'cmd.launch_sitl' })}
-        disabled={daq.sitl_active}
-      >
-        {daq.sitl_active ? '● Simulation active' : '○ Simulate (no hardware)'}
-      </button>
-
       {/* Status */}
       <div className="flex items-center gap-2">
         <span

@@ -3,14 +3,15 @@
  */
 import { useState, useEffect } from 'react'
 import { Settings, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react'
-import type { ClientMessage } from '@/lib/types'
+import type { ClientMessage, DAQStatus } from '@/lib/types'
 
 interface TestConfigProps {
   send?: (msg: ClientMessage) => void
+  daq?: DAQStatus
   onConfigChange?: (config: { mode: string; durationSeconds: number; config: object }) => void
 }
 
-export function TestConfig({ onConfigChange }: TestConfigProps) {
+export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
   const [mode, setMode] = useState<'ibit' | 'playback'>('ibit')
   const [durationValue, setDurationValue] = useState(14)
   const [durationUnit, setDurationUnit] = useState('Days')
@@ -181,6 +182,21 @@ export function TestConfig({ onConfigChange }: TestConfigProps) {
           <ConfigRow label="Max ARM Iterations" value={maxArmIterations} onChange={setMaxArmIterations} />
           <ConfigRow label="Stabilization Delay" value={stabilizationDelay} onChange={setStabilizationDelay} suffix="s" />
           <ConfigRow label="Connection Timeout" value={connectionTimeout} onChange={setConnectionTimeout} suffix="s" />
+
+          {/* Simulation — hidden in Advanced for dev/test use only */}
+          {send && (
+            <div className="pt-2 mt-2 border-t border-border">
+              <button
+                className="text-[10px] text-text-disabled hover:text-text-secondary
+                           transition-colors bg-transparent cursor-pointer
+                           disabled:opacity-30 disabled:cursor-not-allowed w-full text-left"
+                onClick={() => send({ type: 'cmd.launch_sitl' })}
+                disabled={daq?.sitl_active}
+              >
+                {daq?.sitl_active ? '● Simulation active' : '○ Launch simulation (no hardware needed)'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

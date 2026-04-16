@@ -59,7 +59,7 @@ export function TestMode({ ws, onAlert, onConfigChange }: TestModeProps) {
       {/* Left column — config */}
       <div className="w-[320px] shrink-0 overflow-y-auto p-3 space-y-3 border-r border-white/5 bg-gradient-to-b from-bg-surface/30 to-transparent">
         <DAQSetup daq={ws.daq} send={ws.send} />
-        <TestConfig onConfigChange={handleConfigChange} />
+        <TestConfig onConfigChange={handleConfigChange} send={ws.send} daq={ws.daq} />
       </div>
 
       {/* Center column — UUT table + progress + log */}
