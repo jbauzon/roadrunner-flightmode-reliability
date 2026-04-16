@@ -1,1 +1,0 @@
-{"timestamp": "2026-04-16T11:54:59.671", "level": "ERROR", "category": "CONNECTION", "serial": "RR-SIM-001", "iteration": 0, "message": "Invalid IP address '127.0.0.1': Loopback addresses (127.x.x.x, ::1) not allowed for vehicle connection"}
