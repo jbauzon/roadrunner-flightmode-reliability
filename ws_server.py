@@ -314,6 +314,10 @@ def wire_callbacks(state: AppState, broadcaster: Broadcaster) -> ExecutorCallbac
     def _log(msg: str) -> None:
         ts = datetime.now().isoformat()
         broadcaster.broadcast("test.log", {"message": msg, "level": "info", "timestamp": ts})
+        # Detect connection success from executor log messages and broadcast health
+        if "\u2713 Connected to" in msg and not state.connection_healthy:
+            state.connection_healthy = True
+            broadcaster.broadcast("connection.health", {"healthy": True})
 
     def _complete(success: bool, message: str) -> None:
         state.testing_active = False
@@ -355,10 +359,34 @@ def wire_callbacks(state: AppState, broadcaster: Broadcaster) -> ExecutorCallbac
 
     def _statistics(s: Any) -> None:
         if hasattr(s, "__dict__"):
-            state.statistics = s.__dict__
+            d = {}
+            for k, v in s.__dict__.items():
+                if k.startswith('_'):
+                    continue
+                if callable(v):
+                    continue
+                # Convert deques to lists for JSON serialization
+                if hasattr(v, '__iter__') and not isinstance(v, (str, dict, list)):
+                    try:
+                        d[k] = list(v)
+                    except Exception:
+                        continue
+                else:
+                    d[k] = v
+            # Ensure the expected fields exist for the frontend
+            d.setdefault("total_iterations", d.get("telemetry_received", 0))
+            d.setdefault("total_passes", 0)
+            d.setdefault("total_fails", 0)
+            d.setdefault("pass_rate", 0.0)
+            d.setdefault("avg_duration", 0.0)
+            d.setdefault("per_uut", {})
+            state.statistics = d
         elif isinstance(s, dict):
             state.statistics = s
-        broadcaster.broadcast("test.statistics", state.statistics)
+        try:
+            broadcaster.broadcast("test.statistics", state.statistics)
+        except Exception:
+            pass  # Non-serializable statistics — skip this broadcast
 
     def _duration(d: float) -> None:
         state.ibit_duration = d
@@ -373,6 +401,10 @@ def wire_callbacks(state: AppState, broadcaster: Broadcaster) -> ExecutorCallbac
     def _iteration(i: int) -> None:
         state.iteration = i
         broadcaster.broadcast("test.iteration", {"iteration": i})
+        # Also broadcast updated UUT list so iterations_completed is visible
+        broadcaster.broadcast("uut.update", {
+            "uuts": [state._uut_dict(u) for u in state.uuts],
+        })
 
     def _progress(p: int) -> None:
         broadcaster.broadcast("test.progress", {"percent": p})
@@ -438,6 +470,12 @@ class CommandHandler:
 
     async def _sync_state(self, ws: ServerConnection, _data: dict) -> None:
         await self.broadcaster.send_to(ws, "state.sync", self.state.to_sync_dict())
+        # Send a welcome log so the log panel isn't empty on first load
+        await self.broadcaster.send_to(ws, "test.log", {
+            "message": "Connected to Roadrunner Flight Test backend v5.0.0",
+            "level": "info",
+            "timestamp": datetime.now().isoformat(),
+        })
 
     async def _detect_daq(self, _ws: ServerConnection, _data: dict) -> None:
         devices = SimpleDAQController.detect_devices()
@@ -701,6 +739,23 @@ class CommandHandler:
             })
             self.broadcaster.broadcast("batch.status", self.state._batch_dict())
 
+            # Reset per-UUT telemetry state so the frontend sees fresh data
+            self.state.ibit_substate = "CONNECTING"
+            self.state.mistracking_flags = 0
+            self.state.ibit_duration = 0.0
+            self.state.actuator_data = {}
+            self.state.vehicle_mode = 0
+            self.state.vehicle_regime = 0
+            self.state.vehicle_armed = False
+            self.state.vehicle_relay_on = False
+            self.state.connection_healthy = False
+            self.broadcaster.broadcast("ibit.state", {"substate": "CONNECTING"})
+            self.broadcaster.broadcast("telemetry.vehicle_status", {
+                "mode": 0, "regime": 0, "armed": False,
+            })
+            self.broadcaster.broadcast("connection.health", {"healthy": False})
+            self.broadcaster.broadcast("telemetry.actuator", {})
+
             # Create callbacks
             callbacks = wire_callbacks(self.state, self.broadcaster)
 
@@ -741,12 +796,14 @@ class CommandHandler:
                     "timestamp": datetime.now().isoformat(),
                 })
 
-            # Update UUT status based on executor result
+            # Update UUT status and iteration count after executor completes
             self.broadcaster.broadcast("uut.update", {
                 "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
             })
 
         self.state.testing_active = False
+        self.state.ibit_substate = "IDLE"
+        self.broadcaster.broadcast("ibit.state", {"substate": "IDLE"})
         self.broadcaster.broadcast("batch.status", self.state._batch_dict())
 
     async def _stop_test(self, _ws: ServerConnection, _data: dict) -> None:

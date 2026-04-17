@@ -116,8 +116,19 @@ export function LogViewer({ logs, onClear }: LogViewerProps) {
           )
         })}
         {filteredLogs.length === 0 && (
-          <div className="text-text-disabled text-center py-8">
-            {logs.length === 0 ? 'No log entries yet' : 'No matching entries'}
+          <div className="text-text-disabled text-center py-8 space-y-2">
+            {logs.length === 0 ? (
+              <>
+                <div className="text-sm font-medium">Ready to test</div>
+                <div className="text-xs leading-relaxed max-w-xs mx-auto">
+                  1. Set up DAQ hardware or launch SITL<br />
+                  2. Add UUTs to the table above<br />
+                  3. Click <span className="text-green font-medium">Start</span> to begin IBIT testing
+                </div>
+              </>
+            ) : (
+              'No matching entries'
+            )}
           </div>
         )}
       </div>

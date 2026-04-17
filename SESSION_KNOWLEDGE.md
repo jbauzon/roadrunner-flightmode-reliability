@@ -2,32 +2,45 @@
 # Last updated: 2026-04-16
 # Session: Full development from scratch to production-ready
 
-## CRITICAL: Web GUI Issues Found (Not Yet Fixed)
+## FIXED: Web GUI Issues (7 bugs resolved 2026-04-16)
 
-The web GUI (`ws_server.py` + `web/`) has 7 UX bugs discovered in the final audit:
+All 7 web GUI UX bugs have been fixed. Root causes and fixes:
 
-1. **Vehicle Status shows "OFFLINE" during active test** — `connection.health` event not mapped to Link indicator
-2. **Vehicle Status never changes from SAFE/OFF** — `telemetry.vehicle_status` events not flowing to right panel
-3. **Test Status shows "IDLE" during entire test** — `ibit.state` events not received/displayed, phase stepper never lights up
-4. **Actuator Feedback shows "---" during test** — `telemetry.actuator` events not flowing
-5. **Elapsed/Remaining shows 00:00** — batch timer not updating, `batch.status` ticker not working
-6. **No getting-started hint in web log** — empty log with no guidance
-7. **Iterations stays at 0 after test** — UUT table doesn't update iteration count
+**Root cause analysis:** The `wire_callbacks()` event type strings already matched the
+frontend reducer case labels. The actual issues were:
 
-**Root cause:** `ws_server.py` `wire_callbacks()` wires executor callbacks to `Broadcaster`, but the vehicle status, actuator feedback, IBIT state, and relay state callbacks aren't broadcasting with the correct event types that the frontend `use-websocket.ts` reducer expects. The `_run_batch` method creates executors and wires callbacks, but the telemetry worker in the executor reads from the dispatch queue and emits callbacks — these callbacks need to map to the WebSocket broadcast event types.
+1. **Vehicle Status OFFLINE** — `cb.on_connection_health(True)` was never called at test
+   start. The health monitor only broadcasts on state *change* (unhealthy→healthy), but
+   never fires the initial healthy state. **Fix:** `_log` callback in `wire_callbacks()`
+   detects the "Connected to" log message and broadcasts `connection.health` with
+   `healthy=True`. Also, `_run_batch` resets per-UUT state and broadcasts initial states.
 
-**Fix approach:** In `ws_server.py`, the `wire_callbacks()` function needs to add:
-- `cb.on_actuator_feedback` → broadcast `telemetry.actuator`
-- `cb.on_armed_state` → broadcast `telemetry.vehicle_status` with mode/regime/armed
-- `cb.on_mode` → broadcast `telemetry.vehicle_status`
-- `cb.on_connection_health` → broadcast `connection.health`
-- `cb.on_ibit_state` → broadcast `ibit.state`
-- `cb.on_mistracking_update` → broadcast `ibit.mistracking`
-- `cb.on_relay_state` → broadcast `daq.relay`
-- `cb.on_iteration` → update UUT iterations and broadcast `uut.update`
-- `cb.on_test_duration` → broadcast `test.duration`
+2. **Armed/Mode stuck at SAFE/OFF** — Callbacks were wired correctly but per-UUT state
+   was never reset between rounds. Frontend carried stale state from the previous UUT.
+   **Fix:** `_run_batch` now resets `vehicle_mode`, `vehicle_regime`, `vehicle_armed` and
+   broadcasts `telemetry.vehicle_status` with zeroed values before each UUT.
 
-The `_batch_ticker` coroutine also needs to broadcast `batch.status` every second with correct elapsed/remaining times.
+3. **Test Status IDLE** — Same stale-state issue. **Fix:** `_run_batch` broadcasts
+   `ibit.state` with `CONNECTING` at the start of each UUT test cycle.
+
+4. **Actuator Feedback ---** — Same stale-state issue. **Fix:** `_run_batch` resets
+   `actuator_data` and broadcasts an empty `telemetry.actuator` before each UUT.
+
+5. **Elapsed/Remaining 00:00** — The `_batch_ticker` and `_batch_dict()` were already
+   correct. The issue was that `TestStatistics.__dict__` contains `deque` objects which
+   are not JSON-serializable, causing `json.dumps` to throw in `_broadcast_async` and
+   silently killing broadcasts. **Fix:** `_statistics` callback now converts deques to
+   lists and wraps broadcast in try/except.
+
+6. **No getting-started hint** — LogViewer showed bare "No log entries yet". **Fix:**
+   LogViewer now shows a 3-step getting-started guide. Also, `_sync_state` handler sends
+   a welcome log on client connect so the panel is never empty.
+
+7. **Iterations stays at 0** — `_iteration` callback broadcast `test.iteration` which
+   the reducer ignores (`return state // handled via statistics`). **Fix:** `_iteration`
+   callback now also broadcasts `uut.update` with the full UUT list so
+   `iterations_completed` is visible. `_run_batch` also broadcasts `uut.update` after
+   executor completes. Reset `ibit_substate` to IDLE at batch end.
 
 ---
 
@@ -149,7 +162,6 @@ tools/                 gui_verify, gui_sitl_verify, operator_test
 ## Jira: AIT-2081 parent, AIT-2124-2130 sub-tasks (2130=bench bring-up is To Do)
 
 ## What's Left
-1. Fix 7 web GUI UX bugs (see top of file)
-2. Hardware bench bring-up
-3. Playback CSV compatibility with QGC exports
-4. Engine management in playback mode
+1. Hardware bench bring-up
+2. Playback CSV compatibility with QGC exports
+3. Engine management in playback mode

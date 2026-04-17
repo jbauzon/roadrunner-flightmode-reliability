@@ -20,7 +20,7 @@ export function TestMode({ ws, onAlert, onConfigChange }: TestModeProps) {
   const [selectedUUT, setSelectedUUT] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingUUT, setEditingUUT] = useState<(UUT & { index: number }) | undefined>()
-  const [testPayload, setTestPayload] = useState<{
+  const [_testPayload, setTestPayload] = useState<{
     mode: string
     durationSeconds: number
     config: object
