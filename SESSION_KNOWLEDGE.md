@@ -1,254 +1,155 @@
-# Roadrunner Flight Mode IBIT Test System — Session Knowledge Base
+# Roadrunner Flight Mode IBIT — Complete Session Knowledge Base
+# Last updated: 2026-04-16
+# Session: Full development from scratch to production-ready
+
+## CRITICAL: Web GUI Issues Found (Not Yet Fixed)
+
+The web GUI (`ws_server.py` + `web/`) has 7 UX bugs discovered in the final audit:
+
+1. **Vehicle Status shows "OFFLINE" during active test** — `connection.health` event not mapped to Link indicator
+2. **Vehicle Status never changes from SAFE/OFF** — `telemetry.vehicle_status` events not flowing to right panel
+3. **Test Status shows "IDLE" during entire test** — `ibit.state` events not received/displayed, phase stepper never lights up
+4. **Actuator Feedback shows "---" during test** — `telemetry.actuator` events not flowing
+5. **Elapsed/Remaining shows 00:00** — batch timer not updating, `batch.status` ticker not working
+6. **No getting-started hint in web log** — empty log with no guidance
+7. **Iterations stays at 0 after test** — UUT table doesn't update iteration count
+
+**Root cause:** `ws_server.py` `wire_callbacks()` wires executor callbacks to `Broadcaster`, but the vehicle status, actuator feedback, IBIT state, and relay state callbacks aren't broadcasting with the correct event types that the frontend `use-websocket.ts` reducer expects. The `_run_batch` method creates executors and wires callbacks, but the telemetry worker in the executor reads from the dispatch queue and emits callbacks — these callbacks need to map to the WebSocket broadcast event types.
+
+**Fix approach:** In `ws_server.py`, the `wire_callbacks()` function needs to add:
+- `cb.on_actuator_feedback` → broadcast `telemetry.actuator`
+- `cb.on_armed_state` → broadcast `telemetry.vehicle_status` with mode/regime/armed
+- `cb.on_mode` → broadcast `telemetry.vehicle_status`
+- `cb.on_connection_health` → broadcast `connection.health`
+- `cb.on_ibit_state` → broadcast `ibit.state`
+- `cb.on_mistracking_update` → broadcast `ibit.mistracking`
+- `cb.on_relay_state` → broadcast `daq.relay`
+- `cb.on_iteration` → update UUT iterations and broadcast `uut.update`
+- `cb.on_test_duration` → broadcast `test.duration`
+
+The `_batch_ticker` coroutine also needs to broadcast `batch.status` every second with correct elapsed/remaining times.
+
+---
 
 ## Project Overview
-Production-grade automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Runs IBIT (Integrated Built-In Test) and Flight Profile Playback tests over MAVLink (Pandion dialect) across up to 6 UUTs simultaneously.
+Production-grade automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Runs IBIT and Flight Profile Playback tests over MAVLink (Pandion dialect) across up to 6 UUTs simultaneously.
 
-**Repository:** https://ghe.anduril.dev/jbauzon/roadrunner-flightmode-reliability
+**Repository:** https://ghe.anduril.dev/jbauzon/roadrunner-flightmode-reliability (public to Anduril)
 **Jira:** https://jira.anduril.dev/browse/AIT-2081
 **Owner:** jbauzon@anduril.com
 
 ---
 
+## Two GUIs
+
+### PyQt5 GUI (fully working)
+- Entry: `main.py` (production) or `run_sim.py` (with SITL)
+- All features working: test mode, debug mode, SITL, telemetry, edge cases
+
+### Web GUI (needs fixes listed above)
+- Entry: `start.bat` → opens browser at http://localhost:18890
+- Backend: `ws_server.py` (asyncio WebSocket port 18889 + HTTP port 18890)
+- Frontend: `web/` (React 19 + TypeScript + Vite + TailwindCSS)
+- Build frontend: `cd web && npm install && npm run build`
+- SITL: hidden in Advanced settings, or `python ws_server.py --sitl`
+
+---
+
 ## Architecture
 
-### Two GUIs
-1. **PyQt5 GUI** (`main.py`, `run_sim.py`) — original desktop app, fully functional
-2. **Web GUI** (`ws_server.py` + `web/`) — React/TypeScript frontend over WebSocket, newer
-
-### Backend Layers
 ```
-ui/                    PyQt5 GUI (widgets/ sub-package, qt_adapter.py, command_server.py)
-web/                   React 19 + Vite + TailwindCSS frontend
-ws_server.py           asyncio WebSocket backend (port 18889) + HTTP server (port 18890)
-vehicle/               MAVLink connection, ARM/preparation, centralized constants
-  constants.py         Single source of truth for ALL enums, modes, thresholds
-  connection.py        UUT model + connect_to_vehicle()
-  preparation.py       ARM→OPERATE→PLAYBACK→IBIT state machine
-testing/               Test execution (split into 6 modules)
-  ibit_executor.py     IBIT test with mistracking detection
-  playback_executor.py Flight profile playback at 100Hz
-  base_executor.py     _ExecutorMixin (heartbeat, relay, dispatch worker)
+main.py               PyQt5 entry point
+run_sim.py             PyQt5 + SITL (patches connect_to_vehicle for loopback)
+start.bat              Web GUI launcher (opens browser)
+ws_server.py           Web backend (asyncio WebSocket + HTTP static server)
+version.py             __version__ = "5.0.0"
+
+vehicle/
+  constants.py         SINGLE SOURCE OF TRUTH — all enums, modes, thresholds, monitor IDs
+  connection.py        UUT model + connect_to_vehicle() (rejects loopback IPs)
+  preparation.py       ARM→OPERATE→PLAYBACK→IBIT state machine (callbacks, no Qt)
+
+testing/
+  ibit_executor.py     UUTTestExecutor (threading.Thread, not QThread)
+  playback_executor.py PlaybackTestExecutor
+  base_executor.py     _ExecutorMixin (dispatch worker, heartbeat, relay, cleanup)
   tracker.py           IBITPhaseTracker, TestStatistics
+  callbacks.py         ExecutorCallbacks, PreparationCallbacks (no Qt dependency)
   recovery.py          RecoveryManager (soft/hard/fatal classification)
   watchdog.py          BatchWatchdog (relay safety, disk, memory, hourly summary)
-  error_logger.py      Persistent JSONL error log
-  callbacks.py         ExecutorCallbacks, PreparationCallbacks (no Qt dependency)
+  error_logger.py      Persistent JSONL error log (logs/errors/error_log.jsonl)
   debug_connection.py  Lightweight MAVLink connection for debug mode
-hardware/              NI-DAQmx relay controller
-sim/                   SITL simulator
+  logger.py            Telemetry CSV logger
+  helpers.py           _build_actuator_feedback_dict
+  diagnostics.py       IBITFailureDiagnostic
+
+hardware/
+  daq.py               SimpleDAQController (NI-DAQmx)
+
+sim/
   vehicle.py           Full Pandion state machine + IBIT lifecycle
-  telemetry.py         12 MAVLink message types
-  models/              servo dynamics, battery, monitors, sensors
-  config/              defaults (backed by production enums), scenarios, composition
-  clock.py, recorder.py, fuzzer.py
-```
+  telemetry.py         12 MAVLink TX message types
+  models/              servo.py, battery.py, monitors.py, sensors.py
+  config/              defaults.py (backed by production enums), scenarios.py
+  mock_daq.py          MockDAQController (relays are load relays, NOT power)
+  clock.py, recorder.py, fuzzer.py, fleet.py, bridge.py
 
-### Key Design Decisions
-- **Production code never modified for simulation** — `run_sim.py` patches `connect_to_vehicle` at runtime
-- **PyQt5 decoupled from non-UI layers** — executor/preparation/logger use plain callbacks, Qt adapter bridges to signals
-- **vehicle/constants.py is single source of truth** — all enums, mode names, timeouts, monitor IDs
-- **Sim enums backed by production enums** — `sim/config/defaults.py` imports from `vehicle/constants.py`
-- **Relays are TEST LOAD relays, NOT main power** — vehicle stays powered regardless of relay state
+ui/                    PyQt5 GUI
+  main_window.py       Operator console
+  qt_adapter.py        QtExecutorBridge (ONLY Qt coupling point)
+  command_server.py    TCP command server (port 18888)
+  widgets/             13 files
 
----
+web/                   React frontend
+  src/pages/           TestMode.tsx, DebugMode.tsx
+  src/components/      13 components
+  src/hooks/           use-websocket.ts (reducer pattern)
+  src/lib/             types.ts, ws-client.ts
 
-## Critical Firmware Compatibility (Verified Against Source)
-
-### ARM Command
-- `MAV_CMD_COMPONENT_ARM_DISARM` (command 400), param1=1 (ARM), param2=21196 (force ARM bypass monitors)
-- Returns `COMMAND_ACK` result=0 (ACCEPTED) or result=1 (TEMPORARILY_REJECTED)
-
-### Mode Transitions
-- Required sequence: OFF → OPERATE → PLAYBACK → IBIT
-- Direct OPERATE → IBIT is NOT permitted
-- Mode request: `pandion_rr_actuation_request_mode_send(requested_mode=N)`
-- Silently ignored when not armed
-
-### Monitor Override Semantics
-- cmd=0 (CANCEL): Remove override, return to normal monitoring
-- cmd=1 (SUPPRESS): Override to healthy (use to clear SET monitors)
-- cmd=2 (FORCE_FAULT): Override to faulted (makes things worse, not better)
-
-### IBIT Mistracking Detection
-- Threshold: 500 cdeg (5°) for all surfaces
-- TVC: 5 consecutive cycles at 100Hz (50ms)
-- Elevons/rudders: instantaneous
-- **Firmware zeros `actuation_ibit_mon_status` on OPERATE transition** — must accumulate flags via |= during IBIT
-
-### Phase Durations (firmware-accurate)
-- SETTLE: 500ms, ELEVON: 5000ms, RUDDERS: 10000ms, TVC: 5000ms
-- No COMPLETE phase — transitions immediately to OPERATE
-
-### Default Port
-- Vehicle MAVLink: port 13002 (QGC channel)
-- NOT 9985 (that was wrong)
-
-### Monitor IDs (from cm_config.xml)
-- Monitor 6: Actuator Controller Temp Warning (≥95°C PCB)
-- Monitor 7: Actuator Controller Temp Critical (≥105°C PCB)
-- Monitor 9: Actuator Controller Thermal Limit Active
-- Monitor 52: Elevon Controller Internal Limit Active (NOT thermal)
-- Monitor 55: Servo IBIT Mistracking
-
-### Parameter Names
-- `USE_NEST` — nest connection control
-- `CLASSIC_MODE_EN` — requires power cycle to activate (stored vs active params)
-- Response: `PANDION_RR_PARAM_VALUE` (not standard `PARAM_VALUE`)
-
----
-
-## Bugs Found and Fixed
-
-### Critical Firmware Compat Bugs (would have caused wrong results on real hardware)
-1. **IBIT always reported PASS** — read mistracking from OPERATE message (always 0x00). Fixed: accumulate via |= during IBIT
-2. **Monitor clearing inverted** — sent FORCE_FAULT(2) instead of SUPPRESS(1). Fixed.
-3. **Wrong default port** — 9985 → 13002
-4. **Wrong param response type** — tried `PARAM_VALUE`, firmware sends `PANDION_RR_PARAM_VALUE`. Fixed: try both.
-
-### 31 Edge Cases Fixed
-- Dispatch worker dying silently → emergency relay disable
-- Soft retry infinite loop → 6-failure cap
-- `time.time()` vs `time.monotonic()` → NTP/hibernation safe
-- Stale message queues blocking mode transitions → queue flush before mode requests
-- All-UUTs-failed infinite scheduler loop → early batch completion
-- None MAVLink fields → `safe_int_field()` helper
-- Window close with relay ON → `set_all_low()` before close dialog
-- And 24 more documented in the codebase
-
----
-
-## SITL Simulator
-
-### Firmware-Accurate Features
-- Triangle wave IBIT profiles for elevons/rudders
-- Radial sweep for TVC
-- Real mistracking detection (|cmd-fb| > 500 cdeg)
-- Monitor continuous evaluation (auto-clear when condition becomes false)
-- Non-linear LiPo discharge curve
-- Engine spool-up sequence (3s ramp)
-- IBIT direct servo mode (40000 cdeg/s physical speed, no manual rate limit)
-- POS_CHECK state for TAU Mk2 elevons
-- X-tail rudder skip
-- Deterministic clock, telemetry recording, protocol fuzzer
-
-### What the Sim Doesn't Model
-- Actual aerodynamic loads on servos
-- Electrical bus transients during relay switching
-- Multi-board communication latency
-- Watchdog/reset behavior
-- Actual servo motor inertia
-
----
-
-## Web GUI (ws_server.py + web/)
-
-### Architecture
-- `ws_server.py`: asyncio WebSocket server (port 18889) + HTTP static file server (port 18890)
-- `web/`: React 19 + TypeScript + Vite + TailwindCSS
-- Communication: JSON messages over WebSocket (defined in `web/src/lib/types.ts`)
-- Launch: `start.bat` (opens browser automatically)
-
-### UUT Status Normalization
-Python → TypeScript mapping:
-- "Ready" → "READY"
-- "Testing" → "TESTING"
-- "Complete" → "PASSED"
-- "Failed (3x)" → "FAILED_PERMANENT"
-- "Retry" → "RETRY"
-- "Stopped" → "SKIPPED"
-
-### Debug Mode
-- Connect/Disconnect to UUTs without running a test
-- Send mode requests, ARM/DISARM, parameter sets, monitor overrides
-- Live telemetry panel (vehicle status, actuator feedback, battery, engine)
-- Message stream
-- SITL launch hidden in Advanced settings
-
-### Known Issues
-- Electron packaging doesn't work (path resolution in packaged app). Use `start.bat` instead.
-- `QTimer.singleShot(0, ...)` from non-Qt threads doesn't work on Windows — must use `pyqtSignal`
-- `time.sleep()` on Qt main thread freezes UI — all blocking work must be in background threads
-
----
-
-## Test Coverage
-
-| Suite | Count | What |
-|-------|-------|------|
-| SITL integration | 100 | MAVLink-level: heartbeat, telemetry, ARM, IBIT, monitors, battery, engine |
-| Functional | 17 | Module imports, GUI launch, IBIT E2E PASS/FAIL, emergency stop, command server |
-| Edge cases | 22 | Configuration validation, safety guards, failure modes, state machine, relay |
-| Debug mode | 22 | Connection lifecycle, mode requests, ARM/DISARM, params, monitors, telemetry |
-| Permutations | 29 | IBIT/playback × UUT configs × stop methods |
-| 24h soak | 1 | Memory, threads, log rotation, relay safety over simulated 24 hours |
-
----
-
-## Windows-Specific Issues
-- WinError 10054: ICMP port-unreachable poisons UDP sockets → handled with try/except in dispatch worker
-- WinError 10022: `socket.recvfrom` on `udpout` → wrapped
-- Unicode cp1252 crash → `sys.stdout.reconfigure(encoding='utf-8')`
-- Qt offscreen mode: signals don't dispatch reliably → use real display for GUI tests
-- `QTimer.singleShot` from background threads: doesn't work → use `pyqtSignal`
-- `time.sleep` on main thread: freezes GUI → use background threads with signal handoff
-
----
-
-## Jira Tickets
-- **AIT-2081**: Parent story — RR BLK 1 Flight Mode Reliability Test Software
-- **AIT-2124**: Research Pandion MAVLink protocol requirements (Done)
-- **AIT-2125**: Design and build IBIT test execution engine (Done)
-- **AIT-2126**: Design and build operator GUI (Done)
-- **AIT-2127**: Build SITL simulator for software validation (Done)
-- **AIT-2128**: Verify test software against Pandion firmware (Done)
-- **AIT-2129**: Harden for continuous unattended operation (Done)
-- **AIT-2130**: Hardware bench bring-up (To Do)
-
----
-
-## How to Run
-
-### Web GUI (production)
-```
-cd "C:\Anduril\RoadRunner Flight Mode IBIT"
-start.bat
-```
-Opens browser at http://localhost:18890
-
-### PyQt5 GUI (production)
-```
-python main.py
-```
-
-### PyQt5 GUI with SITL
-```
-python run_sim.py
-```
-
-### SITL Tests
-```
-python tests/test_sitl.py
-```
-
-### Functional Tests
-```
-python tests/functional_test.py --quick
+tests/                 100 SITL + 17 functional + 22 edge + 22 debug + 29 permutation + soak
+tools/                 gui_verify, gui_sitl_verify, operator_test
 ```
 
 ---
 
-## Thermal Chamber Notes
-- Servo temperatures monitored by watchdog (warn 70°C, critical 85°C, shutdown 95°C)
-- Thermal shutdown monitor = ID 9 (Actuator Controller Thermal Limit Active)
-- Temperature field in Advanced Settings for test condition tagging
-- IBIT mistracking at extreme temps counts as FATAL (firmware decides pass/fail, not software)
+## Firmware Compatibility (Verified Against pandion_roadrunner Source)
+
+- ARM: command 400, param1=1, param2=21196 (force)
+- Modes: OFF(0) IBIT(1) OPERATE(2) MANUAL(3) PLAYBACK(4) TRIM(5) POS_CHECK(6) TERMINAL(7)
+- Sequence: OPERATE → PLAYBACK → IBIT (direct OPERATE→IBIT NOT permitted)
+- Monitor override: 0=CANCEL 1=SUPPRESS(clear) 2=FORCE_FAULT(makes worse)
+- IBIT mistracking: 500 cdeg, TVC 5-cycle consecutive, elevon/rudder instant
+- Phases: SETTLE=500ms ELEVON=5000ms RUDDERS=10000ms TVC=5000ms
+- Port: 13002 (NOT 9985)
+- Param response: PANDION_RR_PARAM_VALUE
+- Firmware zeros actuation_ibit_mon_status on OPERATE transition → accumulate via |=
+- Monitor 6=TempWarn 7=TempCrit 9=ThermalLimit 52=ElevonCtrlLimit(NOT thermal) 55=IBITMismatch
 
 ---
 
-## What's Left (Hardware Bench Bring-Up)
-1. Wire NI-DAQmx relay box to bench
-2. Confirm relay-to-UUT power mapping
-3. First live MAVLink connection to real Roadrunner at port 13002
-4. Run first live IBIT
-5. Verify monitor IDs match specific firmware build (check cm_config.xml)
-6. 14-day reliability soak on real hardware
+## Critical Bugs Found and Fixed
+
+1. IBIT always PASS (read from OPERATE msg=0x00) → accumulate via |=
+2. Monitor clearing inverted (FORCE_FAULT not SUPPRESS) → cmd=1
+3. Wrong port (9985→13002)
+4. Wrong param response (PARAM_VALUE→PANDION_RR_PARAM_VALUE)
+5. Dispatch worker death → BaseException catch + emergency relay
+6. Stale queues blocking mode transitions → flush before request
+7. Pre-loop IBIT false positive → require IBIT then OPERATE
+8. QTimer.singleShot from non-Qt thread → pyqtSignal
+9. time.sleep on main thread → background thread + signal
+10. connect_to_vehicle bound at import → module reference
+
+## 31 Edge Cases + Auto-Recovery + Watchdog + Error Logger — all documented in code
+
+## UUT Status Normalization: Ready→READY, Complete→PASSED, Failed(3x)→FAILED_PERMANENT, Retry→RETRY, Stopped→SKIPPED
+
+## Thermal: Monitor 9, warn 70°C, critical 85°C, shutdown 95°C, temperature field in batch report
+
+## Jira: AIT-2081 parent, AIT-2124-2130 sub-tasks (2130=bench bring-up is To Do)
+
+## What's Left
+1. Fix 7 web GUI UX bugs (see top of file)
+2. Hardware bench bring-up
+3. Playback CSV compatibility with QGC exports
+4. Engine management in playback mode
