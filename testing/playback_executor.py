@@ -148,49 +148,121 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         """
         Load flight profile CSV and validate columns.
 
-        Expected columns (in any order):
+        Accepts two naming conventions:
+
+          (A) Legacy "event/*" prefix + "_command_" infix (from AIQ tool):
+            event/left_elevon_ted_command_cdeg
+            event/left_engine_speed_command_prct_rpm
+            ...
+
+          (B) Production short names (as emitted by flight-test exports):
+            left_elevon_ted_cdeg
+            left_engine_prct_thrust
+            ...
+
+        Always required:
           timestamp
-          event/left_elevon_ted_command_cdeg
-          event/right_elevon_ted_command_cdeg
-          event/lower_rudder_tel_command_cdeg
-          event/upper_rudder_tel_command_cdeg
-          event/left_tvc_upper_command_cdeg
-          event/left_tvc_lower_command_cdeg
-          event/right_tvc_upper_command_cdeg
-          event/right_tvc_lower_command_cdeg
-          event/left_engine_speed_command_prct_rpm
-          event/right_engine_speed_command_prct_rpm
 
         Returns:
-            List of dicts, one per 100 Hz frame.
+            List of dicts with canonical short keys — one dict per 100 Hz frame:
+              left_elev, right_elev, low_rud, up_rud,
+              l_tvc_up, l_tvc_lo, r_tvc_up, r_tvc_lo,
+              l_eng, r_eng
         """
-        required_cols = [
-            'timestamp',
-            'event/left_elevon_ted_command_cdeg',
-            'event/right_elevon_ted_command_cdeg',
-            'event/lower_rudder_tel_command_cdeg',
-            'event/upper_rudder_tel_command_cdeg',
-            'event/left_tvc_upper_command_cdeg',
-            'event/left_tvc_lower_command_cdeg',
-            'event/right_tvc_upper_command_cdeg',
-            'event/right_tvc_lower_command_cdeg',
-            'event/left_engine_speed_command_prct_rpm',
-            'event/right_engine_speed_command_prct_rpm',
-        ]
+        # Each canonical key maps to a list of acceptable source column names.
+        # The first match wins.
+        COLUMN_ALIASES = {
+            'left_elev': [
+                'event/left_elevon_ted_command_cdeg',
+                'left_elevon_ted_cdeg',
+            ],
+            'right_elev': [
+                'event/right_elevon_ted_command_cdeg',
+                'right_elevon_ted_cdeg',
+            ],
+            'low_rud': [
+                'event/lower_rudder_tel_command_cdeg',
+                'lower_rudder_tel_cdeg',
+            ],
+            'up_rud': [
+                'event/upper_rudder_tel_command_cdeg',
+                'upper_rudder_tel_cdeg',
+            ],
+            'l_tvc_up': [
+                'event/left_tvc_upper_command_cdeg',
+                'left_tvc_upper_cdeg',
+            ],
+            'l_tvc_lo': [
+                'event/left_tvc_lower_command_cdeg',
+                'left_tvc_lower_cdeg',
+            ],
+            'r_tvc_up': [
+                'event/right_tvc_upper_command_cdeg',
+                'right_tvc_upper_cdeg',
+            ],
+            'r_tvc_lo': [
+                'event/right_tvc_lower_command_cdeg',
+                'right_tvc_lower_cdeg',
+            ],
+            'l_eng': [
+                'event/left_engine_speed_command_prct_rpm',
+                'left_engine_prct_thrust',
+                'left_engine_speed_prct_thrust',
+            ],
+            'r_eng': [
+                'event/right_engine_speed_command_prct_rpm',
+                'right_engine_prct_thrust',
+                'right_engine_speed_prct_thrust',
+            ],
+        }
 
         with open(csv_path, newline='') as f:
             reader = csv.DictReader(f)
             if not reader.fieldnames:
                 raise ValueError("CSV has no header row")
-            missing = [c for c in required_cols if c not in reader.fieldnames]
-            if missing:
-                raise ValueError(f"CSV missing required columns: {missing}")
-            rows = list(reader)
+            fieldnames = reader.fieldnames
 
-        if not rows:
+            # Timestamp is always required
+            if 'timestamp' not in fieldnames:
+                raise ValueError("CSV missing required column: timestamp")
+
+            # Resolve each canonical key to an actual column name
+            col_map = {}
+            missing = []
+            for canonical, aliases in COLUMN_ALIASES.items():
+                found = next((a for a in aliases if a in fieldnames), None)
+                if found is None:
+                    missing.append(f"{canonical} (tried: {aliases})")
+                else:
+                    col_map[canonical] = found
+
+            if missing:
+                raise ValueError(
+                    f"CSV missing required columns: {missing}\n"
+                    f"  Available columns: {fieldnames}"
+                )
+
+            # Read raw rows
+            raw_rows = list(reader)
+
+        if not raw_rows:
             raise ValueError("CSV profile is empty")
 
-        self.cb.on_log(f"  CSV columns: {list(rows[0].keys())}")
+        # Normalize each row to the canonical short-key form
+        rows = []
+        for i, raw in enumerate(raw_rows):
+            try:
+                row = {'timestamp': raw['timestamp']}
+                for canonical, src_col in col_map.items():
+                    row[canonical] = float(raw[src_col] or 0.0)
+                rows.append(row)
+            except (ValueError, KeyError) as e:
+                # Skip malformed rows silently — they'll show in the frame-
+                # error log during streaming if they matter
+                self.cb.on_log(f"  \u26a0 Row {i} parse error (skipped): {e}")
+
+        self.cb.on_log(f"  CSV columns ({len(fieldnames)}): {fieldnames}")
+        self.cb.on_log(f"  Column mapping: {col_map}")
         return rows
 
     # ----------------------------------------------------------
@@ -304,22 +376,24 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
             frame_start = time.time()
 
-            # Parse commands
+            # Parse commands — rows are already normalized to canonical short
+            # keys by _load_profile (accepts both 'event/*_command_*' legacy
+            # format and production short names like 'left_elevon_ted_cdeg').
             try:
                 cmds = {
-                    'left_elev':  float(row['event/left_elevon_ted_command_cdeg']),
-                    'right_elev': float(row['event/right_elevon_ted_command_cdeg']),
-                    'low_rud':    float(row['event/lower_rudder_tel_command_cdeg']),
-                    'up_rud':     float(row['event/upper_rudder_tel_command_cdeg']),
-                    'l_tvc_up':   float(row['event/left_tvc_upper_command_cdeg']),
-                    'l_tvc_lo':   float(row['event/left_tvc_lower_command_cdeg']),
-                    'r_tvc_up':   float(row['event/right_tvc_upper_command_cdeg']),
-                    'r_tvc_lo':   float(row['event/right_tvc_lower_command_cdeg']),
-                    'l_eng':      float(row['event/left_engine_speed_command_prct_rpm']),
-                    'r_eng':      float(row['event/right_engine_speed_command_prct_rpm']),
+                    'left_elev':  float(row['left_elev']),
+                    'right_elev': float(row['right_elev']),
+                    'low_rud':    float(row['low_rud']),
+                    'up_rud':     float(row['up_rud']),
+                    'l_tvc_up':   float(row['l_tvc_up']),
+                    'l_tvc_lo':   float(row['l_tvc_lo']),
+                    'r_tvc_up':   float(row['r_tvc_up']),
+                    'r_tvc_lo':   float(row['r_tvc_lo']),
+                    'l_eng':      float(row['l_eng']),
+                    'r_eng':      float(row['r_eng']),
                 }
             except (ValueError, KeyError) as e:
-                self.cb.on_log(f"⚠ Frame {frame_idx} parse error: {e}")
+                self.cb.on_log(f"\u26a0 Frame {frame_idx} parse error: {e}")
                 continue
 
             # Zero out channels we're not commanding

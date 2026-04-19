@@ -258,6 +258,9 @@ class UUTPreparation:
 
             # Step 5: Wait for OPERATE
             self.cb.on_log("\n→ Waiting for OPERATE mode...")
+            # Drain stale ACTUATION_SYS_STATUS so we only read post-ARM values
+            if self._msg_queues is not None:
+                self._msg_queues[MsgType.ACTUATION_SYS_STATUS].clear()
             operate_timeout = 10.0
             operate_start = time.time()
             in_operate = False
@@ -1152,6 +1155,14 @@ class UUTPreparation:
             result_str = get_command_result_name(ack.result)
             
             if ack.result == CommandResult.ACCEPTED:
+                # Drain stale pre-ARM PANDION_STATUS messages so the next
+                # status we read reflects the post-ARM state, not a queued
+                # pre-ARM one.  Fixes false "ACK received but not armed"
+                # when the dispatch queue has backlog (e.g. after a power
+                # cycle wait in the Playback preparation flow).
+                if self._msg_queues is not None:
+                    self._msg_queues[MsgType.PANDION_STATUS].clear()
+
                 time.sleep(0.3)
                 
                 # Verify with PANDION_STATUS

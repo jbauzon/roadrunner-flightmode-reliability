@@ -92,6 +92,10 @@ class AppState:
         self.batch_end_time: Optional[float] = None
         self._starting_uut: bool = False
 
+        # Playback-mode specific params (set by _start_test from the cmd payload)
+        self.playback_csv: str = ""
+        self.playback_type: str = "Both"
+
         # Vehicle / telemetry state (updated by executor callbacks)
         self.vehicle_mode: int = 0
         self.vehicle_regime: int = 0
@@ -653,6 +657,10 @@ class CommandHandler:
         self.state._batch_start_mono = time.monotonic()
         self.state.current_uut_index = -1
 
+        # Playback-mode specific parameters (ignored for IBIT)
+        self.state.playback_csv = data.get("playback_csv", "") or ""
+        self.state.playback_type = data.get("playback_type", "Both") or "Both"
+
         # Apply config overrides from frontend
         if "config" in data and isinstance(data["config"], dict):
             self.state.test_config.update(data["config"])
@@ -751,8 +759,8 @@ class CommandHandler:
                     connection_timeout=10.0,
                     log_directory=self.state.log_directory,
                     test_start_datetime=self.state.batch_start_datetime,
-                    playback_csv="",
-                    playback_type="Both",
+                    playback_csv=self.state.playback_csv,
+                    playback_type=self.state.playback_type,
                     config=self.state.test_config,
                     callbacks=callbacks,
                 )

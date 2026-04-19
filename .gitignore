@@ -15,6 +15,9 @@ sim_uut_config.json
 test_profile.csv
 pw_test.log
 web_e2e.log
+_pb_server.log
+_pb_walkthrough_logs.txt
+_sitl_debug.txt
 
 # Python
 __pycache__/
