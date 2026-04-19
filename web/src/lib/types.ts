@@ -161,6 +161,7 @@ export type ServerMessage =
   | { type: 'ibit.mistracking';       data: { flags: number } }
   | { type: 'test.log';               data: { message: string; level: string; timestamp: string } }
   | { type: 'test.complete';          data: { success: boolean; message: string } }
+  | { type: 'uut.iteration_complete'; data: { success: boolean; message: string } }
   | { type: 'test.statistics';        data: TestStatistics }
   | { type: 'test.duration';          data: { seconds: number } }
   | { type: 'test.iteration';         data: { iteration: number } }

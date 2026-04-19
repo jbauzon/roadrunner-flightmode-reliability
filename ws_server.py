@@ -325,8 +325,12 @@ def wire_callbacks(state: AppState, broadcaster: Broadcaster) -> ExecutorCallbac
             broadcaster.broadcast("connection.health", {"healthy": True})
 
     def _complete(success: bool, message: str) -> None:
-        state.testing_active = False
-        broadcaster.broadcast("test.complete", {"success": success, "message": message})
+        # Per-UUT iteration complete — does NOT end the batch.
+        # The batch loop in _run_batch continues until the duration expires,
+        # all UUTs permanently fail, or the user clicks Stop.
+        broadcaster.broadcast("uut.iteration_complete", {
+            "success": success, "message": message,
+        })
         broadcaster.broadcast("batch.status", state._batch_dict())
 
     def _mode(m: int) -> None:
