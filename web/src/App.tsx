@@ -15,6 +15,8 @@ export default function App() {
   const [testPayload, setTestPayload] = useState<{
     mode: string
     durationSeconds: number
+    playbackCsv: string
+    playbackType: string
     config: object
   } | null>(null)
 
@@ -50,6 +52,8 @@ export default function App() {
             data: {
               mode: (testPayload?.mode ?? ws.test_mode) as 'ibit' | 'playback',
               duration_seconds: testPayload?.durationSeconds ?? 86400 * 14,
+              playback_csv: testPayload?.playbackCsv || undefined,
+              playback_type: testPayload?.playbackType || undefined,
               config: testPayload?.config as Partial<import('@/lib/types').TestConfig> | undefined,
             },
           })

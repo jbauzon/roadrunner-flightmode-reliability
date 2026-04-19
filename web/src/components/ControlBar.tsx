@@ -5,12 +5,28 @@ interface ControlBarProps {
   batchActive: boolean
   testMode: TestMode
   send: (msg: ClientMessage) => void
-  testPayload?: { mode: string; durationSeconds: number; config: object } | null
+  testPayload?: {
+    mode: string
+    durationSeconds: number
+    playbackCsv?: string
+    playbackType?: string
+    config: object
+  } | null
 }
 
 export function ControlBar({ batchActive, testMode, send, testPayload }: ControlBarProps) {
   const startLabel =
     testMode === 'playback' ? 'Start Playback Test' : 'Start IBIT Test'
+
+  // Disable Start if Playback mode is selected but no CSV is loaded —
+  // otherwise the operator would click Start and get a backend error
+  // about the missing profile 20 seconds into preparation.
+  const missingPlaybackCsv =
+    testMode === 'playback' && !(testPayload?.playbackCsv)
+  const startDisabled = batchActive || missingPlaybackCsv
+  const startTitle = missingPlaybackCsv
+    ? 'Select a flight profile CSV before starting a Playback test'
+    : ''
 
   return (
     <div className="relative flex items-center gap-3 h-20 px-5 shrink-0">
@@ -19,13 +35,16 @@ export function ControlBar({ batchActive, testMode, send, testPayload }: Control
 
       {/* Start */}
       <button
-        disabled={batchActive}
+        disabled={startDisabled}
+        title={startTitle}
         onClick={() =>
           send({
             type: 'cmd.start_test',
             data: {
               mode: (testPayload?.mode ?? testMode) as TestMode,
               duration_seconds: testPayload?.durationSeconds ?? 86400 * 14,
+              playback_csv: testPayload?.playbackCsv || undefined,
+              playback_type: testPayload?.playbackType || undefined,
               config: testPayload?.config as Partial<TestConfig> | undefined,
             },
           })

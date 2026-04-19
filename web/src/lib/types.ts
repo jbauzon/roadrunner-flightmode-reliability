@@ -175,6 +175,7 @@ export type ServerMessage =
   | { type: 'alert';                  data: { message: string; severity: AlertSeverity } }
   | { type: 'debug.message';          data: { msg_type: string; summary: string } }
   | { type: 'error';                  data: { message: string } }
+  | { type: 'playback.csv_uploaded';  data: { path: string; filename: string; frames: number } }
 
 // Client → Server (commands)
 export type ClientMessage =
@@ -197,6 +198,7 @@ export type ClientMessage =
   | { type: 'cmd.debug.param_set'; data: { name: string; value: number } }
   | { type: 'cmd.debug.monitor_override'; data: { cmd: number; monitor_id: number } }
   | { type: 'cmd.debug.raw_command'; data: { cmd_id: number; param1: number } }
+  | { type: 'cmd.upload_playback_csv'; data: { filename: string; contents: string } }
 
 // ---------------------------------------------------------------------------
 // Full application state (sent on connect via state.sync)

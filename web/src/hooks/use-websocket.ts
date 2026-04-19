@@ -34,6 +34,8 @@ interface ReducerState {
   actuatorHistory: Array<Record<string, number>>
   batteryHistory: Array<{ t: number; voltage: number; current: number; soc: number }>
   engineHistory: Array<{ t: number; rpm: number; egt: number; fuelPump: number }>
+  // Playback CSV metadata after the user uploads a file via the folder picker
+  playbackCsvInfo: { path: string; filename: string; frames: number } | null
 }
 
 type Action =
@@ -252,6 +254,25 @@ function reducer(state: ReducerState, action: Action): ReducerState {
             ],
           }
 
+        case 'playback.csv_uploaded':
+          return {
+            ...state,
+            playbackCsvInfo: {
+              path: msg.data.path,
+              filename: msg.data.filename,
+              frames: msg.data.frames,
+            },
+            logs: [
+              ...state.logs.slice(-499),
+              {
+                id: ++logIdCounter,
+                message: `Flight profile loaded: ${msg.data.filename} (${msg.data.frames} frames)`,
+                level: 'info',
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }
+
         default:
           return state
       }
@@ -272,6 +293,7 @@ const INITIAL_STATE: ReducerState = {
   actuatorHistory: [],
   batteryHistory: [],
   engineHistory: [],
+  playbackCsvInfo: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +340,7 @@ export function useWebSocket() {
     actuatorHistory: state.actuatorHistory,
     batteryHistory: state.batteryHistory,
     engineHistory: state.engineHistory,
+    playbackCsvInfo: state.playbackCsvInfo,
     connectionStatus,
     send,
     clearLogs,

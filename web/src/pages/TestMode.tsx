@@ -13,7 +13,13 @@ import type { UUT } from '@/lib/types'
 interface TestModeProps {
   ws: ReturnType<typeof useWebSocket>
   onAlert: (message: string, severity: string) => void
-  onConfigChange?: (payload: { mode: string; durationSeconds: number; config: object }) => void
+  onConfigChange?: (payload: {
+    mode: string
+    durationSeconds: number
+    playbackCsv: string
+    playbackType: string
+    config: object
+  }) => void
 }
 
 export function TestMode({ ws, onAlert, onConfigChange }: TestModeProps) {
@@ -23,10 +29,18 @@ export function TestMode({ ws, onAlert, onConfigChange }: TestModeProps) {
   const [_testPayload, setTestPayload] = useState<{
     mode: string
     durationSeconds: number
+    playbackCsv: string
+    playbackType: string
     config: object
   } | null>(null)
 
-  const handleConfigChange = useCallback((payload: { mode: string; durationSeconds: number; config: object }) => {
+  const handleConfigChange = useCallback((payload: {
+    mode: string
+    durationSeconds: number
+    playbackCsv: string
+    playbackType: string
+    config: object
+  }) => {
     setTestPayload(payload)
     onConfigChange?.(payload)
   }, [onConfigChange])
@@ -59,7 +73,12 @@ export function TestMode({ ws, onAlert, onConfigChange }: TestModeProps) {
       {/* Left column — config */}
       <div className="w-[320px] shrink-0 overflow-y-auto p-3 space-y-3 border-r border-white/5 bg-gradient-to-b from-bg-surface/30 to-transparent">
         <DAQSetup daq={ws.daq} send={ws.send} />
-        <TestConfig onConfigChange={handleConfigChange} send={ws.send} daq={ws.daq} />
+        <TestConfig
+          onConfigChange={handleConfigChange}
+          send={ws.send}
+          daq={ws.daq}
+          playbackCsvInfo={ws.playbackCsvInfo}
+        />
       </div>
 
       {/* Center column — UUT table + progress + log */}

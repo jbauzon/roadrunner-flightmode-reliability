@@ -1,24 +1,38 @@
 /**
  * TestConfig — Test configuration panel (mode, duration, options).
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Settings, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react'
 import type { ClientMessage, DAQStatus } from '@/lib/types'
 
 interface TestConfigProps {
   send?: (msg: ClientMessage) => void
   daq?: DAQStatus
-  onConfigChange?: (config: { mode: string; durationSeconds: number; config: object }) => void
+  onConfigChange?: (config: {
+    mode: string
+    durationSeconds: number
+    playbackCsv: string
+    playbackType: string
+    config: object
+  }) => void
+  playbackCsvInfo?: { path: string; filename: string; frames: number } | null
 }
 
-export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
+export function TestConfig({
+  onConfigChange, send, daq, playbackCsvInfo,
+}: TestConfigProps) {
   const [mode, setMode] = useState<'ibit' | 'playback'>('ibit')
   const [durationValue, setDurationValue] = useState(14)
   const [durationUnit, setDurationUnit] = useState('Days')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [skipStateManagement, setSkipStateManagement] = useState(false)
-  const [playbackCsv, setPlaybackCsv] = useState('')
+  // playbackCsvPath is the SERVER-side path the backend will read from.
+  // Populated by the file picker after uploading the file (or typed
+  // manually into the text input for servers with the file already on disk).
+  const [playbackCsvPath, setPlaybackCsvPath] = useState('')
   const [playbackType, setPlaybackType] = useState('Both')
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Advanced config
   const [ibitTimeout, setIbitTimeout] = useState(300)
@@ -28,6 +42,14 @@ export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
   const [stabilizationDelay, setStabilizationDelay] = useState(2)
   const [connectionTimeout, setConnectionTimeout] = useState(10)
 
+  // When the backend confirms a file upload, adopt its server-side path.
+  useEffect(() => {
+    if (playbackCsvInfo?.path && playbackCsvInfo.path !== playbackCsvPath) {
+      setPlaybackCsvPath(playbackCsvInfo.path)
+      setUploading(false)
+    }
+  }, [playbackCsvInfo, playbackCsvPath])
+
   useEffect(() => {
     const durationSeconds = durationValue * ({
       Seconds: 1, Minutes: 60, Hours: 3600, Days: 86400,
@@ -35,6 +57,8 @@ export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
     onConfigChange?.({
       mode,
       durationSeconds,
+      playbackCsv: playbackCsvPath,
+      playbackType,
       config: {
         ibit_timeout: ibitTimeout,
         phase_timeout: phaseTimeout,
@@ -43,7 +67,56 @@ export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
         skip_arm_for_ibit: skipStateManagement,
       },
     })
-  }, [mode, durationValue, durationUnit, ibitTimeout, phaseTimeout, armTimeout, maxArmIterations, skipStateManagement, onConfigChange])
+  }, [
+    mode, durationValue, durationUnit,
+    playbackCsvPath, playbackType,
+    ibitTimeout, phaseTimeout, armTimeout, maxArmIterations,
+    skipStateManagement, onConfigChange,
+  ])
+
+  // ── File picker handler ─────────────────────────────────────────────
+  // Opens a native file dialog, reads the selected CSV contents, and
+  // uploads them to the backend which writes to a temp path under
+  // logs/uploaded_*.csv. The server broadcasts playback.csv_uploaded
+  // which updates playbackCsvInfo above, which sets playbackCsvPath.
+  const handleFilePick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !send) return
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      alert('Please select a .csv file')
+      return
+    }
+
+    // Reasonable size cap to avoid blocking the UI on multi-MB files.
+    // Real Roadrunner flight profiles are 2-5 MB; cap at 50 MB.
+    if (file.size > 50 * 1024 * 1024) {
+      alert(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB.`)
+      return
+    }
+
+    setUploading(true)
+    try {
+      const contents = await file.text()
+      send({
+        type: 'cmd.upload_playback_csv',
+        data: { filename: file.name, contents },
+      })
+      // Show the filename immediately so the user sees it was accepted.
+      // The real server-side path will replace this when the backend
+      // confirms via playback.csv_uploaded.
+      setPlaybackCsvPath(file.name)
+    } catch (err) {
+      setUploading(false)
+      alert(`Failed to read file: ${err}`)
+    }
+    // Reset the input so selecting the same file again fires onChange.
+    e.target.value = ''
+  }
 
   return (
     <div className="card space-y-3">
@@ -86,18 +159,33 @@ export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
             Playback Options
           </span>
 
+          {/* Hidden native file input — triggered by the folder button */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleFileSelected}
+            style={{ display: 'none' }}
+          />
+
           <div className="flex items-center gap-2">
             <span className="text-text-secondary text-xs">CSV:</span>
             <input
               type="text"
-              value={playbackCsv}
-              onChange={(e) => setPlaybackCsv(e.target.value)}
+              value={playbackCsvPath}
+              onChange={(e) => setPlaybackCsvPath(e.target.value)}
               placeholder="Select flight profile..."
               className="flex-1 bg-bg-elevated border border-border rounded px-2 py-1
                          text-xs font-mono text-text-primary placeholder:text-text-disabled
                          focus:border-border-focus outline-none"
             />
-            <button className="btn-neutral text-xs py-1 px-2">
+            <button
+              onClick={handleFilePick}
+              disabled={uploading}
+              title="Browse for flight profile CSV"
+              className="btn-neutral text-xs py-1 px-2 disabled:opacity-50
+                         disabled:cursor-not-allowed"
+            >
               <FolderOpen className="w-3 h-3" />
             </button>
           </div>
@@ -116,8 +204,24 @@ export function TestConfig({ onConfigChange, send, daq }: TestConfigProps) {
             </select>
           </div>
 
-          {!playbackCsv && (
-            <p className="text-text-disabled text-[10px] italic">No profile loaded</p>
+          {/* Status line: upload progress / loaded info / empty */}
+          {uploading ? (
+            <p className="text-amber text-[10px] italic">
+              Uploading to backend...
+            </p>
+          ) : playbackCsvInfo && playbackCsvInfo.path === playbackCsvPath ? (
+            <p className="text-green text-[10px]">
+              ✓ Loaded {playbackCsvInfo.frames.toLocaleString()} frames from{' '}
+              <span className="font-mono">{playbackCsvInfo.filename}</span>
+            </p>
+          ) : !playbackCsvPath ? (
+            <p className="text-text-disabled text-[10px] italic">
+              Click the folder icon to browse, or paste an absolute server-side path
+            </p>
+          ) : (
+            <p className="text-text-disabled text-[10px] italic">
+              Path: <span className="font-mono">{playbackCsvPath}</span>
+            </p>
           )}
         </div>
       )}

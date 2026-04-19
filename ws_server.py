@@ -471,6 +471,7 @@ class CommandHandler:
             "cmd.save_settings": self._save_settings,
             "cmd.save_uuts": self._save_uuts,
             "cmd.load_uuts": self._load_uuts,
+            "cmd.upload_playback_csv": self._upload_playback_csv,
         }
 
         handler = handler_map.get(msg_type)
@@ -657,9 +658,27 @@ class CommandHandler:
         self.state._batch_start_mono = time.monotonic()
         self.state.current_uut_index = -1
 
-        # Playback-mode specific parameters (ignored for IBIT)
-        self.state.playback_csv = data.get("playback_csv", "") or ""
-        self.state.playback_type = data.get("playback_type", "Both") or "Both"
+        # Playback-mode specific parameters (ignored for IBIT).
+        # If the client doesn't send playback_csv, keep whatever was set
+        # by a prior cmd.upload_playback_csv so uploaded profiles aren't
+        # silently wiped out.
+        if "playback_csv" in data and data["playback_csv"]:
+            self.state.playback_csv = data["playback_csv"]
+        if "playback_type" in data and data["playback_type"]:
+            self.state.playback_type = data["playback_type"]
+
+        # Playback mode without a CSV is unrecoverable — tell the user
+        # NOW instead of letting the executor fail mid-preparation.
+        if mode == "playback" and not self.state.playback_csv:
+            self.broadcaster.broadcast("error", {
+                "message": (
+                    "Cannot start Playback test: no flight profile CSV loaded. "
+                    "Click the folder icon in Test Configuration to upload one."
+                ),
+            })
+            self.state.testing_active = False
+            self.broadcaster.broadcast("batch.status", self.state._batch_dict())
+            return
 
         # Apply config overrides from frontend
         if "config" in data and isinstance(data["config"], dict):
@@ -882,6 +901,79 @@ class CommandHandler:
                 "message": f"Failed to load UUTs: {e}", "level": "error",
                 "timestamp": datetime.now().isoformat(),
             })
+
+    async def _upload_playback_csv(
+        self, _ws: ServerConnection, data: dict
+    ) -> None:
+        """Accept a flight profile CSV uploaded from the frontend file picker.
+
+        The frontend reads the file locally and sends the text contents in
+        the 'contents' field. We write it to logs/uploaded_<filename> so
+        the Playback executor can open it by path. Broadcasts
+        'playback.csv_uploaded' with the absolute path + frame count so
+        the TestConfig UI can confirm success to the operator.
+        """
+        filename = (data.get("filename") or "upload.csv").strip()
+        contents = data.get("contents", "")
+
+        # Sanitize filename — use only the basename, no path separators.
+        # (the browser sends the base name already, but we normalize in
+        # case a malformed client sends something with separators).
+        filename = os.path.basename(filename)
+        if not filename:
+            filename = "upload.csv"
+        if not filename.lower().endswith(".csv"):
+            filename = filename + ".csv"
+
+        # Reject gigantic uploads to avoid disk-filling abuse. Real
+        # Roadrunner flight profiles are 2-5 MB; cap at 50 MB.
+        MAX_SIZE = 50 * 1024 * 1024
+        if len(contents) > MAX_SIZE:
+            self.broadcaster.broadcast("error", {
+                "message": (
+                    f"Uploaded CSV is too large "
+                    f"({len(contents) / 1024 / 1024:.1f} MB > 50 MB max)"
+                ),
+            })
+            return
+
+        # Ensure target directory exists and write the file
+        uploads_dir = os.path.join(self.state.log_directory, "uploaded")
+        try:
+            os.makedirs(uploads_dir, exist_ok=True)
+            target_path = os.path.join(uploads_dir, filename)
+            with open(target_path, "w", newline="") as f:
+                f.write(contents)
+        except Exception as e:
+            self.broadcaster.broadcast("error", {
+                "message": f"Failed to write uploaded CSV: {e}",
+            })
+            return
+
+        # Count frames (non-header rows) so the UI can display progress-friendly info
+        try:
+            with open(target_path) as f:
+                frame_count = max(0, sum(1 for _ in f) - 1)
+        except Exception:
+            frame_count = 0
+
+        # Store on state so cmd.start_test picks it up even if the frontend
+        # doesn't explicitly include playback_csv in the payload
+        self.state.playback_csv = target_path
+
+        self.broadcaster.broadcast("test.log", {
+            "message": (
+                f"✓ Flight profile uploaded: {filename} "
+                f"({frame_count} frames) → {target_path}"
+            ),
+            "level": "info",
+            "timestamp": datetime.now().isoformat(),
+        })
+        self.broadcaster.broadcast("playback.csv_uploaded", {
+            "path": target_path,
+            "filename": filename,
+            "frames": frame_count,
+        })
 
     async def _handle_debug(self, msg_type: str, data: dict) -> None:
         """Handle debug mode commands using a DebugConnection."""
@@ -1236,6 +1328,11 @@ async def main(auto_sitl: bool = False) -> None:
         "0.0.0.0",
         WS_PORT,
         reuse_address=True,
+        # Raise the default 1 MiB message limit so large flight profile
+        # CSV uploads (NominalFlight_noRudder.csv is 2.8 MB) fit in a
+        # single frame. 64 MiB cap matches the frontend's 50 MB upload
+        # limit with headroom for JSON overhead and base64 wrapping.
+        max_size=64 * 1024 * 1024,
     ):
         _log.info("WebSocket server ready on ws://0.0.0.0:%d", WS_PORT)
 
