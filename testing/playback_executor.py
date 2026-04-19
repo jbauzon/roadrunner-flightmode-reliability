@@ -349,6 +349,11 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
         self.uut.test_start_time = time.time()
         interval = 1.0 / 100.0  # 100 Hz
+        # Absolute-time schedule: frame N's target send time is start + N*interval.
+        # Per-frame relative pacing ("sleep interval - elapsed") can't recover
+        # from any frame that overruns its 10 ms budget, accumulating drift.
+        # Over 32808 frames even 0.75 ms jitter per frame adds 25 s of lag.
+        stream_start = time.time()
 
         # Accumulated mistracking flags (OR across all frames)
         accumulated_flags = 0
@@ -382,8 +387,6 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             if not self.running:
                 self.cb.on_log("⚠ Playback stopped by user")
                 break
-
-            frame_start = time.time()
 
             # Parse commands — rows are already normalized to canonical short
             # keys by _load_profile (accepts both 'event/*_command_*' legacy
@@ -473,9 +476,12 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
                         now_ui2 - self.uut.test_start_time
                     )
 
-            # Pace to 100 Hz
-            elapsed = time.time() - frame_start
-            remaining = interval - elapsed
+            # Pace to 100 Hz using absolute-time schedule. The next frame's
+            # target send time is stream_start + (frame_idx+1) * interval.
+            # Sleeping to the absolute target keeps the overall average rate
+            # at exactly 100 Hz even if individual frames overrun.
+            next_target = stream_start + (frame_idx + 1) * interval
+            remaining = next_target - time.time()
             if remaining > 0:
                 time.sleep(remaining)
 
