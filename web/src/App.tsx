@@ -76,11 +76,22 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [ws])
 
+  // Mode shown in the UI:
+  //   - While a batch is running, show the mode that's actually executing
+  //     (from the backend's authoritative `ws.test_mode`).
+  //   - While idle, show the mode the operator has SELECTED in TestConfig
+  //     (from `testPayload.mode`) so indicators update the moment the
+  //     radio button is toggled, not when a test is first started.
+  const currentMode =
+    ws.batch.active
+      ? ws.test_mode
+      : ((testPayload?.mode as typeof ws.test_mode) ?? ws.test_mode)
+
   return (
     <div className="flex flex-col h-screen bg-bg-base bg-grid overflow-hidden select-none">
       {/* Header */}
       <Header
-        testMode={ws.test_mode}
+        testMode={currentMode}
         connectionStatus={ws.connectionStatus}
         batchActive={ws.batch.active}
       />
@@ -115,10 +126,11 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom control bar */}
+      {/* Bottom control bar — uses the selected mode from TestConfig so
+          the Start button label matches the radio button BEFORE test starts. */}
       <ControlBar
         batchActive={ws.batch.active}
-        testMode={ws.test_mode}
+        testMode={currentMode}
         send={ws.send}
         testPayload={testPayload}
       />
@@ -126,7 +138,7 @@ export default function App() {
       {/* Status bar */}
       <div className="relative flex items-center h-6 px-5 text-text-disabled text-[10px] font-mono tracking-wider shrink-0">
         <div className="absolute inset-0 bg-gradient-to-r from-bg-elevated via-bg-surface to-bg-elevated border-t border-white/5" />
-        <span className="relative z-10">Mode: {ws.test_mode.toUpperCase()}</span>
+        <span className="relative z-10">Mode: {currentMode.toUpperCase()}</span>
         <span className="relative z-10 mx-2 opacity-30">|</span>
         <span className="relative z-10">
           Backend:{' '}
