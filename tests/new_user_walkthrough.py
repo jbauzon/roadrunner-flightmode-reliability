@@ -355,14 +355,16 @@ async def walkthrough():
                             phase_milestones["ITERATION_UPDATED"] = True
                             print(f"{ts()} \033[35m ✓ MILESTONE: Iterations column updated to {max_iter} (Bug 7 fix visible)\033[0m", flush=True)
 
-                if msg.get("type") == "test.complete":
+                if msg.get("type") in ("uut.iteration_complete", "test.complete"):
                     complete_count += 1
                     success = msg.get("data", {}).get("success")
                     message = msg.get("data", {}).get("message", "")
-                    print(f"{ts()} \033[35m ✓ TEST.COMPLETE: success={success}, msg='{message}'\033[0m", flush=True)
+                    evt_name = "TEST.COMPLETE" if msg.get("type") == "test.complete" else "UUT.ITERATION_COMPLETE"
+                    print(f"{ts()} \033[35m ✓ {evt_name}: success={success}, msg='{message}'\033[0m", flush=True)
                     if not phase_milestones["IBIT_COMPLETE"]:
                         phase_milestones["IBIT_COMPLETE"] = True
-                    if complete_count >= 2:
+                    # Stop after 2 UUT completes OR 1 batch complete (whichever first)
+                    if complete_count >= 2 or msg.get("type") == "test.complete":
                         # Drain a bit more for final state
                         drain_end = time.monotonic() + 3.0
                         while time.monotonic() < drain_end:
@@ -399,7 +401,7 @@ async def walkthrough():
             "IBIT_MODE":         "Bug 3: Mode → IBIT + substates advance",
             "SERVO_FEEDBACK":    "Bug 4: Actuator Feedback shows real positions",
             "ITERATION_UPDATED": "Bug 7: Iterations column > 0",
-            "IBIT_COMPLETE":     "        test.complete received for UUTs",
+            "IBIT_COMPLETE":     "        IBIT cycle completed (uut.iteration_complete)",
         }
         for k, label in labels.items():
             mark = "+" if phase_milestones[k] else "X"
