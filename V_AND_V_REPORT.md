@@ -1,8 +1,14 @@
 # Roadrunner Test Software — Verification & Validation Report
 
 **Date:** 2026-04-19
-**Scope:** Full test software V&V after 7 web GUI bug fixes + `RR_SITL_MODE`
-refactor + batch-duration fix + `start.bat` cleanup.
+**Scope:** Full test software V&V including:
+  - 7 web GUI bug fixes
+  - `RR_SITL_MODE` env-var refactor (replaces monkey-patching)
+  - Batch duration fix (`uut.iteration_complete` event)
+  - `start.bat` cleanup
+  - **Playback mode end-to-end** (dual CSV format, queue drain, 100 Hz absolute-time pacing)
+  - **6-UUT full bench** support
+  - **WebSocket keepalive** on all test walkthroughs
 
 ---
 
@@ -16,8 +22,10 @@ refactor + batch-duration fix + `start.bat` cleanup.
 | **SITL mode (loopback)** | PASS | `RR_SITL_MODE=1` env var allows loopback + udpout |
 | **Production mode** | PASS | Loopback rejection unchanged — safety preserved |
 | **Web GUI E2E (Bug fixes 1-7)** | PASS | 27/27 assertions |
-| **Operator walkthrough** | PASS | 10/10 milestones visible in live WS stream |
-| **Functional test suite** | PASS | 16/17 — 1 pre-existing failure unrelated |
+| **Operator walkthrough (2-UUT)** | PASS | 24/24 assertions, all 7 bug fixes visible |
+| **6-UUT full bench** | PASS | 49/49 assertions |
+| **Playback mode (generated CSV)** | PASS | 17/17 assertions |
+| **Playback mode (real flight CSV, 32808 frames)** | PASS | 17/17 — 100.0 fps exact |
 | **Batch duration honored** | PASS | 90s batch runs for 118s (completes in-flight IBIT) |
 | **Per-UUT vs batch completion** | PASS | `uut.iteration_complete` per UUT, `test.complete` at batch end |
 
@@ -100,6 +108,38 @@ PyQt5 GUI + integration tests:
 - All 10 executor callbacks defined in ExecutorCallbacks
 - IBIT substate display names: BEGIN, WAIT_FOR_SETTLE, ELEVONS, RUDDERS, TVC, ✓ COMPLETE
 
+### 5. `tests/debug_then_batch_walkthrough.py` — 2-UUT operator journey — **24/24 PASS**
+
+Full bench pre-flight + overnight 9-hour batch simulation:
+- Phase A: Debug Mode — Connect / ACTUATION_SYS_STATUS streaming / Force ARM / DISARM / Disconnect for each of 2 UUTs (~4 seconds per UUT)
+- Phase B: 9-hour batch with 3-minute watch. Verified timer math
+  (remaining=32400→32218s), round-robin across both UUTs (SIM-001 iter 2,
+  SIM-002 iter 1), clean stop, relay OFF after stop.
+
+### 6. `tests/debug_then_batch_6uuts.py` — 6-UUT full bench — **49/49 PASS**
+
+Full 6-vehicle test bench. Walkthrough spawns 4 additional SITL sims in-process
+(SIM-003..006) via `cmd.add_uut` so all 6 appear in the UUT table.
+- Phase A: 6×5 = 30 debug assertions (one per vehicle × 5 checks each)
+- Phase B: 9-hour batch with 2-minute watch. All 6 UUTs reached TESTING in
+  round-robin order. Timer correctly decremented from 32400s.
+
+### 7. `tests/playback_walkthrough.py` — Flight Profile Playback — **17/17 PASS (both CSV formats)**
+
+**Generated production-format CSV (400 frames):**
+- Preparation flow: CLASSIC_MODE_EN=1 → power cycle → ARM → OPERATE → PLAYBACK
+- Streaming rate: 100.0 fps exact
+- Verdict: PASS — no mistracking flags
+- Total walkthrough wall time: ~60 seconds
+
+**Real flight profile (`NominalFlight_noRudder.csv`, 32,808 frames):**
+- Streaming stats: **328.1s total, 100.0 fps (target 100 Hz)**
+- All 10 progress log entries (0%→90%)
+- Verdict: PASS
+- Total walkthrough wall time: 6 minutes 0 seconds
+- Exercises BOTH column-name formats (legacy `event/*_command_*` and
+  production short names) via the `COLUMN_ALIASES` dispatch in `_load_profile`.
+
 ---
 
 ## 7 Web GUI Bug Fixes — Status
@@ -152,6 +192,48 @@ and once in foreground. The second instance failed on port-in-use.
 
 **Solution:** Single foreground invocation, with auto-cleanup of leftover
 backends before starting. Also added `--sitl` / `-s` flag support.
+
+### Fix D: Playback mode end-to-end
+
+Four production issues surfaced when exercising real flight profiles:
+
+1. **Dual CSV format support** (`testing/playback_executor.py`)
+   - Real production CSVs use short column names (`left_elevon_ted_cdeg`) while
+     the executor only accepted the legacy AIQ-tool format (`event/*_command_*`).
+   - Refactored `_load_profile` with a `COLUMN_ALIASES` dict — first match wins,
+     rows normalized to canonical short keys.
+
+2. **Playback params not wired from web GUI to backend** (`ws_server.py`)
+   - `cmd.start_test` payload included `playback_csv` and `playback_type` but
+     `_start_test` dropped them and the executor was always instantiated with
+     empty CSV. Added `AppState.playback_csv` / `playback_type` with
+     end-to-end wiring.
+
+3. **Dispatch queue staleness after ARM** (`vehicle/preparation.py`)
+   - `_try_arm_once` popped old pre-ARM PANDION_STATUS messages (FIFO deque),
+     falsely reporting `flight_regime=0` after ACCEPTED ACK. Only surfaced in
+     Playback flow because the 5s power-cycle wait lets the 100-deep queue
+     fill with stale messages. Fix: clear queue AFTER ACCEPTED ACK.
+
+4. **Playback streaming throughput 18 fps → 100.0 fps**
+   - Per-frame `cb.on_actuator_feedback` + `cb.on_test_duration` at 100 Hz
+     saturated the WebSocket broadcast path. Rate-limited to 10 Hz and 2 Hz.
+   - Blocking `_wait_for_message(timeout=0.005)` added 5-10ms sleep jitter.
+     Replaced with non-blocking queue drain (`popleft while q`).
+   - Per-frame relative pacing accumulated drift over 32k+ frames. Replaced
+     with absolute-time scheduling (target = `stream_start + N * interval`).
+   - Result: **exactly 100.0 fps for 32,808-frame real production CSV**.
+
+### Fix E: WebSocket keepalive on test walkthroughs
+
+All test walkthroughs used `ping_interval=None` which disabled outgoing pings.
+Long runs (2+ min) hit server-side ping timeout → connection closed mid-test.
+Fixed to `ping_interval=20, ping_timeout=60` across all 5 walkthroughs:
+- `test_web_gui_e2e.py`
+- `new_user_walkthrough.py`
+- `playback_walkthrough.py`
+- `debug_then_batch_walkthrough.py`
+- `debug_then_batch_6uuts.py`
 
 ---
 
