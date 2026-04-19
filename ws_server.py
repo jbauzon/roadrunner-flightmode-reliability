@@ -36,6 +36,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+# SITL mode: set env var BEFORE importing testing/* so connect_to_vehicle
+# allows loopback and uses udpout. This is how we launch without patching.
+if "--sitl" in sys.argv:
+    os.environ["RR_SITL_MODE"] = "1"
+
 from vehicle.connection import UUT
 from vehicle.constants import TestMode, UUTStatus, AlertSeverity
 from hardware.daq import SimpleDAQController
@@ -522,7 +527,6 @@ class CommandHandler:
             import time as _time
             from sim.vehicle import PandionVehicleSim
             from sim.mock_daq import MockDAQController
-            import vehicle.connection as conn_mod
 
             self.broadcaster.broadcast("test.log", {
                 "message": "LAUNCHING SITL SIMULATION",
@@ -530,40 +534,16 @@ class CommandHandler:
                 "timestamp": datetime.now().isoformat(),
             })
 
+            # Enable SITL mode (loopback + udpout) for connect_to_vehicle.
+            # This is the ONLY hook the test system needs — no monkey-patching.
+            os.environ["RR_SITL_MODE"] = "1"
+
             sim_configs = [
                 {"serial": "RR-SIM-001", "port": 19901, "relay": 0,
                  "ibit_pass": True, "sysid": 1},
                 {"serial": "RR-SIM-002", "port": 19902, "relay": 1,
                  "ibit_pass": False, "mistracking_flags": 0xC0, "sysid": 2},
             ]
-
-            # Patch connection for loopback
-            dialect_dir = os.path.join(_HERE, "vehicle", "dialects")
-
-            def _sitl_connect(ip_address: str, port: int, timeout: float = 10.0):
-                if dialect_dir not in sys.path:
-                    sys.path.insert(0, dialect_dir)
-                from pymavlink import mavutil
-                m = mavutil.mavlink_connection(
-                    f"udpout:{ip_address}:{port}",
-                    dialect="pandion_vehicle_roadrunner",
-                    source_system=255, source_component=190,
-                )
-                for _ in range(5):
-                    try:
-                        m.mav.heartbeat_send(
-                            mavutil.mavlink.MAV_TYPE_GCS,
-                            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                            0, 0, mavutil.mavlink.MAV_STATE_ACTIVE,
-                        )
-                    except OSError:
-                        pass
-                    hb = m.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
-                    if hb and hb.get_srcSystem() != 255:
-                        return m
-                raise Exception(f"SITL vehicle not responding on {ip_address}:{port}")
-
-            conn_mod.connect_to_vehicle = _sitl_connect
 
             sims = []
             for cfg in sim_configs:

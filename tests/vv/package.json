@@ -1,0 +1,16 @@
+{
+  "name": "roadrunner-web-vv",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headed end-to-end V&V test for the Roadrunner Web GUI (all 7 bug fixes)",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

@@ -231,21 +231,26 @@ def connect_to_vehicle(ip_address: str, port: int, timeout: float = 10.0) -> Any
     if not isinstance(ip_address, str):
         raise TypeError(f"ip_address must be str, got {type(ip_address)}")
     
+    # SITL mode: RR_SITL_MODE=1 in environment enables loopback + udpout.
+    # This is set only by test/sim launchers (ws_server.py --sitl, run_sim.py).
+    # Production never sets this env var.
+    _sitl_mode = os.environ.get("RR_SITL_MODE") == "1"
+
     try:
         ip = ipaddress.ip_address(ip_address)
         validated_ip = str(ip)  # Normalize
-        
+
         # Security: Reject loopback and multicast only
         # NOTE: Do NOT reject is_reserved — Python marks RFC-1918 private ranges
         # (e.g. 172.16-31.x.x used by Roadrunner vehicles) as reserved on some
         # Python versions, which would incorrectly block valid vehicle IPs.
-        if ip.is_loopback:
+        if ip.is_loopback and not _sitl_mode:
             raise ValueError(
                 "Loopback addresses (127.x.x.x, ::1) not allowed for vehicle connection"
             )
         if ip.is_multicast:
             raise ValueError("Multicast addresses not allowed")
-        
+
     except ValueError as e:
         raise ValueError(f"Invalid IP address '{ip_address}': {e}")
     
@@ -268,8 +273,12 @@ def connect_to_vehicle(ip_address: str, port: int, timeout: float = 10.0) -> Any
     if dialect_dir not in sys.path:
         sys.path.insert(0, dialect_dir)
     
-    connection_string = f"udpin:{validated_ip}:{port}"
-    
+    # SITL mode uses udpout: (sim listens on udpin). Production uses udpin:.
+    connection_string = (
+        f"udpout:{validated_ip}:{port}" if _sitl_mode
+        else f"udpin:{validated_ip}:{port}"
+    )
+
     try:
         master = mavutil.mavlink_connection(
             connection_string,
@@ -279,8 +288,30 @@ def connect_to_vehicle(ip_address: str, port: int, timeout: float = 10.0) -> Any
         )
     except Exception as e:
         raise Exception(f"Failed to create MAVLink connection: {type(e).__name__}: {str(e)}")
-    
-    # Wait for heartbeat
+
+    # In SITL mode, send heartbeat bursts to "kick" the sim into responding
+    # (udpout: needs to send first before sim knows where to reply).
+    if _sitl_mode:
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            try:
+                master.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, mavutil.mavlink.MAV_STATE_ACTIVE,
+                )
+            except OSError:
+                pass  # Windows WSAECONNRESET — safe to retry
+            hb = master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
+            if hb and hb.get_srcSystem() != 255:
+                return master
+        raise Exception(
+            f"Connection timeout after {timeout}s - "
+            f"no heartbeat from {validated_ip}:{port}"
+        )
+
+    # Production: wait for heartbeat
     heartbeat_received = master.wait_heartbeat(timeout=timeout)
     
     if not heartbeat_received:
