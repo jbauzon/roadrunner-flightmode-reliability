@@ -44,7 +44,7 @@ if "--sitl" in sys.argv:
 from vehicle.connection import UUT
 from vehicle.constants import TestMode, UUTStatus, AlertSeverity
 from hardware.daq import SimpleDAQController
-from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog
+from testing import UUTTestExecutor, PlaybackTestExecutor
 from testing.callbacks import ExecutorCallbacks
 
 _log = logging.getLogger(__name__)
@@ -136,6 +136,23 @@ class AppState:
         self._settings_path = os.path.join(_HERE, "app_settings.json")
         self.load_settings()
 
+    def _validate_dir_path(self, path: str) -> str | None:
+        """Return path if it's valid for the current platform, else None.
+
+        Detects Windows-style absolute paths ('C:\\...') on non-Windows
+        systems — those would be treated as a literal filename by os.makedirs
+        and create a junk directory ('C:\\Anduril\\...') in the project root.
+        """
+        if not isinstance(path, str) or not path:
+            return None
+        # On Linux/macOS, reject Windows drive-letter paths
+        if sys.platform != "win32":
+            if len(path) >= 2 and path[1] == ":" and path[0].isalpha():
+                return None
+            if "\\" in path:  # backslash in a POSIX path is almost always wrong
+                return None
+        return path
+
     def load_settings(self) -> None:
         """Load settings from app_settings.json if it exists."""
         try:
@@ -143,11 +160,21 @@ class AppState:
                 with open(self._settings_path, "r") as f:
                     data = json.load(f)
                 if "log_directory" in data:
-                    self.log_directory = data["log_directory"]
-                    os.makedirs(self.log_directory, exist_ok=True)
+                    valid = self._validate_dir_path(data["log_directory"])
+                    if valid:
+                        self.log_directory = valid
+                        os.makedirs(self.log_directory, exist_ok=True)
+                    else:
+                        _log.info(
+                            "Ignoring incompatible log_directory '%s' — "
+                            "using default %s",
+                            data["log_directory"], self.log_directory,
+                        )
                 if "report_directory" in data:
-                    self.report_directory = data["report_directory"]
-                    os.makedirs(self.report_directory, exist_ok=True)
+                    valid = self._validate_dir_path(data["report_directory"])
+                    if valid:
+                        self.report_directory = valid
+                        os.makedirs(self.report_directory, exist_ok=True)
                 if "test_config" in data:
                     self.test_config.update(data["test_config"])
                 if "test_mode" in data:

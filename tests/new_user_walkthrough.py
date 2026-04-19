@@ -17,7 +17,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 
-ROOT = '/mnt/c/Anduril/RoadRunner Flight Mode IBIT'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # ── Pretty output ────────────────────────────────────────────────────────

@@ -123,4 +123,4 @@ deployed bundle, not a dev server.
 ## Related
 
 - `tests/test_web_gui_e2e.py` — Headless firmware + WS V&V (no browser)
-- `SESSION_KNOWLEDGE.md` — Full project context and bug-fix history
+- `docs/SESSION_KNOWLEDGE.md` — Full project context and bug-fix history

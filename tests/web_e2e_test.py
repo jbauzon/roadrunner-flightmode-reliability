@@ -21,7 +21,7 @@ import time
 import subprocess
 import signal
 
-ROOT = r'C:\Anduril\RoadRunner Flight Mode IBIT'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = 'http://localhost:18890'
 WS_PORT = 18889
 HTTP_PORT = 18890

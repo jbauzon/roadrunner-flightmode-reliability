@@ -576,10 +576,10 @@ def main() -> int:
     ap.add_argument("--watch-secs", type=int, default=10,
                     help="Additional seconds to watch batch after first iter")
     ap.add_argument("--real-csv", type=str,
-                    default=os.path.join(ROOT, "NominalFlight_noRudder.csv"),
+                    default=os.path.join(ROOT, "profiles", "NominalFlight_noRudder.csv"),
                     help="Path to a real flight profile CSV. If it exists, "
                          "used in place of the generated profile (default: "
-                         "NominalFlight_noRudder.csv in project root)")
+                         "profiles/NominalFlight_noRudder.csv in project root)")
     ap.add_argument("--no-real-csv", action="store_true",
                     help="Ignore --real-csv and always generate a test profile")
     args = ap.parse_args()

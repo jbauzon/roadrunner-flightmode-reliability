@@ -55,6 +55,9 @@ python tests/test_web_gui_e2e.py
 # Operator-perspective walkthrough (~3 min)
 python tests/new_user_walkthrough.py
 
+# Playback mode (uses profiles/NominalFlight_noRudder.csv by default)
+python tests/playback_walkthrough.py
+
 # SITL integration
 python tests/test_sitl.py
 
@@ -83,8 +86,18 @@ tests\vv\run_vv.bat
 start.bat                    One-click Windows launcher
 ws_server.py                 Web GUI backend — WebSocket + HTTP server
 version.py                   Version constant
-config.yaml                  Reference config (runtime uses app_settings.json)
 requirements.txt             Pinned Python dependencies
+README.md                    This file
+AGENTS.md                    OpenCode AI-agent context
+
+docs/                        Documentation
+  ARCHITECTURE.md            System architecture + threading model
+  V_AND_V_REPORT.md          Verification & Validation status
+  SESSION_KNOWLEDGE.md       Full project context + bug-fix history
+  config.yaml.reference      Reference config (runtime uses app_settings.json)
+
+profiles/                    Reference flight-profile CSVs
+  NominalFlight_noRudder.csv Real production flight profile (32808 frames)
 
 web/                         React + TypeScript frontend
   src/
@@ -126,7 +139,11 @@ sim/                         Software-In-The-Loop simulator
 
 tests/                       Active test suites
   test_web_gui_e2e.py        Headless web GUI V&V (27/27)
+  ui_interaction_test.py     Every button/control round-trip (43/43)
   new_user_walkthrough.py    Operator-perspective walkthrough
+  debug_then_batch_walkthrough.py  2-UUT debug + batch
+  debug_then_batch_6uuts.py  6-UUT full bench
+  playback_walkthrough.py    Flight Profile Playback E2E
   test_sitl.py               SITL integration tests
   test_permutations.py       Combinatorial scenario testing
   web_e2e_test.py            Web-specific E2E
@@ -141,16 +158,16 @@ archive/                     Historical/reference code
 | Mode | Description |
 |------|-------------|
 | **IBIT** | Vehicle runs its own built-in self-test. Software triggers it and reads the mistracking result. Pass/fail determined by firmware (500 cdeg threshold). |
-| **Flight Profile Playback** | Software streams recorded CSV commands at 100 Hz. Pass/fail determined by accumulated mistracking flags across all frames. |
+| **Flight Profile Playback** | Software streams recorded CSV commands at 100 Hz. Pass/fail determined by accumulated mistracking flags across all frames. Upload flight profile via the folder icon in the GUI. |
 
 ## Architecture
 
-- See [ARCHITECTURE.md](ARCHITECTURE.md) for system architecture, threading
-  model, and design decisions
-- See [V_AND_V_REPORT.md](V_AND_V_REPORT.md) for the latest verification
-  status (test results + fixes)
-- See [SESSION_KNOWLEDGE.md](SESSION_KNOWLEDGE.md) for full project context,
-  bug-fix history, and firmware compatibility notes
+- See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system architecture,
+  threading model, and design decisions
+- See [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) for the latest
+  verification status (test results + fixes)
+- See [docs/SESSION_KNOWLEDGE.md](docs/SESSION_KNOWLEDGE.md) for full project
+  context, bug-fix history, and firmware compatibility notes
 - See [archive/desktop_gui/README.md](archive/desktop_gui/README.md) for
   the archived PyQt5 GUI
 
