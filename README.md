@@ -1,50 +1,78 @@
 # Roadrunner Flight Mode IBIT Test System
 
-Automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Runs the vehicle's built-in IBIT (Integrated Built-In Test) and Flight Profile Playback tests over MAVLink (Pandion dialect) across up to 6 UUTs simultaneously.
+Automated reliability test system for the Roadrunner UAV flight controller
+actuation subsystem. Runs the vehicle's built-in IBIT (Integrated Built-In
+Test) and Flight Profile Playback tests over MAVLink (Pandion dialect)
+across up to 6 UUTs simultaneously.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ (for the frontend build; one-time)
 - NI-DAQmx drivers (optional — for hardware relay control)
 
 ### Install
 
 ```bash
 pip install -r requirements.txt
+cd web && npm install && npm run build && cd ..
 ```
 
 ### Run (Production — with hardware)
 
 ```bash
-python main.py
+start.bat
 ```
+
+Launches `ws_server.py` and opens the web GUI at
+<http://localhost:18890>. Closes the server when the window is closed
+(or Ctrl+C).
 
 ### Run (Simulation — no hardware needed)
 
 ```bash
-python run_sim.py
+start.bat --sitl
 ```
 
-This launches the SITL simulator (2 simulated vehicles) and the GUI with a mock DAQ controller. Useful for development, testing, and demo.
+This launches `ws_server.py --sitl`, which spins up two simulated Pandion
+vehicles (SIM-001 pass, SIM-002 fail) and opens the web GUI. Useful for
+development, testing, and demo.
+
+On Linux/macOS (WSL):
+
+```bash
+python ws_server.py --sitl
+```
 
 ### Run Integration Tests
 
 ```bash
-python tests/test_sitl.py
-```
+# Full web GUI V&V (headless, ~2 min)
+python tests/test_web_gui_e2e.py
 
-68 tests covering the full SITL: heartbeat, telemetry streams, ARM/DISARM, mode transitions, IBIT execution with pass/fail, monitor management, battery/engine/INS/GNSS telemetry.
+# Operator-perspective walkthrough (~3 min)
+python tests/new_user_walkthrough.py
+
+# SITL integration
+python tests/test_sitl.py
+
+# Full headed browser V&V (Windows, ~5 min)
+tests\vv\run_vv.bat
+```
 
 ## What It Does
 
 1. **Powers each vehicle on** via NI-DAQmx relay
-2. **Connects over UDP MAVLink** (Pandion dialect)
+2. **Connects over UDP MAVLink** (Pandion dialect 102, port 13002)
 3. **ARMs the vehicle**, clearing safety monitors iteratively
-4. **Transitions through the firmware state machine**: OFF → OPERATE → PLAYBACK → IBIT
-5. **Runs the IBIT sequence** — the vehicle commands its own servos through triangle waves (elevons/rudders) and circular patterns (TVC)
-6. **Reads the mistracking bitmask** at completion to determine PASS/FAIL per surface
+4. **Transitions through the firmware state machine**:
+   OFF → OPERATE → PLAYBACK → IBIT
+5. **Runs the IBIT sequence** — the vehicle commands its own servos through
+   triangle waves (elevons/rudders) and circular patterns (TVC)
+6. **Reads the mistracking bitmask** at completion to determine PASS/FAIL
+   per surface (500 cdeg threshold, firmware-enforced)
 7. **Restores vehicle state**, disarms, powers off
 8. **Repeats** across all UUTs in round-robin for the configured duration
 9. **Logs everything** to daily-rotated CSV files and batch JSON reports
@@ -52,54 +80,60 @@ python tests/test_sitl.py
 ## Project Structure
 
 ```
-main.py                      Application entry point (PyQt5 GUI)
-run_sim.py                   Simulation launcher (patches + launches)
-version.py                   Single source of truth for version string
+start.bat                    One-click Windows launcher
+ws_server.py                 Web GUI backend — WebSocket + HTTP server
+version.py                   Version constant
 config.yaml                  Reference config (runtime uses app_settings.json)
-requirements.txt             Pinned dependencies
-launch_sim.bat               Windows batch launcher
+requirements.txt             Pinned Python dependencies
 
-ui/                          GUI layer
-  main_window.py             Operator console — 3-column layout
-  widgets.py                 Reusable Qt widgets (status panel, IBIT display, etc.)
-  theme.py                   Dark theme stylesheet
-  command_server.py          TCP server for remote GUI control
+web/                         React + TypeScript frontend
+  src/
+    App.tsx                  Top-level app component
+    hooks/use-websocket.ts   WebSocket hook + reducer
+    lib/ws-client.ts         Auto-reconnect WebSocket client
+    lib/types.ts             Event type definitions
+    components/              VehicleStatus, UUTTable, IBITDisplay,
+                             ActuatorFeedback, ControlBar, etc.
+    pages/                   TestMode, DebugMode
+  dist/                      Built bundle (served by ws_server.py)
 
 vehicle/                     Vehicle communication
-  constants.py               Single source of truth for all enums and constants
-  connection.py              MAVLink UDP connection and UUT model
-  preparation.py             ARM/DISARM, mode transitions, monitor management
+  constants.py               Single source of truth for all enums
+  connection.py              MAVLink UDP connection + UUT model
+                             (RR_SITL_MODE env var enables loopback)
+  preparation.py             ARM/DISARM, mode transitions, monitor mgmt
   dialects/                  Pandion MAVLink XML + generated Python
 
 testing/                     Test execution
-  executor.py                IBIT and Playback test executors
-  logger.py                  Telemetry CSV logger with daily rotation
+  base_executor.py           Shared mixin (heartbeat, connection, relay)
+  ibit_executor.py           IBIT test executor
+  playback_executor.py       Flight profile playback executor
+  callbacks.py               Plain-Python callback protocols
+  recovery.py                Auto-recovery manager (3-strike logic)
+  tracker.py                 IBIT phase tracker + test statistics
+  logger.py                  Telemetry CSV logger (daily rotation)
 
 hardware/                    Hardware abstraction
   daq.py                     NI-DAQmx relay controller
 
 sim/                         Software-In-The-Loop simulator
-  vehicle.py                 Vehicle orchestrator (state machine, IBIT lifecycle)
+  vehicle.py                 Vehicle orchestrator (FSM, IBIT lifecycle)
   telemetry.py               12 MAVLink TX message types
-  fleet.py                   Cross-vehicle noise injection
-  mock_daq.py                Drop-in DAQ replacement for simulation
-  bridge.py                  MAVLink bridge utilities
-  config/defaults.py         Sim constants (backed by production enums)
+  mock_daq.py                Drop-in DAQ replacement
+  config/defaults.py         Firmware-accurate constants
   config/scenarios.py        10 pre-built fault profiles
-  models/servo.py            Servo dynamics with thermal protection
-  models/battery.py          7S LiPo BMS model
-  models/monitors.py         Condition-based monitor evaluation
-  models/sensors.py          INS/GNSS boot progression
+  models/                    servo, battery, monitors, sensors
 
-tests/                       Test suites
-  test_sitl.py               68-test SITL integration suite
+tests/                       Active test suites
+  test_web_gui_e2e.py        Headless web GUI V&V (27/27)
+  new_user_walkthrough.py    Operator-perspective walkthrough
+  test_sitl.py               SITL integration tests
   test_permutations.py       Combinatorial scenario testing
-  test_gui_live.py           Live GUI E2E test with screenshot capture
+  web_e2e_test.py            Web-specific E2E
+  vv/                        Headed Playwright V&V (run_vv.bat)
 
-tools/                       Utilities
-  gui_test.py                Headless GUI screenshot capture
-  click_start.py             TCP remote control client
-  analyze_screenshots.py     Screenshot metadata tool
+archive/                     Historical/reference code
+  desktop_gui/               PyQt5 desktop GUI (replaced by web GUI)
 ```
 
 ## Test Modes
@@ -111,7 +145,14 @@ tools/                       Utilities
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system architecture, threading model, data flow, and design decisions.
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for system architecture, threading
+  model, and design decisions
+- See [V_AND_V_REPORT.md](V_AND_V_REPORT.md) for the latest verification
+  status (test results + fixes)
+- See [SESSION_KNOWLEDGE.md](SESSION_KNOWLEDGE.md) for full project context,
+  bug-fix history, and firmware compatibility notes
+- See [archive/desktop_gui/README.md](archive/desktop_gui/README.md) for
+  the archived PyQt5 GUI
 
 ## Repository
 

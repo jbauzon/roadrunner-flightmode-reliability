@@ -1,6 +1,24 @@
 # Roadrunner Flight Mode IBIT — Complete Session Knowledge Base
-# Last updated: 2026-04-16
+# Last updated: 2026-04-19
 # Session: Full development from scratch to production-ready
+
+## ARCHIVED: Desktop PyQt5 GUI (2026-04-19)
+
+The PyQt5 desktop GUI has been moved to `archive/desktop_gui/`. The web GUI
+(`ws_server.py` + `web/`) is now the primary and only actively-maintained
+operator interface. See `archive/desktop_gui/README.md` for details.
+
+Moved to archive:
+- `ui/` (entire widget tree) → `archive/desktop_gui/ui/`
+- `main.py` → `archive/desktop_gui/main.py`
+- `run_sim.py` → `archive/desktop_gui/run_sim.py`
+- `tools/` (all PyQt5-dependent tools) → `archive/desktop_gui/tools/`
+- 6 PyQt5-dependent tests → `archive/desktop_gui/tests/`
+  (functional_test, test_gui_live, test_permutations_gui, soak_test_24h,
+  edge_case_tests, debug_edge_cases)
+
+The domain packages (`vehicle/`, `testing/`, `hardware/`, `sim/`) remain
+untouched and are still shared by the web GUI.
 
 ## FIXED: Web GUI Issues (7 bugs resolved 2026-04-16)
 
