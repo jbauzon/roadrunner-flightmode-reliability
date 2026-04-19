@@ -369,6 +369,15 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         total_frames = len(profile)
         last_pct_logged = -1
 
+        # UI callback rate limiters: at 100 Hz the playback loop generates
+        # 100 actuator_feedback + 100 test_duration callbacks per UUT per
+        # second, which saturates the WebSocket broadcast path. The UI
+        # doesn't need higher than ~10 Hz for these human-visible updates.
+        UI_FEEDBACK_PERIOD_S = 0.1   # 10 Hz for actuator feedback
+        UI_DURATION_PERIOD_S = 0.5   # 2 Hz for duration text
+        _last_ui_feedback_t = 0.0
+        _last_ui_duration_t = 0.0
+
         for frame_idx, row in enumerate(profile):
             if not self.running:
                 self.cb.on_log("⚠ Playback stopped by user")
@@ -408,11 +417,20 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             # Send command
             self._send_playback_frame(cmds)
 
-            # Read feedback (non-blocking — use latest available from dispatch queue)
-            fb = self._wait_for_message(
-                'PANDION_RR_ACTUATION_SYS_STATUS',
-                timeout=0.005
-            )
+            # Drain any feedback messages from the dispatch queue without
+            # blocking. At 100 Hz loop rate vs 5 Hz feedback, most iterations
+            # will find nothing. Consume ALL available messages so deltas
+            # reflect the freshest feedback and the queue doesn't grow
+            # unbounded (capped at maxlen=100 but still).
+            fb = None
+            if self._msg_queues is not None:
+                q = self._msg_queues['PANDION_RR_ACTUATION_SYS_STATUS']
+                while q:
+                    fb = q.popleft()  # keep the latest
+            else:
+                fb = self._wait_for_message(
+                    'PANDION_RR_ACTUATION_SYS_STATUS', timeout=0.001
+                )
             if fb:
                 # Compute deltas, update tracking, accumulate flags
                 if use_actuation:
@@ -425,13 +443,16 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
                         fb, 'actuation_ibit_mon_status', 0
                     )
 
-                # Emit to UI
-                try:
-                    self.cb.on_actuator_feedback(
-                        _build_actuator_feedback_dict(fb)
-                    )
-                except AttributeError:
-                    pass
+                # Emit to UI (throttled to ~10 Hz — 100 Hz saturates WS broadcast)
+                now_ui = time.time()
+                if now_ui - _last_ui_feedback_t >= UI_FEEDBACK_PERIOD_S:
+                    _last_ui_feedback_t = now_ui
+                    try:
+                        self.cb.on_actuator_feedback(
+                            _build_actuator_feedback_dict(fb)
+                        )
+                    except AttributeError:
+                        pass
 
             # Progress log every 10%
             pct = int((frame_idx / total_frames) * 100)
@@ -443,11 +464,14 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
                 self.cb.on_progress(pct)
                 last_pct_logged = pct
 
-            # Duration update
+            # Duration update (throttled to ~2 Hz)
             if self.uut.test_start_time:
-                self.cb.on_test_duration(
-                    time.time() - self.uut.test_start_time
-                )
+                now_ui2 = time.time()
+                if now_ui2 - _last_ui_duration_t >= UI_DURATION_PERIOD_S:
+                    _last_ui_duration_t = now_ui2
+                    self.cb.on_test_duration(
+                        now_ui2 - self.uut.test_start_time
+                    )
 
             # Pace to 100 Hz
             elapsed = time.time() - frame_start
@@ -455,10 +479,16 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             if remaining > 0:
                 time.sleep(remaining)
 
+        total_elapsed = time.time() - self.uut.test_start_time if self.uut.test_start_time else 0.0
+        actual_hz = (len(profile) / total_elapsed) if total_elapsed > 0 else 0.0
         self.cb.on_log(
             f"\n✓ Profile streaming complete — "
             f"{len(profile)} frames, "
             f"mistracking_flags=0x{accumulated_flags:02X}"
+        )
+        self.cb.on_log(
+            f"  Streaming stats: {total_elapsed:.1f}s total, "
+            f"{actual_hz:.1f} fps (target 100 Hz)"
         )
 
         # Exit PLAYBACK → back to OPERATE

@@ -528,11 +528,14 @@ async def start_9h_batch(
         f"batch_active={stream.state['batch_active']}",
     )
 
-    # Relay should end OFF after stop
-    await asyncio.sleep(2.0)
+    # Wait up to 15s for relay to go OFF (DISARM/cleanup can take a
+    # few seconds when stopping mid-IBIT).
+    relay_off = await wait_for(
+        lambda: not stream.state["relay_on"], 15.0,
+    )
     assertion(
         "Relay OFF after stop (safety)",
-        not stream.state["relay_on"],
+        relay_off,
         f"relay_on={stream.state['relay_on']}",
     )
 
@@ -557,7 +560,8 @@ async def run(watch_mins: float) -> int:
         await asyncio.sleep(3.5)  # Let SITL launcher finish
 
         async with ws_connect(
-            "ws://127.0.0.1:18889", max_size=2**22, ping_interval=None
+            "ws://127.0.0.1:18889", max_size=2**22,
+            ping_interval=20, ping_timeout=60,
         ) as ws:
             stream = Stream(ws)
             await stream.start()

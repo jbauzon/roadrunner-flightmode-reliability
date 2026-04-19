@@ -525,6 +525,11 @@ async def run(csv_duration_s: float, watch_secs: int,
                       not stream.state["relay_on"],
                       f"relay_on={stream.state['relay_on']}")
 
+            # Show streaming performance stats
+            for m in stream.logs():
+                if "Streaming stats" in m:
+                    print(f"  \033[35m{m}\033[0m", flush=True)
+
             # If we had failures, dump the backend log for diagnosis
             if _fails:
                 dump_path = os.path.join(ROOT, "_pb_walkthrough_logs.txt")

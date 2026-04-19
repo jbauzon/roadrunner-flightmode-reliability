@@ -212,7 +212,8 @@ async def walkthrough():
 
     state = UIState()
 
-    async with ws_connect('ws://127.0.0.1:18889', max_size=2**22, ping_interval=None) as ws:
+    async with ws_connect('ws://127.0.0.1:18889', max_size=2**22,
+                          ping_interval=20, ping_timeout=60) as ws:
         user("Browser loads the React app")
 
         # Frontend sends cmd.sync_state on connect

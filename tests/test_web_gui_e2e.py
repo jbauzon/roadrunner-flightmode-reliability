@@ -291,7 +291,8 @@ async def run_ws_tests() -> None:
     url = "ws://127.0.0.1:18889"
     msgs: list[dict] = []
 
-    async with ws_connect(url, max_size=2**22, ping_interval=None) as ws:
+    async with ws_connect(url, max_size=2**22,
+                          ping_interval=20, ping_timeout=60) as ws:
         # Sync
         await ws.send(json.dumps({"type": "cmd.sync_state"}))
         got_sync = False

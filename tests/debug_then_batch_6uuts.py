@@ -125,6 +125,16 @@ def assertion(name: str, cond: bool, detail: str = "") -> None:
 # ── Backend lifecycle ─────────────────────────────────────────────────
 
 def start_backend() -> subprocess.Popen:
+    # Kill any leftover backend + sim processes from a previous run
+    try:
+        subprocess.run(
+            ["pkill", "-9", "-f", "ws_server.py"],
+            timeout=3, capture_output=True,
+        )
+        time.sleep(2)
+    except Exception:
+        pass
+
     cmd = [sys.executable, "-B", os.path.join(ROOT, "ws_server.py"), "--sitl"]
     return subprocess.Popen(
         cmd, cwd=ROOT,
@@ -494,9 +504,13 @@ async def start_9h_batch(ws: Any, stream: Stream, watch_mins: float,
     assertion("Batch stops cleanly", got_stopped,
               f"batch_active={stream.state['batch_active']}")
 
-    await asyncio.sleep(2.0)
+    # Wait up to 15s for relay to go OFF (cleanup with in-flight IBIT
+    # can take several seconds to DISARM and release the relay).
+    relay_off = await wait_for(
+        lambda: not stream.state["relay_on"], 15.0,
+    )
     assertion("Relay OFF after stop (safety)",
-              not stream.state["relay_on"],
+              relay_off,
               f"relay_on={stream.state['relay_on']}")
 
     return True
@@ -525,7 +539,8 @@ async def run(watch_mins: float) -> int:
         await asyncio.sleep(4.0)  # Let SITL finish + extra sims boot
 
         async with ws_connect(
-            "ws://127.0.0.1:18889", max_size=2**22, ping_interval=None
+            "ws://127.0.0.1:18889", max_size=2**22,
+            ping_interval=20, ping_timeout=60,
         ) as ws:
             stream = Stream(ws)
             await stream.start()
