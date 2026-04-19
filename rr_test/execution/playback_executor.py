@@ -248,22 +248,151 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         if not raw_rows:
             raise ValueError("CSV profile is empty")
 
-        # Normalize each row to the canonical short-key form
-        rows = []
+        # Normalize each row to the canonical short-key form (with timestamp
+        # parsed to a float for the resampling step below)
+        parsed: list[dict] = []
         for i, raw in enumerate(raw_rows):
             try:
-                row = {'timestamp': raw['timestamp']}
+                row: dict = {'timestamp': float(raw['timestamp'])}
                 for canonical, src_col in col_map.items():
                     row[canonical] = float(raw[src_col] or 0.0)
-                rows.append(row)
+                parsed.append(row)
             except (ValueError, KeyError) as e:
                 # Skip malformed rows silently — they'll show in the frame-
                 # error log during streaming if they matter
                 self.cb.on_log(f"  \u26a0 Row {i} parse error (skipped): {e}")
 
+        if not parsed:
+            raise ValueError("CSV profile had no valid rows after parsing")
+
+        # ── Rate detection + resampling to 100 Hz ───────────────────────
+        # The firmware consumes PANDION_RR_PLAYBACK_COMMAND at a fixed
+        # 100 Hz actuation task rate.  If the CSV was recorded at a
+        # different rate (e.g. NominalFlight_noRudder.csv is recorded at
+        # 500 Hz with 2ms timestamp deltas in milliseconds), we must
+        # resample so the vehicle sees the same flight at the same
+        # wall-clock duration it was recorded at — NOT 5x slower.
+        #
+        # Rate detection: look at the median dt between the first ~50
+        # samples, then guess the timestamp unit.
+        rows = self._resample_to_100hz(parsed)
+
         self.cb.on_log(f"  CSV columns ({len(fieldnames)}): {fieldnames}")
         self.cb.on_log(f"  Column mapping: {col_map}")
         return rows
+
+    # ----------------------------------------------------------
+    # Rate detection + resampling
+    # ----------------------------------------------------------
+
+    _PLAYBACK_RATE_HZ = 100.0   # firmware-fixed, do not change
+
+    def _resample_to_100hz(self, parsed: list[dict]) -> list[dict]:
+        """Resample a CSV's rows to exactly 100 Hz by timestamp.
+
+        The firmware's actuation task runs at 100 Hz and consumes
+        ``PANDION_RR_PLAYBACK_COMMAND`` at that rate; sending faster is
+        wasteful (frames get dropped by the vehicle) and slower stretches
+        the flight (e.g. a 65 s flight becomes 5.5 min of near-static
+        commands).
+
+        Strategy:
+          1. Detect the source sample rate from the median timestamp
+             delta between the first ~50 rows.
+          2. Guess the timestamp unit (seconds / milliseconds /
+             microseconds) by which one yields a plausible rate
+             (>= 10 Hz and <= 10000 Hz).
+          3. If the source rate is within 5% of 100 Hz, pass through
+             unchanged.
+          4. Otherwise, walk the input at 10 ms steps (in whatever the
+             native timestamp unit turned out to be) and pick the
+             nearest-in-timestamp source sample for each output frame.
+
+        Returns a list of dicts ready for streaming, one per 100 Hz
+        frame.  The ``timestamp`` field is rewritten to the resampled
+        index in seconds (so progress/stats are consistent).
+        """
+        n = len(parsed)
+        if n < 2:
+            return parsed
+
+        # Median dt from first 50 rows (or all rows if fewer)
+        sample_n = min(50, n - 1)
+        dts = sorted(
+            parsed[i + 1]['timestamp'] - parsed[i]['timestamp']
+            for i in range(sample_n)
+        )
+        median_dt = dts[sample_n // 2]
+        if median_dt <= 0:
+            self.cb.on_log(
+                "  \u26a0 Could not detect CSV timestamp rate "
+                "(non-monotonic timestamps) — streaming every row at 100 Hz")
+            return parsed
+
+        # Try each unit and pick the one that gives a plausible rate
+        # (>= 10 Hz, <= 10000 Hz).  Most flight profiles record at
+        # 100 Hz, 200 Hz, 500 Hz, or 1 kHz.
+        units = [
+            ("seconds",     1.0),
+            ("milliseconds", 1e-3),
+            ("microseconds", 1e-6),
+        ]
+        detected_unit = None
+        detected_rate = 0.0
+        for name, unit_s in units:
+            rate = 1.0 / (median_dt * unit_s)
+            if 10.0 <= rate <= 10000.0:
+                detected_unit = name
+                detected_rate = rate
+                detected_unit_s = unit_s
+                break
+
+        if detected_unit is None:
+            self.cb.on_log(
+                f"  \u26a0 Could not detect CSV timestamp unit "
+                f"(median dt = {median_dt}; expected sub-second).  "
+                f"Streaming every row at 100 Hz.")
+            return parsed
+
+        # Rate within 5% of 100 Hz — pass through, no resampling needed
+        if abs(detected_rate - self._PLAYBACK_RATE_HZ) / self._PLAYBACK_RATE_HZ < 0.05:
+            self.cb.on_log(
+                f"  CSV recorded at {detected_rate:.1f} Hz "
+                f"(timestamp unit: {detected_unit}) — matches 100 Hz "
+                f"playback rate, no resampling needed")
+            return parsed
+
+        # Resample: pick the nearest source sample at each 10 ms step.
+        # Walk output index j = 0, 1, 2, ... and source index i (advances
+        # monotonically).
+        ts0 = parsed[0]['timestamp']
+        ts_last = parsed[-1]['timestamp']
+        duration_s = (ts_last - ts0) * detected_unit_s
+        interval_native = (1.0 / self._PLAYBACK_RATE_HZ) / detected_unit_s
+        output_n = int(duration_s * self._PLAYBACK_RATE_HZ) + 1
+
+        resampled: list[dict] = []
+        i = 0
+        for j in range(output_n):
+            target_ts = ts0 + j * interval_native
+            # Advance i while next sample is closer to target
+            while i + 1 < n:
+                d_here = abs(parsed[i]['timestamp'] - target_ts)
+                d_next = abs(parsed[i + 1]['timestamp'] - target_ts)
+                if d_next < d_here:
+                    i += 1
+                else:
+                    break
+            row = dict(parsed[i])          # copy to avoid aliasing
+            row['timestamp'] = j / self._PLAYBACK_RATE_HZ  # rewrite to seconds
+            resampled.append(row)
+
+        self.cb.on_log(
+            f"  CSV recorded at {detected_rate:.0f} Hz "
+            f"(timestamp unit: {detected_unit}, duration {duration_s:.1f}s).  "
+            f"Resampled from {n} \u2192 {len(resampled)} frames at 100 Hz "
+            f"so the flight plays back at its original speed.")
+        return resampled
 
     # ----------------------------------------------------------
     # Profile streaming — helpers
