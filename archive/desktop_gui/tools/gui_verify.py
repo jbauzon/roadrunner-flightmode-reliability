@@ -16,8 +16,8 @@ if sys.platform == 'win32':
         pass
 
 # ── Start sim vehicles ──────────────────────────────────────────────────
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
 
 # Use time-based port allocation to avoid port reuse collisions between runs
 import time as _time
@@ -35,7 +35,7 @@ threading.Thread(target=sim2.start, daemon=True).start()
 time.sleep(2)
 
 # ── Patch for sim ────────────────────────────────────────────────────────
-import vehicle.connection as conn_mod
+import rr_test.vehicle.connection as conn_mod
 def _sim_connect(ip, port, timeout=10):
     from pymavlink import mavutil
     m = mavutil.mavlink_connection(f'udpout:127.0.0.1:{port}',
@@ -47,7 +47,7 @@ def _sim_connect(ip, port, timeout=10):
         if hb and hb.get_srcSystem() != 255: return m
     raise Exception('No heartbeat')
 conn_mod.connect_to_vehicle = _sim_connect
-import hardware.daq as daq_mod
+import rr_test.hardware.daq as daq_mod
 daq_mod.SimpleDAQController = MockDAQController
 
 # ── Patch QMessageBox ────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ app = QApplication(sys.argv)
 from ui import theme as T
 T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
+from rr_test.vehicle.connection import UUT
 
 win = MultiUUTTestGUI()
 win.daq = MockDAQController()

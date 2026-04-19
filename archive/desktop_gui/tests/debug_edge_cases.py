@@ -47,10 +47,10 @@ if sys.platform == 'win32':
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     except: pass
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 def _connect(ip, port, timeout=10):
     from pymavlink import mavutil
@@ -76,8 +76,8 @@ QMessageBox.information  = lambda *a, **kw: None
 app = QApplication(sys.argv)
 from ui import theme as T; T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
-from vehicle.constants import TestMode, UUTStatus
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import TestMode, UUTStatus
 '''.replace('{root}', ROOT)
 
 results = []
@@ -310,7 +310,7 @@ def tick():
     elif s == 10: win.debug_console._send_mode_request(2, 'OPERATE')
     elif s == 14 and not result.get('done'):
         result['done'] = True
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         result['pass'] = sim.act_state == ActuationState.OPERATE
         result['act_state'] = sim.act_state
         result['armed'] = sim.flight_regime >= 1
@@ -342,7 +342,7 @@ def tick():
     elif s == 12: win.debug_console._send_mode_request(1, 'IBIT')
     elif s == 18 and not result.get('done'):
         result['done'] = True
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         result['pass'] = sim.act_state in (ActuationState.IBIT, ActuationState.OPERATE)
         result['act_state'] = sim.act_state
         result['armed'] = sim.flight_regime >= 1
@@ -377,7 +377,7 @@ def tick():
     elif s == 12: win.debug_console._send_mode_request(1, 'IBIT')  # should be rejected
     elif s == 16 and not result.get('done'):
         result['done'] = True
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         # Should still be in OPERATE, not IBIT
         result['pass'] = (sim.act_state == ActuationState.OPERATE and
                          any('reject' in l.lower() or 'not a valid' in l.lower()
@@ -410,7 +410,7 @@ def tick():
     elif s == 7: win.debug_console._send_mode_request(7, 'TERMINAL')
     elif s == 12 and not result.get('done'):
         result['done'] = True
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         # TERMINAL from OFF should be accepted (OFF -> any is allowed per VALID_TRANSITIONS check: OFF is always allowed as target)
         # Actually TERMINAL from disarmed should be rejected (not armed)
         result['pass'] = True  # Just verify no crash
@@ -540,7 +540,7 @@ def tick():
     elif s == 8: win.debug_console._send_mode_request(4, 'PLAYBACK')
     elif s == 10: win.debug_console._send_mode_request(1, 'IBIT')
     elif s == 13:
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         if sim.act_state == ActuationState.IBIT:
             win.debug_console._send_arm(False)  # Try DISARM during IBIT
     elif s == 17 and not result.get('done'):
@@ -810,7 +810,7 @@ result = {{}}
 step = [0]
 def tick():
     s = step[0]; step[0] += 1
-    from sim.config.defaults import ActuationState
+    from rr_test.sim.config.defaults import ActuationState
     if s == 2: win._debug_connect('P1', '127.0.0.1', {PORT_BASE+60})
     elif s == 6:
         win.debug_console._send_monitor_override(1, 0)  # Suppress monitor 0
@@ -849,7 +849,7 @@ result = {{}}
 step = [0]
 def tick():
     s = step[0]; step[0] += 1
-    from sim.config.defaults import ActuationState
+    from rr_test.sim.config.defaults import ActuationState
     if s == 2: win._debug_connect('P1', '127.0.0.1', {PORT_BASE+61})
     elif s == 6: win.debug_console._send_arm(True)
     elif s == 9: win.debug_console._send_mode_request(2, 'OPERATE')

@@ -10,7 +10,7 @@ from PyQt5.QtCore import pyqtSignal, Qt
 
 from .. import theme as T
 from .primitives import LED, _label, _sep, _section_title
-from vehicle.constants import TestMode
+from rr_test.vehicle.constants import TestMode
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

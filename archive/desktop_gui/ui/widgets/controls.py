@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton
 from PyQt5.QtCore import pyqtSignal
 
 from .. import theme as T
-from vehicle.constants import TestMode
+from rr_test.vehicle.constants import TestMode
 
 
 class ControlButtonsWidget(QWidget):

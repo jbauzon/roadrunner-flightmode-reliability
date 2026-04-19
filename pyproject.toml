@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 Anduril Industries, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rr_test"
+version = "5.0.0"
+description = "Automated reliability test system for the Roadrunner UAV flight controller"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Jose Bauzon" },
+]
+keywords = ["roadrunner", "uav", "mavlink", "pandion", "ibit", "testing", "sitl"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Hardware",
+]
+dependencies = [
+    "websockets>=15.0",
+    "pymavlink>=2.4.41",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+hardware = [
+    "nidaqmx>=0.8; platform_system=='Windows'",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+rr-test-server = "rr_test.server:main"
+
+[project.urls]
+Homepage = "https://github.com/jbauzon/roadrunner-flightmode-reliability"
+Issues = "https://github.com/jbauzon/roadrunner-flightmode-reliability/issues"
+Documentation = "https://github.com/jbauzon/roadrunner-flightmode-reliability#readme"
+
+[tool.setuptools.packages.find]
+include = ["rr_test*"]
+exclude = ["archive*", "tests*", "web*", "docs*", "profiles*", "scripts*"]
+
+[tool.setuptools.package-data]
+"rr_test.vehicle" = ["dialects/*.xml"]
+"rr_test.sim" = ["sim_config.yaml", "config/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_walkthrough.py", "*_test.py"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true

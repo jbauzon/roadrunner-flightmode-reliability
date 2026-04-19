@@ -36,11 +36,11 @@ def shot(win, name):
 
 def main():
     # ── Patch for sim ────────────────────────────────────────────────
-    from sim.vehicle import PandionVehicleSim
-    from sim.fleet import SimFleet
-    from sim.mock_daq import MockDAQController
-    import hardware.daq as daq_mod
-    import vehicle.connection as conn_mod
+    from rr_test.sim.vehicle import PandionVehicleSim
+    from rr_test.sim.fleet import SimFleet
+    from rr_test.sim.mock_daq import MockDAQController
+    import rr_test.hardware.daq as daq_mod
+    import rr_test.vehicle.connection as conn_mod
 
     daq_mod.SimpleDAQController = MockDAQController
 
@@ -103,7 +103,7 @@ def main():
     app.setFont(QFont("Segoe UI", 10))
 
     from ui.main_window import MultiUUTTestGUI
-    from vehicle.connection import UUT
+    from rr_test.vehicle.connection import UUT
 
     win = MultiUUTTestGUI()
     win.uuts = [UUT.from_dict({

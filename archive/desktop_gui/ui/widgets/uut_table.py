@@ -9,7 +9,7 @@ from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QColor
 
 from .. import theme as T
-from vehicle.constants import UUTStatus
+from rr_test.vehicle.constants import UUTStatus
 
 
 class UUTTableWidget(QGroupBox):

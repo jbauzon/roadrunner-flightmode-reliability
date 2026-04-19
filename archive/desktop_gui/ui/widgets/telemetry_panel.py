@@ -23,7 +23,7 @@ from PyQt5.QtCore import Qt
 
 from .. import theme as T
 from .primitives import StatusBadge, LED, _label, _sep, _section_title
-from vehicle.constants import ActuationMode, get_mode_name, get_flight_regime_short_name
+from rr_test.vehicle.constants import ActuationMode, get_mode_name, get_flight_regime_short_name
 
 
 # ── Surface name / flag bit mapping (matches actuator_feedback.py) ─────────────

@@ -61,7 +61,7 @@ def load_config(config_path):
 
 def start_vehicle(vcfg, verbose=False, fleet=None):
     """Start a simulated vehicle (single udpout connection)."""
-    from sim.vehicle import PandionVehicleSim
+    from rr_test.sim.vehicle import PandionVehicleSim
 
     sim = PandionVehicleSim(
         vehicle_port=vcfg['port'],
@@ -88,8 +88,8 @@ def start_vehicle(vcfg, verbose=False, fleet=None):
 
 def inject_mock_daq():
     """Replace SimpleDAQController with MockDAQController globally."""
-    from sim.mock_daq import MockDAQController
-    import hardware.daq as daq_module
+    from rr_test.sim.mock_daq import MockDAQController
+    import rr_test.hardware.daq as daq_module
     daq_module.SimpleDAQController = MockDAQController
     print("[Launcher] MockDAQController injected - no NI-DAQmx hardware needed")
 
@@ -102,7 +102,7 @@ def patch_loopback_for_sim():
     loopback because the sim vehicles run on localhost. This patch ONLY
     runs when launched via run_sim.py — production code is never modified.
     """
-    import vehicle.connection as conn_mod
+    import rr_test.vehicle.connection as conn_mod
     _original = conn_mod.connect_to_vehicle
 
     def _sim_connect(ip_address, port, timeout=10.0):
@@ -192,7 +192,7 @@ def launch_gui(uut_config_path):
     # Auto-load the simulated UUT config
     with open(uut_config_path) as f:
         cfg = json.load(f)
-    from vehicle.connection import UUT
+    from rr_test.vehicle.connection import UUT
     window.uuts = [UUT.from_dict(d) for d in cfg['uuts']]
     window.uut_table_widget.update_table(window.uuts)
     window.log(f"[SIM] Loaded {len(window.uuts)} simulated UUT(s) from {uut_config_path}")
@@ -244,7 +244,7 @@ def main():
     # Allow loopback addresses for sim mode
     patch_loopback_for_sim()
 
-    from sim.fleet import SimFleet
+    from rr_test.sim.fleet import SimFleet
     fleet = SimFleet()
 
     sims = []

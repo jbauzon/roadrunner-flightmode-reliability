@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt
 
 from .. import theme as T
 from .primitives import StatusBadge, _label
-from vehicle.constants import TestMode
+from rr_test.vehicle.constants import TestMode
 
 
 class IBITDisplayWidget(QGroupBox):

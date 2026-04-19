@@ -7,7 +7,7 @@ import time
 from collections import deque
 from typing import Any, Dict, List, Optional
 
-from vehicle.constants import IBIT_SUBSTATE_NAMES, IBITSubstate, DEFAULT_HEARTBEAT_TIMEOUT
+from rr_test.vehicle.constants import IBIT_SUBSTATE_NAMES, IBITSubstate, DEFAULT_HEARTBEAT_TIMEOUT
 
 
 class IBITPhaseTracker:

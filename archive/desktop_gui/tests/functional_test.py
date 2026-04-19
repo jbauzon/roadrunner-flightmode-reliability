@@ -150,28 +150,28 @@ class FunctionalTestRunner:
     def test_module_imports(self):
         """Verify all modules import without error."""
         from version import __version__
-        from vehicle.constants import (
+        from rr_test.vehicle.constants import (
             ActuationMode, IBITSubstate, FlightRegime, CommandResult,
             TestMode, UUTStatus, AlertSeverity, MsgType,
             MODE_NAMES, IBIT_SUBSTATE_NAMES, FLIGHT_REGIME_NAMES,
             MISTRACKING_FLAG_NAMES, get_mode_name, get_failed_surfaces, is_armed,
         )
-        from vehicle.connection import UUT, UUTState, connect_to_vehicle
-        from vehicle.preparation import UUTPreparation
-        from testing import (
+        from rr_test.vehicle.connection import UUT, UUTState, connect_to_vehicle
+        from rr_test.vehicle.preparation import UUTPreparation
+        from rr_test.execution import (
             UUTTestExecutor, PlaybackTestExecutor,
             IBITPhaseTracker, TestStatistics, IBITFailureDiagnostic,
         )
-        from testing.logger import TelemetryLogger
-        from hardware.daq import SimpleDAQController
+        from rr_test.execution.logger import TelemetryLogger
+        from rr_test.hardware.daq import SimpleDAQController
         from ui.command_server import CommandServer
-        from sim.vehicle import PandionVehicleSim
-        from sim.mock_daq import MockDAQController
+        from rr_test.sim.vehicle import PandionVehicleSim
+        from rr_test.sim.mock_daq import MockDAQController
         assert __version__ == '5.0.0', f'Version mismatch: {__version__}'
 
     def test_constants_integrity(self):
         """Verify constants are consistent and complete."""
-        from vehicle.constants import (
+        from rr_test.vehicle.constants import (
             ActuationMode, IBITSubstate, FlightRegime,
             MODE_NAMES, IBIT_SUBSTATE_NAMES, FLIGHT_REGIME_NAMES,
             MISTRACKING_FLAG_NAMES,
@@ -190,8 +190,8 @@ class FunctionalTestRunner:
 
     def test_sim_enum_parity(self):
         """Verify sim enums match production enum values exactly."""
-        from vehicle.constants import ActuationMode, IBITSubstate, FlightRegime
-        from sim.config.defaults import (
+        from rr_test.vehicle.constants import ActuationMode, IBITSubstate, FlightRegime
+        from rr_test.sim.config.defaults import (
             ActuationState, IBITSubstate as SimIBIT, FlightRegime as SimFR,
         )
         assert ActuationState.OFF == int(ActuationMode.OFF)
@@ -209,7 +209,7 @@ class FunctionalTestRunner:
 
     def test_uut_validation(self):
         """Verify UUT validates inputs correctly."""
-        from vehicle.connection import UUT
+        from rr_test.vehicle.connection import UUT
         # Valid
         u = UUT('SN001', '192.168.1.1', 9985, 0)
         assert u.serial_number == 'SN001'
@@ -258,10 +258,10 @@ class FunctionalTestRunner:
 
     def _start_sims(self):
         """Start sim vehicles for GUI tests."""
-        from sim.vehicle import PandionVehicleSim
-        from sim.mock_daq import MockDAQController
-        import vehicle.connection as conn_mod
-        import hardware.daq as daq_mod
+        from rr_test.sim.vehicle import PandionVehicleSim
+        from rr_test.sim.mock_daq import MockDAQController
+        import rr_test.vehicle.connection as conn_mod
+        import rr_test.hardware.daq as daq_mod
 
         # Sim vehicles
         self._sims = [
@@ -313,9 +313,9 @@ class FunctionalTestRunner:
 
     def _create_gui(self, uuts=None) -> Any:
         """Create a fresh GUI window with mock DAQ and optional UUTs."""
-        from sim.mock_daq import MockDAQController
+        from rr_test.sim.mock_daq import MockDAQController
         from ui.main_window import MultiUUTTestGUI
-        from vehicle.connection import UUT
+        from rr_test.vehicle.connection import UUT
 
         win = MultiUUTTestGUI()
         win.daq = MockDAQController()
@@ -391,7 +391,7 @@ class FunctionalTestRunner:
             # Test mode toggle
             win.test_config_widget.mode_changed.emit('playback')
             self._process_events(0.2)
-            from vehicle.constants import TestMode
+            from rr_test.vehicle.constants import TestMode
             assert win.test_mode == TestMode.PLAYBACK, f'Mode not updated: {win.test_mode}'
 
             win.test_config_widget.mode_changed.emit('ibit')
@@ -428,10 +428,10 @@ if sys.platform == "win32":
     except: pass
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 sim = PandionVehicleSim(vehicle_port={uut_port}, sysid=1,
     ibit_pass={expect_pass}, mistracking_flags={0 if expect_pass else 0xC0},
@@ -458,7 +458,7 @@ app = QApplication(sys.argv)
 from ui import theme as T
 T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
+from rr_test.vehicle.connection import UUT
 
 win = MultiUUTTestGUI()
 win.daq = MockDAQController()
@@ -540,10 +540,10 @@ if sys.platform == "win32":
     except: pass
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 sims = [
     PandionVehicleSim(vehicle_port=19983, sysid=1, ibit_pass=True, boot_time_s=1.0,
@@ -573,7 +573,7 @@ from PyQt5.QtCore import QTimer
 app = QApplication(sys.argv)
 from ui import theme as T; T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
+from rr_test.vehicle.connection import UUT
 
 win = MultiUUTTestGUI()
 win.daq = MockDAQController(); win.daq.initialize("MockDAQ")
@@ -608,7 +608,7 @@ app.exec_()
         """Emergency stop: verify relay disable logic (unit-level, no GUI)."""
         # NOTE: Full GUI E2E emergency stop test requires real display (QMessageBox blocks
         # in offscreen mode). This test verifies the relay safety logic directly.
-        from sim.mock_daq import MockDAQController
+        from rr_test.sim.mock_daq import MockDAQController
         daq = MockDAQController()
         daq.initialize('MockDAQ')
 
@@ -680,7 +680,7 @@ app.exec_()
 
     def test_telemetry_logger(self):
         """Verify telemetry logger creates CSV, writes events, closes cleanly."""
-        from testing.logger import TelemetryLogger
+        from rr_test.execution.logger import TelemetryLogger
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = TelemetryLogger(
                 tmpdir, 'TEST-SN-001', datetime.now(),
@@ -727,8 +727,8 @@ app.exec_()
 
     def test_phase_tracker(self):
         """Verify IBITPhaseTracker state machine transitions."""
-        from testing import IBITPhaseTracker
-        from vehicle.constants import IBITSubstate
+        from rr_test.execution import IBITPhaseTracker
+        from rr_test.vehicle.constants import IBITSubstate
 
         tracker = IBITPhaseTracker()
         assert not tracker.is_complete()
@@ -749,7 +749,7 @@ app.exec_()
 
     def test_statistics(self):
         """Verify TestStatistics tracks metrics correctly."""
-        from testing import TestStatistics
+        from rr_test.execution import TestStatistics
 
         stats = TestStatistics()
         assert not stats.is_connection_healthy()  # no heartbeats yet
@@ -766,7 +766,7 @@ app.exec_()
 
     def test_mistracking_bitmask(self):
         """Verify get_failed_surfaces correctly parses bitmask."""
-        from vehicle.constants import get_failed_surfaces
+        from rr_test.vehicle.constants import get_failed_surfaces
 
         assert get_failed_surfaces(0) == []
         assert get_failed_surfaces(0xFF) == [

@@ -1,14 +1,5 @@
-# Core MAVLink Communication
-pymavlink~=2.4.0
-
-# PyQt5 for GUI
-PyQt5~=5.15.0
-
-# NI-DAQmx Python bindings (optional — for DAQ hardware control)
-nidaqmx~=0.6.0
-
-# YAML parsing (used by sim launcher)
-pyyaml~=6.0
-
-# Testing / development (install with: pip install -r requirements.txt)
-pytest~=8.0
+# Dependencies are now declared in pyproject.toml.  This file exists
+# only so that `pip install -r requirements.txt` still does the right
+# thing — it installs the package in editable mode, which resolves all
+# deps from pyproject.toml.
+-e .

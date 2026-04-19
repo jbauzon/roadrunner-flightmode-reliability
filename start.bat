@@ -2,23 +2,21 @@
 title Roadrunner Flight Test v5.0.0
 cd /d "%~dp0"
 
-echo.
-echo  ========================================
-echo    ROADRUNNER FLIGHT TEST  v5.0.0
-echo  ========================================
-echo.
-
-:: Find Python
-where python >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo  ERROR: Python not found on PATH.
-    echo  Install Python 3.11+ from python.org
-    pause
-    exit /b 1
+REM --- First run?  Auto-install -----------------------------------
+if not exist ".venv\Scripts\python.exe" (
+    echo First run detected - installing...
+    call scripts\install.bat
+    if errorlevel 1 exit /b 1
+    echo.
+)
+if not exist "web\dist\index.html" (
+    echo Web frontend missing - building...
+    call scripts\install.bat
+    if errorlevel 1 exit /b 1
+    echo.
 )
 
-:: Kill any leftover backend from a previous run (port 18889/18890)
-echo  Cleaning up any previous server...
+REM --- Clean up any leftover backend ------------------------------
 for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18889" ^| findstr "LISTENING"') do (
     taskkill /F /PID %%a >nul 2>&1
 )
@@ -27,34 +25,36 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18890" ^| findstr "L
 )
 timeout /t 1 /nobreak >nul
 
-:: Check for --sitl flag
+REM --- Parse mode --------------------------------------------------
 set SITL_ARG=
 if /I "%~1"=="--sitl" set SITL_ARG=--sitl
 if /I "%~1"=="-s"     set SITL_ARG=--sitl
 
-if defined SITL_ARG (
-    echo  Mode: SITL simulation ^(no hardware required^)
-) else (
-    echo  Mode: Hardware ^(pass --sitl to run with simulator^)
-)
 echo.
-echo  Starting server on http://localhost:18890
-echo  Press Ctrl+C in this window to stop.
+echo  ========================================
+echo    ROADRUNNER FLIGHT TEST  v5.0.0
+echo  ========================================
+if defined SITL_ARG (
+    echo   Mode: SITL simulation
+) else (
+    echo   Mode: Hardware ^(pass --sitl to use simulator^)
+)
+echo   URL:  http://localhost:18890
+echo   Ctrl+C in this window to stop.
+echo  ========================================
 echo.
 
-:: Open browser after 4 seconds (background)
+REM --- Open browser after 4 seconds -------------------------------
 start "" /B cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:18890"
 
-:: Run the server in the FOREGROUND so Ctrl+C cleanly stops it
-:: and closing this window kills the server.
+REM --- Run the server inside the venv ------------------------------
+call .venv\Scripts\activate.bat
 python ws_server.py %SITL_ARG%
-
-:: Exit code from the server
 set SERVER_EXIT=%ERRORLEVEL%
 
 echo.
 if %SERVER_EXIT% neq 0 (
-    echo  Server exited with code %SERVER_EXIT%.
+    echo Server exited with code %SERVER_EXIT%.
     pause
 )
 exit /b %SERVER_EXIT%

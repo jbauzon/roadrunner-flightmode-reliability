@@ -57,10 +57,10 @@ if sys.platform == 'win32':
     except: pass
 {offscreen}
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 UUT_CONFIG   = {uut_config}
 TEST_MODE    = '{test_mode}'
@@ -112,8 +112,8 @@ QMessageBox.information = lambda *a, **kw: None
 app = QApplication(sys.argv)
 from ui import theme as T; T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
-from vehicle.constants import TestMode, UUTStatus
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import TestMode, UUTStatus
 
 win = MultiUUTTestGUI()
 mock_daq = MockDAQController()

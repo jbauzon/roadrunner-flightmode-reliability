@@ -13,7 +13,7 @@ from .tracker import IBITPhaseTracker, TestStatistics
 from .helpers import _build_actuator_feedback_dict
 from .callbacks import ExecutorCallbacks
 from .recovery import RecoveryManager, FailureClass, RecoveryAction
-from vehicle.constants import (
+from rr_test.vehicle.constants import (
     ActuationMode, IBITSubstate, MsgType,
     IBIT_SUBSTATE_DISPLAY_NAMES,
     get_mode_name, get_failed_surfaces, is_armed, safe_int_field,

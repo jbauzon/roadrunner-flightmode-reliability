@@ -1,0 +1,13 @@
+# Pinned dependency versions for reproducible installs.
+# Regenerate with: pip freeze > requirements-lock.txt (inside a clean venv
+# after `pip install -e .[hardware]`).
+#
+# nidaqmx is Windows-only (for real NI-DAQmx hardware relays).  The package
+# fails gracefully at runtime on Linux/macOS with a warning — it is still
+# importable; just the hardware relay feature will not work.
+
+future==1.0.0
+pymavlink==2.4.49
+PyYAML==6.0.2
+websockets==16.0
+# nidaqmx==0.8.0  # uncomment on Windows with NI-DAQmx driver installed

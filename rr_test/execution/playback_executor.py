@@ -11,7 +11,7 @@ from typing import Any, Optional
 from .base_executor import _ExecutorMixin
 from .helpers import _build_actuator_feedback_dict
 from .callbacks import ExecutorCallbacks
-from vehicle.constants import (
+from rr_test.vehicle.constants import (
     ActuationMode, MsgType,
     get_failed_surfaces,
 )

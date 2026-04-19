@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QGroupBox, QGridLayout, QHBoxLayout, QLabel
 
 from .. import theme as T
 from .primitives import StatusBadge, LED, _label
-from vehicle.constants import ActuationMode, get_mode_name, get_flight_regime_short_name
+from rr_test.vehicle.constants import ActuationMode, get_mode_name, get_flight_regime_short_name
 
 
 class StatusPanelWidget(QGroupBox):

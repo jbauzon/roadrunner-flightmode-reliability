@@ -1,5 +1,13 @@
 # Architecture
 
+> **Note:** the primary operator interface is now the **web GUI**
+> (`ws_server.py` + `web/`). The PyQt5 desktop GUI described in some
+> layer diagrams below has been archived to `archive/desktop_gui/`.
+> The backend layers (`rr_test/execution/`, `rr_test/vehicle/`,
+> `rr_test/hardware/`, `rr_test/sim/`) remain shared between the
+> retired desktop GUI and the current web GUI.
+
+
 ## Overview
 
 Production-grade automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Three major components:
@@ -18,19 +26,19 @@ Production-grade automated reliability test system for the Roadrunner UAV flight
 │  command_server.py       TCP remote control          │
 │  theme.py                Dark theme stylesheet       │
 ├─────────────────────────────────────────────────────┤
-│  testing/                Test Execution Layer        │
+│  rr_test/execution/                Test Execution Layer        │
 │  executor.py             IBIT + Playback executors  │
 │  logger.py               Telemetry CSV logging      │
 ├─────────────────────────────────────────────────────┤
-│  vehicle/                Vehicle Communication       │
+│  rr_test/vehicle/                Vehicle Communication       │
 │  constants.py            Enums, constants (SSoT)    │
 │  connection.py           MAVLink UDP + UUT model    │
 │  preparation.py          State machine management    │
 ├─────────────────────────────────────────────────────┤
-│  hardware/               Hardware Abstraction        │
+│  rr_test/hardware/               Hardware Abstraction        │
 │  daq.py                  NI-DAQmx relay control     │
 ├─────────────────────────────────────────────────────┤
-│  sim/                    SITL Simulator (standalone) │
+│  rr_test/sim/                    SITL Simulator (standalone) │
 │  vehicle.py              State machine + IBIT       │
 │  telemetry.py            12 MAVLink message types   │
 │  models/                 Servo, battery, monitors   │
@@ -38,15 +46,15 @@ Production-grade automated reliability test system for the Roadrunner UAV flight
 ```
 
 **Dependency rules:**
-- `ui/` imports from `testing/`, `vehicle/`, `hardware/`
-- `testing/` imports from `vehicle/` (never from `ui/`)
-- `vehicle/` imports nothing from other project packages
-- `hardware/` imports nothing from other project packages
-- `sim/` imports enums from `vehicle/constants` but is otherwise standalone
+- `archive/desktop_gui/ui/` (deprecated) imports from `rr_test/execution/`, `rr_test/vehicle/`, `rr_test/hardware/`
+- `rr_test/execution/` imports from `rr_test/vehicle/` (never from `archive/desktop_gui/ui/` (deprecated))
+- `rr_test/vehicle/` imports nothing from other project packages
+- `rr_test/hardware/` imports nothing from other project packages
+- `rr_test/sim/` imports enums from `vehicle/constants` but is otherwise standalone
 
 ## Constants — Single Source of Truth
 
-`vehicle/constants.py` defines all enums, lookup tables, and named constants used throughout the codebase:
+`rr_test/vehicle/constants.py` defines all enums, lookup tables, and named constants used throughout the codebase:
 
 | What | Where | Example |
 |------|-------|---------|
@@ -142,7 +150,7 @@ Monitors can set asynchronously. Clearing once may not be sufficient. Continuous
 The vehicle may run multiple IBIT cycles. Substate 5 (COMPLETE) may appear multiple times. Only mode transition IBIT → OPERATE confirms true completion.
 
 **Why does the sim never modify production code?**
-`run_sim.py` patches `connect_to_vehicle` at runtime to bypass the loopback IP check and use `udpout`. Production code in `vehicle/`, `testing/`, `hardware/`, and `ui/` is never changed to accommodate the simulator.
+`run_sim.py` patches `connect_to_vehicle` at runtime to bypass the loopback IP check and use `udpout`. Production code in `rr_test/vehicle/`, `rr_test/execution/`, `rr_test/hardware/`, and `archive/desktop_gui/ui/` (deprecated) is never changed to accommodate the simulator.
 
 ## Safety Features
 

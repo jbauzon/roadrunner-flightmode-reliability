@@ -82,7 +82,7 @@ class AddUUTDialog(QDialog):
 
     def get_uut(self):
         """Return a new UUT from the dialog's field values."""
-        from vehicle.connection import UUT
+        from rr_test.vehicle.connection import UUT
         return UUT(
             serial_number=self.serial_input.text(),
             ip_address=self.ip_input.text(),

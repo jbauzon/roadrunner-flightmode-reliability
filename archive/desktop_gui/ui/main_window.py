@@ -20,12 +20,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal as _pyqtSignal
 from PyQt5.QtGui import QKeySequence
 
-from hardware.daq import SimpleDAQController
-from vehicle.connection import UUT
-from vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
+from rr_test.hardware.daq import SimpleDAQController
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import TestMode, UUTStatus, AlertSeverity, DAQ_HEALTH_CHECK_INTERVAL
 from version import __version__
-from testing import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog, ErrorLogger
-from testing.debug_connection import DebugConnection
+from rr_test.execution import UUTTestExecutor, PlaybackTestExecutor, BatchWatchdog, ErrorLogger
+from rr_test.execution.debug_connection import DebugConnection
 from . import theme as T
 from .widgets import (
     HeaderBanner,
@@ -426,11 +426,11 @@ class MultiUUTTestGUI(QMainWindow):
         This is a slot connected to _debug_msg_signal. All Qt widget updates
         MUST happen here, not in the dispatch thread callback.
         """
-        from vehicle.constants import MsgType, safe_int_field, is_armed
+        from rr_test.vehicle.constants import MsgType, safe_int_field, is_armed
         msg_type = msg.get_type()
         try:
             if msg_type == MsgType.ACTUATION_SYS_STATUS:
-                from testing.helpers import _build_actuator_feedback_dict
+                from rr_test.execution.helpers import _build_actuator_feedback_dict
                 self.telemetry_panel.update_actuator_feedback(
                     _build_actuator_feedback_dict(msg)
                 )
@@ -535,10 +535,10 @@ class MultiUUTTestGUI(QMainWindow):
         Results are handed back to the Qt main thread via QTimer.singleShot(0).
         """
         import threading, time
-        from sim.vehicle import PandionVehicleSim
-        from sim.mock_daq import MockDAQController
-        from vehicle.connection import UUT
-        import vehicle.connection as conn_mod
+        from rr_test.sim.vehicle import PandionVehicleSim
+        from rr_test.sim.mock_daq import MockDAQController
+        from rr_test.vehicle.connection import UUT
+        import rr_test.vehicle.connection as conn_mod
 
         self.log("="*56)
         self.log("  LAUNCHING SITL SIMULATION")
@@ -622,7 +622,7 @@ class MultiUUTTestGUI(QMainWindow):
 
     def _on_sitl_ready(self, mock_daq):
         """Slot called on the Qt main thread when SITL sims have finished booting."""
-        from vehicle.connection import UUT
+        from rr_test.vehicle.connection import UUT
         self.daq = mock_daq
 
         # Log each started sim

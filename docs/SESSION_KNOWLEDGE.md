@@ -65,9 +65,8 @@ frontend reducer case labels. The actual issues were:
 ## Project Overview
 Production-grade automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Runs IBIT and Flight Profile Playback tests over MAVLink (Pandion dialect) across up to 6 UUTs simultaneously.
 
-**Repository:** https://ghe.anduril.dev/jbauzon/roadrunner-flightmode-reliability (public to Anduril)
-**Jira:** https://jira.anduril.dev/browse/AIT-2081
-**Owner:** jbauzon@anduril.com
+**Repository:** <github-url> (public to Anduril)
+**Owner:** jbauzon
 
 ---
 
@@ -177,7 +176,6 @@ tools/                 gui_verify, gui_sitl_verify, operator_test
 
 ## Thermal: Monitor 9, warn 70°C, critical 85°C, shutdown 95°C, temperature field in batch report
 
-## Jira: AIT-2081 parent, AIT-2124-2130 sub-tasks (2130=bench bring-up is To Do)
 
 ## What's Left
 1. Hardware bench bring-up

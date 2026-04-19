@@ -12,8 +12,8 @@ import time
 from collections import defaultdict, deque
 from typing import Callable, Optional, Any
 
-import vehicle.connection as _vehicle_conn
-from vehicle.constants import MsgType
+import rr_test.vehicle.connection as _vehicle_conn
+from rr_test.vehicle.constants import MsgType
 
 
 class DebugConnection:

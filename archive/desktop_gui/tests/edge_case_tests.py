@@ -46,10 +46,10 @@ if sys.platform == 'win32':
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     except: pass
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 def _connect(ip, port, timeout=10):
     from pymavlink import mavutil
@@ -74,8 +74,8 @@ QMessageBox.information = lambda *a, **kw: None
 app = QApplication(sys.argv)
 from ui import theme as T; T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
-from vehicle.constants import TestMode, UUTStatus
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import TestMode, UUTStatus
 
 # ── SETUP ────────────────────────────────────────────────────────────────────
 {setup}
@@ -167,10 +167,10 @@ if sys.platform == 'win32':
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     except: pass
 
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
-import vehicle.connection as conn_mod
-import hardware.daq as daq_mod
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
+import rr_test.vehicle.connection as conn_mod
+import rr_test.hardware.daq as daq_mod
 
 def _connect(ip, port, timeout=10):
     from pymavlink import mavutil
@@ -195,8 +195,8 @@ QMessageBox.information  = lambda *a, **kw: None
 app = QApplication(sys.argv)
 from ui import theme as T; T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
-from vehicle.constants import TestMode, UUTStatus
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import TestMode, UUTStatus
 '''
 
 def script(body: str) -> str:
@@ -583,7 +583,7 @@ def _terminal_cmd(msg):
     _orig_handle(msg)
     # After ARM (param1==1), force TERMINAL mode
     if int(getattr(msg, 'param1', 0)) == 1:
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         _time.sleep(0.1)
         sim.act_state = ActuationState.TERMINAL
 sim._handle_command = _terminal_cmd
@@ -632,7 +632,7 @@ def _pos_check_cmd(msg):
     _orig_handle(msg)
     # After ARM (param1==1), go to POS_CHECK first then transition to OPERATE
     if int(getattr(msg, 'param1', 0)) == 1:
-        from sim.config.defaults import ActuationState
+        from rr_test.sim.config.defaults import ActuationState
         sim.act_state = ActuationState.POS_CHECK
         def _to_operate():
             _time.sleep(1.5)  # POS_CHECK lasts 1.5s
@@ -681,7 +681,7 @@ f'''
 # Patch sim to complete IBIT instantly
 _orig_run_ibit = sim._run_ibit
 def _instant_ibit():
-    from sim.config.defaults import ActuationState, IBITSubstate
+    from rr_test.sim.config.defaults import ActuationState, IBITSubstate
     sim.ibit_substate = IBITSubstate.DONE
     sim.act_state = ActuationState.OPERATE
     sim._ibit_active = False
@@ -727,7 +727,7 @@ f'''
 # Patch sim to freeze at ELEVON substate
 _orig_elevon = sim._run_ibit_elevon
 def _freeze_elevon(dur):
-    from sim.config.defaults import IBITSubstate
+    from rr_test.sim.config.defaults import IBITSubstate
     sim.ibit_substate = IBITSubstate.ELEVON
     # Just freeze — never proceed
     import time

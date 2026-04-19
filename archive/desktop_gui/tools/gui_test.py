@@ -71,8 +71,8 @@ def run_test(args):
     from PyQt5.QtGui import QFont
 
     # ── Inject mocks ──────────────────────────────────────────────────────
-    from sim.mock_daq import MockDAQController
-    import hardware.daq as daq_module
+    from rr_test.sim.mock_daq import MockDAQController
+    import rr_test.hardware.daq as daq_module
     daq_module.SimpleDAQController = MockDAQController
 
     # No connect_to_vehicle patch needed — the sim uses udpout to send
@@ -82,7 +82,7 @@ def run_test(args):
     # ── Start vehicle sims ────────────────────────────────────────────────
     # Sim ports use 19900-19999 range — completely separated from
     # production vehicle ports (9985+) to prevent any conflict.
-    from sim.vehicle import PandionVehicleSim
+    from rr_test.sim.vehicle import PandionVehicleSim
 
     SIM_PORT_1 = 19901
     SIM_PORT_2 = 19902
@@ -129,7 +129,7 @@ def run_test(args):
     QMessageBox.information = auto_ok
 
     # ── Load UUTs ─────────────────────────────────────────────────────────
-    from vehicle.connection import UUT
+    from rr_test.vehicle.connection import UUT
     window.uuts = [
         UUT(serial_number="RR-SIM-001", ip_address="127.0.0.1", port=SIM_PORT_1, relay_line=0),
         UUT(serial_number="RR-SIM-002", ip_address="127.0.0.1", port=SIM_PORT_2, relay_line=1),

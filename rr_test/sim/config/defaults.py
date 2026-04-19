@@ -7,7 +7,7 @@ monitor definitions, and tuning parameters used across the simulator.
 """
 
 # Import production enums as the canonical source of truth
-from vehicle.constants import (
+from rr_test.vehicle.constants import (
     ActuationMode as _ActuationMode,
     IBITSubstate as _IBITSubstate,
     FlightRegime as _FlightRegime,

@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-from vehicle.constants import (
+from rr_test.vehicle.constants import (
     TestMode, FLIGHT_REGIME_NAMES, ACTUATION_MODE_NAMES, SEVERITY_NAMES,
     DEFAULT_ACTUATOR_POSITION_CDEG, IBITSubstate,
     get_flight_regime_name, get_severity_name, is_armed,

@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QGroupBox, QGridLayout, QProgressBar
 
 from .. import theme as T
 from .primitives import _label
-from vehicle.constants import TestMode
+from rr_test.vehicle.constants import TestMode
 
 
 class ProgressWidget(QGroupBox):

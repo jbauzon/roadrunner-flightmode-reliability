@@ -19,8 +19,8 @@ if sys.platform == 'win32':
     except: pass
 
 # ── Start sims ──────────────────────────────────────────────────────────
-from sim.vehicle import PandionVehicleSim
-from sim.mock_daq import MockDAQController
+from rr_test.sim.vehicle import PandionVehicleSim
+from rr_test.sim.mock_daq import MockDAQController
 
 sim1 = PandionVehicleSim(vehicle_port=19801, sysid=1, ibit_pass=True,
     boot_time_s=1.5, ibit_duration_scale=0.3, boot_monitors=[0, 1, 2, 3])
@@ -32,7 +32,7 @@ threading.Thread(target=sim2.start, daemon=True).start()
 time.sleep(2)
 
 # ── Patches ─────────────────────────────────────────────────────────────
-import vehicle.connection as conn_mod
+import rr_test.vehicle.connection as conn_mod
 def _sim_connect(ip, port, timeout=10):
     from pymavlink import mavutil
     m = mavutil.mavlink_connection(f'udpout:127.0.0.1:{port}',
@@ -44,7 +44,7 @@ def _sim_connect(ip, port, timeout=10):
         if hb and hb.get_srcSystem() != 255: return m
     raise Exception('No heartbeat')
 conn_mod.connect_to_vehicle = _sim_connect
-import hardware.daq as daq_mod
+import rr_test.hardware.daq as daq_mod
 daq_mod.SimpleDAQController = MockDAQController
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -58,8 +58,8 @@ app = QApplication(sys.argv)
 from ui import theme as T
 T.apply(app)
 from ui.main_window import MultiUUTTestGUI
-from vehicle.connection import UUT
-from vehicle.constants import UUTStatus, TestMode, ActuationMode
+from rr_test.vehicle.connection import UUT
+from rr_test.vehicle.constants import UUTStatus, TestMode, ActuationMode
 
 win = MultiUUTTestGUI()
 win.daq = MockDAQController()

@@ -34,7 +34,7 @@ import time
 from datetime import datetime
 from typing import Any, Callable, List, Optional
 
-from vehicle.constants import (
+from rr_test.vehicle.constants import (
     SERVO_TEMP_WARN_DEGC, SERVO_TEMP_CRITICAL_DEGC, SERVO_TEMP_SHUTDOWN_DEGC,
 )
 

@@ -7,7 +7,7 @@ wires those callbacks to pyqtSignal emissions for thread-safe GUI updates.
 """
 from __future__ import annotations
 from PyQt5.QtCore import QObject, pyqtSignal
-from testing.callbacks import ExecutorCallbacks, PreparationCallbacks
+from rr_test.execution.callbacks import ExecutorCallbacks, PreparationCallbacks
 
 
 class QtExecutorBridge(QObject):

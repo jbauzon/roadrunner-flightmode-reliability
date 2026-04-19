@@ -7,7 +7,7 @@ from datetime import datetime
 
 from .. import theme as T
 from .primitives import StatusBadge
-from vehicle.constants import TestMode
+from rr_test.vehicle.constants import TestMode
 
 
 class HeaderBanner(QWidget):

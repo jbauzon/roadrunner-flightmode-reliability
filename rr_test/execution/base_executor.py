@@ -10,9 +10,9 @@ from collections import defaultdict, deque
 from typing import Any, Dict, Optional
 
 from pymavlink import mavutil
-from vehicle.connection import connect_to_vehicle
-from vehicle.preparation import UUTPreparation
-from vehicle.constants import (
+from rr_test.vehicle.connection import connect_to_vehicle
+from rr_test.vehicle.preparation import UUTPreparation
+from rr_test.vehicle.constants import (
     RELAY_DISABLE_MAX_ATTEMPTS,
     RELAY_DISABLE_RETRY_DELAY,
     HEARTBEAT_BURST_INTERVAL,
