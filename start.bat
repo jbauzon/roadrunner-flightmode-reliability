@@ -2,15 +2,25 @@
 title Roadrunner Flight Test v5.0.0
 cd /d "%~dp0"
 
-REM --- First run?  Auto-install -----------------------------------
+REM --- Auto-install on first run or when core files missing -------
 if not exist ".venv\Scripts\python.exe" (
     echo First run detected - installing...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
 )
+
 if not exist "web\dist\index.html" (
     echo Web frontend missing - building...
+    call scripts\install.bat
+    if errorlevel 1 exit /b 1
+    echo.
+)
+
+REM --- Verify the venv Python actually has the deps ---------------
+".venv\Scripts\python.exe" -c "import rr_test, pymavlink, websockets" >nul 2>&1
+if errorlevel 1 (
+    echo Dependencies not fully installed - reinstalling...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
@@ -47,9 +57,8 @@ echo.
 REM --- Open browser after 4 seconds -------------------------------
 start "" /B cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:18890"
 
-REM --- Run the server inside the venv ------------------------------
-call .venv\Scripts\activate.bat
-python ws_server.py %SITL_ARG%
+REM --- Run the server directly with the venv Python ---------------
+".venv\Scripts\python.exe" ws_server.py %SITL_ARG%
 set SERVER_EXIT=%ERRORLEVEL%
 
 echo.
