@@ -2,23 +2,23 @@
 title Roadrunner Flight Test v5.0.0
 cd /d "%~dp0"
 
-REM --- Self-heal: verify deps, auto-install if missing ------------
+REM --- Auto-install if needed ---------------------------------
 python -c "import rr_test, pymavlink, websockets" >nul 2>&1
 if errorlevel 1 (
-    echo Dependencies not installed - running installer...
+    echo First run - installing dependencies...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
 )
 
 if not exist "web\dist\index.html" (
-    echo Web frontend missing - building...
+    echo Building web frontend...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
 )
 
-REM --- Clean up any leftover backend ------------------------------
+REM --- Kill leftover processes --------------------------------
 for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18889" ^| findstr "LISTENING"') do (
     taskkill /F /PID %%a >nul 2>&1
 )
@@ -27,35 +27,30 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18890" ^| findstr "L
 )
 timeout /t 1 /nobreak >nul
 
-REM --- Parse --sitl flag ------------------------------------------
-set SITL_ARG=
-if /I "%~1"=="--sitl" set SITL_ARG=--sitl
-if /I "%~1"=="-s"     set SITL_ARG=--sitl
+REM --- Parse flags --------------------------------------------
+set EXTRA_ARGS=
+if /I "%~1"=="--sitl" set EXTRA_ARGS=--sitl
+if /I "%~1"=="-s"     set EXTRA_ARGS=--sitl
 
 echo.
 echo  ========================================
 echo    ROADRUNNER FLIGHT TEST  v5.0.0
 echo  ========================================
-if defined SITL_ARG (
-    echo   Mode: SITL simulation
-) else (
-    echo   Mode: Hardware ^(pass --sitl to use simulator^)
-)
 echo   URL:  http://localhost:18890
-echo   Ctrl+C in this window to stop.
+echo   Press Ctrl+C to stop the server.
 echo  ========================================
 echo.
 
-REM --- Open browser after 4 seconds -------------------------------
+REM --- Open browser -------------------------------------------
 start "" /B cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:18890"
 
-REM --- Run server directly on user Python (no venv) ---------------
-python ws_server.py %SITL_ARG%
-set SERVER_EXIT=%ERRORLEVEL%
+REM --- Run server ---------------------------------------------
+python ws_server.py %EXTRA_ARGS%
+set EXIT_CODE=%ERRORLEVEL%
 
 echo.
-if %SERVER_EXIT% neq 0 (
-    echo Server exited with code %SERVER_EXIT%.
+if %EXIT_CODE% neq 0 (
+    echo Server exited with code %EXIT_CODE%.
     pause
 )
-exit /b %SERVER_EXIT%
+exit /b %EXIT_CODE%

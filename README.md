@@ -1,102 +1,106 @@
 # Roadrunner Flight Mode IBIT Test System
 
 Automated reliability test tool for the Roadrunner UAV flight controller
-actuation subsystem.  Runs the vehicle's built-in IBIT (Integrated
-Built-In Test) and Flight Profile Playback over MAVLink (Pandion
-dialect 102), with a web-based operator UI.
+actuation subsystem.  Runs IBIT (Integrated Built-In Test) and Flight
+Profile Playback over MAVLink (Pandion dialect 102), with a web-based
+operator UI.  Supports up to 6 UUTs simultaneously.
 
-Supports up to 6 UUTs (units under test) simultaneously via NI-DAQmx
-relays, or simulated vehicles via the bundled SITL simulator.
+## Install (Windows)
 
-## Install
+Prerequisites:
 
-### Windows (recommended)
+- **Python 3.11+** — <https://www.python.org/downloads/> (check "Add Python to PATH")
+- **Node.js 20 LTS** — <https://nodejs.org/>
+- **NI-DAQmx driver** — <https://www.ni.com/en-us/support/downloads/drivers/download.ni-daq-mx.html>
 
-1. Install **Python 3.11+** from <https://www.python.org/downloads/>.
-   During install, check **"Add Python to PATH"**.
-2. Install **Node.js 20 LTS** from <https://nodejs.org/>.
-3. (Optional, for real hardware) Install
-   [NI-DAQmx](https://www.ni.com/en-us/support/downloads/drivers/download.ni-daq-mx.html).
-4. Clone or download this repository to any folder.
-5. Double-click `scripts\install.bat` (one-time setup, ~3 minutes).
-6. Double-click `start.bat` to run.
+Then:
 
-On first launch, `start.bat` will auto-run the installer if it hasn't
-been set up yet.  Subsequent runs are instant.
+1. Copy or clone this folder to the test bench computer
+2. Double-click **`start.bat`**
 
-### Linux / macOS (SITL only)
+That's it.  On first launch it auto-installs Python dependencies and
+builds the web frontend (~2 minutes, needs internet).  A browser window
+opens to <http://localhost:18890>.
 
-```bash
-git clone <repo-url>
-cd roadrunner-flightmode-reliability
-./scripts/install.sh
-python ws_server.py --sitl
-```
+Subsequent launches are instant.
 
-NI-DAQmx hardware support is Windows-only.  SITL mode works anywhere.
+## Usage
 
-## Run
+1. **Add UUTs** — enter serial number, IP address, port, and relay line for each vehicle
+2. **Select test mode** — IBIT or Flight Profile Playback
+3. **Set duration** — hours/days for the batch run
+4. **Click Start** — the system ARMs each vehicle, runs the test, evaluates PASS/FAIL, and repeats round-robin until duration expires
+5. **Monitor** — watch live telemetry, IBIT phase progression, and iteration counts in the GUI
 
-```
-start.bat              # real hardware mode (needs NI-DAQmx)
-start.bat --sitl       # simulator mode (no hardware needed)
-```
+For Playback mode, click the folder icon to upload a flight profile CSV
+before starting.
 
-The GUI opens at <http://localhost:18890>.
+## Debug Mode
+
+Switch to the Debug tab to manually verify each vehicle before starting
+a batch:
+
+- Connect to a vehicle and watch live telemetry
+- Send ARM / DISARM commands
+- Request actuation modes (OPERATE, PLAYBACK, IBIT)
+- Override monitors, set parameters
+- Verify the vehicle responds correctly before committing to an overnight run
 
 ## What it does
 
 1. Powers each vehicle on via NI-DAQmx relay
 2. Connects over UDP MAVLink (Pandion dialect 102, port 13002)
 3. ARMs the vehicle, clearing safety monitors iteratively
-4. Transitions through the firmware state machine:
-   `OFF -> OPERATE -> PLAYBACK -> IBIT`
-5. Runs the IBIT sequence (firmware-internal triangle/circular actuator sweeps)
-6. Reads the mistracking bitmask to determine PASS/FAIL per surface
+4. Transitions: `OFF → OPERATE → PLAYBACK → IBIT`
+5. Runs IBIT (firmware-internal actuator sweeps) or streams Playback commands at 100 Hz
+6. Reads the mistracking bitmask (500 cdeg threshold) to determine PASS/FAIL
 7. Restores vehicle state, DISARMs, powers off
-8. Repeats round-robin across UUTs for the configured duration
-9. Logs everything to daily-rotated CSVs and batch JSON reports
+8. Repeats round-robin across all UUTs for the configured duration
+9. Logs to daily-rotated CSVs
 
-Flight Profile Playback mode instead streams a pre-recorded CSV of
-servo + engine commands at 100 Hz.  Pass/fail is determined by
-accumulated mistracking flags across all frames.
+## Test modes
+
+| Mode | How it works |
+|------|-------------|
+| **IBIT** | Vehicle runs its own built-in self-test. Software triggers it and reads the result. PASS = mistracking flags 0x00. |
+| **Flight Profile Playback** | Software streams a recorded CSV at 100 Hz. CSVs recorded at other rates (e.g. 500 Hz) are auto-resampled. PASS = all surface deltas ≤ 500 cdeg. |
 
 ## Project layout
 
 ```
-start.bat           One-click Windows launcher (auto-installs on first run)
-ws_server.py        Backend entry point (web GUI + WebSocket server)
-pyproject.toml      Python package metadata (pip install -e .)
+start.bat           One-click launcher (auto-installs on first run)
+ws_server.py        Backend entry point
+pyproject.toml      Python package metadata
 
-rr_test/            Main Python package
-  vehicle/          MAVLink connection, constants, preparation (ARM/modes)
-  execution/        Test executors + callbacks + recovery
-  sim/              SITL Pandion simulator
+rr_test/            Python package
+  vehicle/          MAVLink connection, constants, preparation
+  execution/        IBIT + playback executors, callbacks, recovery
+  sim/              SITL simulator (for development/testing without hardware)
   hardware/         NI-DAQmx relay controller
-  server/           Web GUI backend (WebSocket + HTTP)
+  server/           Web GUI backend (app_state, broadcaster, handlers)
 
 web/                React + TypeScript frontend
-tests/              pytest test suite + operator walkthroughs
-  vv/               Headed Playwright end-to-end V&V
+tests/              Test suite + operator walkthroughs
+scripts/            Install helpers
 profiles/           Reference flight profile CSVs
 docs/               Architecture, V&V report, config reference
-archive/            Deprecated PyQt5 desktop GUI (v1-v4, reference only)
-scripts/            Install / check helpers
+archive/            Deprecated PyQt5 desktop GUI (reference only)
 ```
 
-## Test modes
+## For developers
 
-| Mode                     | How it works                                                                 |
-|--------------------------|------------------------------------------------------------------------------|
-| **IBIT**                 | Vehicle runs its own built-in self-test; software reads the mistracking bitmask (500 cdeg threshold, firmware-enforced). |
-| **Flight Profile Playback** | Software streams a recorded CSV of servo + engine commands at 100 Hz; mistracking is accumulated across all frames. Upload the CSV via the folder icon in the GUI. |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup and test commands.
+
+To run without hardware (simulator mode):
+
+```
+start.bat --sitl
+```
 
 ## Docs
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system architecture + threading model
-- [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) — verification & validation status
-- [docs/SESSION_KNOWLEDGE.md](docs/SESSION_KNOWLEDGE.md) — project context + firmware notes
-- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
+- [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) — verification status
 - [CHANGELOG.md](CHANGELOG.md) — release history
 
 ## License
