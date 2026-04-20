@@ -25,7 +25,7 @@ echo [OK]    Python %PY_VER% detected
 
 REM --- Install Python deps (user-site, no venv) ---------------------------
 echo [INFO]  Upgrading pip...
-python -m pip install --user --upgrade pip
+python -m pip install --upgrade pip
 if errorlevel 1 (
     echo [ERROR] Failed to upgrade pip.
     pause
@@ -34,7 +34,7 @@ if errorlevel 1 (
 
 echo [INFO]  Installing Roadrunner test package and dependencies...
 echo         (This needs internet access; first run takes ~1-2 minutes.)
-python -m pip install --user -e ".[hardware]"
+python -m pip install -e ".[hardware]"
 if errorlevel 1 (
     echo.
     echo [ERROR] pip install failed.  Common causes:

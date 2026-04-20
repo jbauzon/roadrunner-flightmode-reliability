@@ -19,8 +19,8 @@ PY_VER=$(python3 --version 2>&1 | awk '{print $2}')
 echo "[OK]    Python $PY_VER detected"
 
 echo "[INFO]  Installing Roadrunner test package and dependencies..."
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user -e .
+python3 -m pip install --upgrade pip
+python3 -m pip install -e .
 echo "[OK]    Python package installed"
 
 python3 -c "import rr_test, pymavlink, websockets" 2>&1 || {

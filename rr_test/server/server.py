@@ -282,7 +282,13 @@ async def main(auto_sitl: bool | None = None) -> None:
 
         asyncio.create_task(_batch_ticker())
 
-        await asyncio.Future()  # run forever
+        try:
+            await asyncio.Future()  # run forever
+        finally:
+            # Server is shutting down — save settings so UUT list persists
+            _log.info("Saving settings before shutdown...")
+            state.save_settings()
+            _log.info("Settings saved.")
 
 
 if __name__ == "__main__":
