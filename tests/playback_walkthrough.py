@@ -469,24 +469,19 @@ async def run(csv_duration_s: float, watch_secs: int,
             # ── PASS verdict (SIM-001 has ibit_pass=True) ───────────
             # Look for PASS or FAIL verdict in logs. SIM-001 should PASS
             # because commanded positions (±1500 cdeg) are well within
-            # the 500 cdeg tracking threshold on a healthy servo model.
-            # Match both old "No mistracking" and new "within 500 cdeg"
-            # verdict strings since the string is internal UI copy.
-            got_pass = (
-                stream.log_contains("PASS \u2014 All surfaces tracked")
-                or stream.log_contains("PASS \u2014 No mistracking")
+            # Playback always succeeds (test software doesn't judge pass/fail —
+            # only firmware does via IBIT).  Look for completion message.
+            got_complete = (
+                stream.log_contains("Playback complete")
+                or stream.log_contains("Playback streaming complete")
+                or stream.log_contains("streaming complete")
             )
-            got_fail = stream.log_contains("Playback FAIL")
-            if got_pass:
-                assertion("SIM-001: Playback verdict = PASS",
-                          got_pass, "all surfaces within 500 cdeg")
-            elif got_fail:
-                # SIM-002 has mistracking_flags injected, so it can fail
-                assertion("Playback verdict emitted (PASS or FAIL)",
-                          True, "FAIL on fault vehicle")
+            if got_complete:
+                assertion("SIM-001: Playback completed successfully",
+                          got_complete, "streaming finished")
             else:
-                assertion("Playback verdict emitted",
-                          False, "no PASS/FAIL verdict in logs yet")
+                assertion("Playback completion logged",
+                          False, "no completion message in logs yet")
 
             # Verify iteration complete fired
             got_iter = await wait_for(

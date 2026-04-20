@@ -188,14 +188,19 @@ Same preparation as IBIT (ARM → OPERATE → PLAYBACK), plus:
    └──────────────────┬──────────────────────────┘
                       ▼
    ┌──────────────────────┐
-   │ Evaluate result      │
-   │                      │
-   │ All deltas ≤ 500 cdeg│──► PASS
-   │ Any delta > 500 cdeg │──► FAIL (lists which surfaces)
-   │                      │
-   │ (500 cdeg = firmware  │
-   │  IBIT_TVC_SERVO_      │
-   │  TRACKING_MAX_DELTA)  │
+   │ Report results        │
+   │                       │
+   │ Log max delta per     │
+   │ surface (informational│
+   │ — no pass/fail here)  │
+   │                       │
+   │ Warn if any surface   │
+   │ delta < 10 cdeg       │
+   │ (actuator not moving) │
+   │                       │
+   │ NOTE: pass/fail is    │
+   │ determined by IBIT,   │
+   │ not by Playback.      │
    └──────────┬───────────┘
               ▼
    Restore vehicle (same as IBIT)

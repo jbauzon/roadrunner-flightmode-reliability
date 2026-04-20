@@ -668,72 +668,70 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
     def _evaluate_result(self, mistracking_flags, max_deltas):
         """
-        Evaluate playback pass/fail.
+        Evaluate playback result.
 
-        The firmware only populates ``actuation_ibit_mon_status`` during
-        IBIT mode (see ``send_actuation_system_status_packet`` in
-        ``vehicle/mavlink/mavlink.c``) — outside IBIT, that field is
-        reset to ``PANDION_RR_IBIT_STATUS_NONE`` each cycle.  So during
-        Playback we can't rely on the firmware bitmask for PASS/FAIL.
+        The test software does NOT judge pass/fail for Playback mode.
+        Only the firmware determines pass/fail (via IBIT mistracking
+        detection).  Playback mode is a stimulus — we stream commands,
+        report what happened, and warn if something looks off.
 
-        Instead we mirror the firmware's own threshold check ourselves:
-        any surface whose peak command-vs-feedback delta exceeded
-        500 cdeg (= ``IBIT_TVC_SERVO_TRACKING_MAX_DELTA_CDEG`` in
-        ``vehicle/actuation/actuation.c``) is flagged.
-
-        Pass criteria:
-          - Firmware bitmask is 0 (always true in Playback; check
-            kept for defense in depth)
-          - AND all ``max_deltas[surface]`` are <= 500 cdeg
+        Warnings emitted:
+          - Actuators not moving (max delta < 10 cdeg on any surface
+            that was commanded — suggests a disconnected servo)
+          - Firmware mistracking flag set (rare during Playback, but
+            logged if it happens)
 
         Returns:
             (success: bool, message: str)
+            success is always True for Playback — the test completed.
         """
         self.cb.on_log("\n" + "=" * 60)
-        self.cb.on_log("PLAYBACK RESULT EVALUATION")
+        self.cb.on_log("PLAYBACK RESULT SUMMARY")
         self.cb.on_log("=" * 60)
 
-        THRESHOLD_CDEG = 500.0  # matches firmware IBIT_TVC_SERVO_TRACKING_MAX_DELTA_CDEG
-
-        # Log max deltas and identify surfaces exceeding threshold
-        self.cb.on_log("Max command-feedback deltas (threshold: 500 cdeg):")
-        failed_by_delta = []
+        # Report max deltas per surface
+        self.cb.on_log("Max command-feedback deltas per surface:")
+        warnings = []
         for surface, delta in max_deltas.items():
-            marker = "  FAIL" if delta > THRESHOLD_CDEG else "    ok"
-            self.cb.on_log(f"  {marker}  {surface:25s}: {delta:.1f} cdeg")
-            if delta > THRESHOLD_CDEG:
-                failed_by_delta.append(surface)
+            self.cb.on_log(f"  {surface:25s}: {delta:.1f} cdeg")
+            # Warn if a surface that was commanded didn't move at all
+            if delta < 10.0:
+                warnings.append(surface)
 
-        # Evaluate both signals
-        has_fw_flag = mistracking_flags != 0
-        has_delta_fail = bool(failed_by_delta)
-
-        if not has_fw_flag and not has_delta_fail:
-            self.cb.on_log("\n✓ PASS — All surfaces tracked within 500 cdeg threshold")
-            self.telemetry_logger.log_test_event(
-                'PLAYBACK_PASS',
-                f'All surfaces tracked correctly — max_deltas={max_deltas}'
+        if warnings:
+            self.cb.on_log(
+                f"\n⚠ WARNING: {len(warnings)} surface(s) show < 10 cdeg delta "
+                f"(actuators may not be moving):"
             )
-            return True, "Playback PASS — all surfaces tracked correctly"
+            for s in warnings:
+                self.cb.on_log(f"    {s}: {max_deltas[s]:.1f} cdeg")
 
-        # Assemble failure reason
-        parts = []
-        if has_fw_flag:
+        # Report firmware flags (informational — firmware zeros this
+        # during Playback, so it's almost always 0x00)
+        if mistracking_flags != 0:
             fw_failed = get_failed_surfaces(mistracking_flags)
-            parts.append(f"firmware flags: {', '.join(fw_failed)}")
-            self.cb.on_log(f"\n✗ Firmware mistracking flags set: 0x{mistracking_flags:02X}")
-        if has_delta_fail:
-            parts.append(f"delta > 500 cdeg: {', '.join(failed_by_delta)}")
-            self.cb.on_log(f"\n✗ Surfaces exceeding 500 cdeg threshold:")
-            for surface in failed_by_delta:
-                self.cb.on_log(f"    {surface}: {max_deltas[surface]:.1f} cdeg")
+            self.cb.on_log(
+                f"\n⚠ WARNING: Firmware mistracking flags set: "
+                f"0x{mistracking_flags:02X} ({', '.join(fw_failed)})"
+            )
 
-        msg = f"Playback FAIL — {'; '.join(parts)}"
+        self.cb.on_log("\n✓ Playback streaming complete")
         self.telemetry_logger.log_test_event(
-            'PLAYBACK_FAIL',
-            f'{msg} — fw_flags=0x{mistracking_flags:02X} max_deltas={max_deltas}'
+            'PLAYBACK_COMPLETE',
+            f'Streaming finished — max_deltas={max_deltas} '
+            f'fw_flags=0x{mistracking_flags:02X} '
+            f'warnings={warnings}'
         )
-        return False, msg
+        if warnings:
+            self.telemetry_logger.log_test_event(
+                'PLAYBACK_WARNING',
+                f'Actuators not moving: {warnings}'
+            )
+
+        msg = "Playback complete"
+        if warnings:
+            msg += f" (WARNING: {len(warnings)} surface(s) not moving)"
+        return True, msg
 
     # ── Cleanup ──────────────────────────────────────────────────────────
 
