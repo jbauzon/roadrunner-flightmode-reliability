@@ -1,161 +1,133 @@
 # Architecture
 
-> **Note:** the primary operator interface is now the **web GUI**
-> (`ws_server.py` + `web/`). The PyQt5 desktop GUI described in some
-> layer diagrams below has been archived to `archive/desktop_gui/`.
-> The backend layers (`rr_test/execution/`, `rr_test/vehicle/`,
-> `rr_test/hardware/`, `rr_test/sim/`) remain shared between the
-> retired desktop GUI and the current web GUI.
-
-
 ## Overview
 
-Production-grade automated reliability test system for the Roadrunner UAV flight controller actuation subsystem. Three major components:
-
-1. **Test Software** — PyQt5 operator console that connects to vehicles over UDP MAVLink and runs IBIT / Flight Profile Playback tests
-2. **SITL Simulator** — Firmware-accurate vehicle simulator for development and validation without hardware
-3. **Automated Test Tools** — TCP remote control, headless screenshot capture, parameterized test suites
-
-## Layer Architecture
+The test system has 5 layers. Data flows top-to-bottom for commands,
+bottom-to-top for telemetry:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  ui/                     GUI Layer (PyQt5)          │
-│  main_window.py          Operator console           │
-│  widgets.py              Reusable components        │
-│  command_server.py       TCP remote control          │
-│  theme.py                Dark theme stylesheet       │
-├─────────────────────────────────────────────────────┤
-│  rr_test/execution/                Test Execution Layer        │
-│  executor.py             IBIT + Playback executors  │
-│  logger.py               Telemetry CSV logging      │
-├─────────────────────────────────────────────────────┤
-│  rr_test/vehicle/                Vehicle Communication       │
-│  constants.py            Enums, constants (SSoT)    │
-│  connection.py           MAVLink UDP + UUT model    │
-│  preparation.py          State machine management    │
-├─────────────────────────────────────────────────────┤
-│  rr_test/hardware/               Hardware Abstraction        │
-│  daq.py                  NI-DAQmx relay control     │
-├─────────────────────────────────────────────────────┤
-│  rr_test/sim/                    SITL Simulator (standalone) │
-│  vehicle.py              State machine + IBIT       │
-│  telemetry.py            12 MAVLink message types   │
-│  models/                 Servo, battery, monitors   │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  Web GUI (React + TypeScript)               │  web/src/
+│  Browser at http://localhost:18890          │
+└────────────────────┬────────────────────────┘
+                     │ WebSocket (ws://localhost:18889)
+                     │ JSON messages: cmd.* (down), telemetry.* (up)
+┌────────────────────┴────────────────────────┐
+│  Server (rr_test/server/)                   │
+│  app_state.py    — shared mutable state     │
+│  broadcaster.py  — WS push to all clients   │
+│  handlers.py     — 14 cmd.* handlers        │
+│  callbacks.py    — executor → WS bridge     │
+│  server.py       — HTTP + WS bootstrap      │
+└────────────────────┬────────────────────────┘
+                     │ Python callbacks (ExecutorCallbacks)
+                     │ Runs on a background thread per UUT
+┌────────────────────┴────────────────────────┐
+│  Execution (rr_test/execution/)             │
+│  ibit_executor.py     — IBIT test runner    │
+│  playback_executor.py — Playback streamer   │
+│  base_executor.py     — shared mixin        │
+│  recovery.py          — 3-strike + classify │
+│  logger.py            — events.csv + telem  │
+└───────┬──────────────────────┬──────────────┘
+        │                      │
+┌───────┴──────────┐  ┌───────┴──────────┐
+│ Vehicle           │  │ Hardware          │
+│ (rr_test/vehicle/)│  │ (rr_test/hardware)│
+│ connection.py     │  │ daq.py — NI-DAQmx │
+│ constants.py      │  │ relay control     │
+│ preparation.py    │  └──────────────────┘
+│ ARM/DISARM/modes  │
+└───────┬──────────┘
+        │ UDP MAVLink (Pandion dialect 102, port 13002)
+┌───────┴──────────────────────────────────────┐
+│  Roadrunner Vehicle (real or SITL sim)        │
+│  SITL: rr_test/sim/vehicle.py                │
+└──────────────────────────────────────────────┘
 ```
 
-**Dependency rules:**
-- `archive/desktop_gui/ui/` (deprecated) imports from `rr_test/execution/`, `rr_test/vehicle/`, `rr_test/hardware/`
-- `rr_test/execution/` imports from `rr_test/vehicle/` (never from `archive/desktop_gui/ui/` (deprecated))
-- `rr_test/vehicle/` imports nothing from other project packages
-- `rr_test/hardware/` imports nothing from other project packages
-- `rr_test/sim/` imports enums from `vehicle/constants` but is otherwise standalone
+## Reading order (for a new developer)
 
-## Constants — Single Source of Truth
+1. **`rr_test/vehicle/constants.py`** — all enums, mode IDs, servo limits,
+   monitor IDs.  This is the single source of truth that everything else
+   references.
 
-`rr_test/vehicle/constants.py` defines all enums, lookup tables, and named constants used throughout the codebase:
+2. **`rr_test/vehicle/connection.py`** — how we connect to a vehicle via
+   UDP MAVLink.  `connect_to_vehicle()` is the entry point.  `UUT` is the
+   data model for a unit under test.
 
-| What | Where | Example |
-|------|-------|---------|
-| Actuation modes | `ActuationMode` IntEnum | `ActuationMode.IBIT`, `.OPERATE` |
-| IBIT substates | `IBITSubstate` IntEnum | `IBITSubstate.ELEVONS`, `.COMPLETE` |
-| Flight regimes | `FlightRegime` IntEnum | `FlightRegime.GROUND_ARMED` |
-| MAVLink message types | `MsgType` class | `MsgType.ACTUATION_SYS_STATUS` |
-| UUT status values | `UUTStatus` class | `UUTStatus.READY`, `.FAILED_PERMANENT` |
-| Test mode identifiers | `TestMode` class | `TestMode.IBIT`, `.PLAYBACK` |
-| Mistracking flags | `MISTRACKING_FLAG_NAMES` dict | Bitmask → surface name |
-| Timeouts and thresholds | `DEFAULT_*` constants | `DEFAULT_IBIT_TIMEOUT = 300.0` |
+3. **`rr_test/execution/base_executor.py`** — the shared mixin that all
+   test executors inherit from.  Handles connection, heartbeat, relay,
+   dispatch worker, emergency disable.
 
-The sim layer imports these via `sim/config/defaults.py`, which creates backward-compatible aliases (e.g., `IBITSubstate.SETTLE` → production `IBITSubstate.WAIT_FOR_SETTLE`).
+4. **`rr_test/execution/ibit_executor.py`** — the IBIT test runner.
+   `run()` is the entry point.  Calls preparation → ARM → mode transitions
+   → IBIT monitor loop → evaluate → cleanup.
 
-## Test Sequence (Single UUT)
+5. **`rr_test/execution/recovery.py`** — failure classification.
+   `classify(error_message)` returns a `RecoveryDecision` that tells the
+   batch loop whether to retry, skip, reconnect, or wait.
 
-```
-1. CONNECT (relay OFF)
-   MAVLink UDP connection + GCS heartbeat at 1 Hz
-   │
-2. STATE CAPTURE
-   Query USE_NEST, armed state, actuation mode, safety monitors
-   │
-3. PRE-FLIGHT PREPARATION
-   Disable USE_NEST → ARM (clear monitors iteratively) →
-   Wait for OPERATE → Clear monitors → Enter PLAYBACK →
-   Clear monitors → Enter IBIT
-   │
-4. ENABLE RELAY (apply load)
-   │
-5. EXECUTE IBIT
-   Monitor substates: BEGIN → SETTLE → ELEVONS → RUDDERS → TVC → COMPLETE
-   Detect completion by mode transition: IBIT → OPERATE
-   Evaluate mistracking bitmask for PASS/FAIL
-   │
-6. DISABLE RELAY (remove load)
-   │
-7. RESTORE STATE
-   Ensure OPERATE → Clear overrides → DISARM (if needed) → OFF
-   │
-8. VERIFY
-   Compare final state to initial capture
-   │
-9. NEXT UUT (or batch complete → generate report)
-```
+6. **`rr_test/server/handlers.py`** — the 14 WebSocket command handlers.
+   `_run_batch()` is the round-robin batch loop.  This is where
+   pass/fail tracking and 3-strike logic lives.
 
-## Threading Model
+7. **`rr_test/server/callbacks.py`** — `wire_callbacks()` bridges executor
+   events (on_armed_state, on_actuator_feedback, on_ibit_state, etc.) to
+   WebSocket broadcasts that the React frontend reducer consumes.
+
+8. **`web/src/hooks/use-websocket.ts`** — the React reducer.  Every
+   WebSocket event type has a `case` here that updates the UI state.
+
+## Threading model
+
+During an active batch test, these threads are running per UUT:
 
 ```
-Main Thread (Qt Event Loop)
-├── UI updates, user interaction, timer callbacks
-│
-Test Executor Thread (QThread)
-├── Runs complete test sequence per UUT
-├── Emits Qt signals for UI updates
-│
-Background Workers (daemon threads, spawned by executor)
-├── Heartbeat sender        1 Hz GCS heartbeat
-├── Telemetry receiver      Processes incoming MAVLink messages
-├── Statistics updater      Metrics every 2 seconds
-├── Connection health       Checks heartbeat reception
-├── Log size monitor        Tracks CSV file growth
-└── Test duration monitor   Updates elapsed time display
+Main thread (asyncio)     — WebSocket server + HTTP server + batch ticker
+Batch thread              — _run_batch() round-robin loop
+  Per-UUT (inside batch):
+    Heartbeat thread      — 1 Hz GCS heartbeat sender
+    Dispatch thread       — recv loop, routes messages to per-type queues
+    Health monitor thread — checks heartbeat age every 5s
 ```
 
-**Thread safety:** All MAVLink `recv_match`/`send` calls go through `master_lock`. GUI updates flow through `pyqtSignal` from worker threads to the main thread.
+All MAVLink sends go through `master_lock`.  The dispatch thread is the
+sole reader (no lock needed for recv).  UI callbacks use
+`asyncio.run_coroutine_threadsafe` to bridge from the batch thread to
+the asyncio event loop.
 
-## SITL Simulator
+## Key design decisions
 
-The sim implements firmware-accurate behavior from reading the actual Pandion source (`actuation.c`):
+- **Relays are test LOAD relays, not vehicle power.**  The vehicle is
+  powered by a separate bench supply.  Relay ON = actuators under load.
+  Relay OFF = no load.  The test software cannot power-cycle the vehicle.
 
-- **State machine**: OFF → OPERATE → PLAYBACK → IBIT with proper transition rules
-- **IBIT profiles**: `ibit_linear_function()` triangle waves for elevons/rudders, circular/square patterns for TVC
-- **Mistracking detection**: 500 cdeg threshold, 5-cycle consecutive counter for TVC, instant for elevons/rudders
-- **Phase timing**: SETTLE=500ms, ELEVON=5000ms, RUDDERS=10000ms, TVC=5000ms
-- **Servo dynamics**: First-order lag, rate limiting, thermal protection
-- **Battery model**: 7S LiPo with voltage sag under load
-- **Monitor system**: Boot monitors, post-ARM monitors, override/clear commands
-- **Telemetry gating**: Vehicle only sends telemetry after first GCS heartbeat
-- **Fault injection**: 10 pre-built scenarios (HEALTHY, ELEVON_FAIL, TVC_FAIL, etc.)
+- **100 Hz playback uses absolute-time scheduling** to prevent drift.
+  Frame N's target time is `start + N * 10ms`, not `last_frame + 10ms`.
 
-The sim uses `udpin:0.0.0.0:PORT` (binds and listens) while the test software uses `udpout:127.0.0.1:PORT` (patched at runtime by `run_sim.py`). This avoids Windows `WinError 10054` socket poisoning.
+- **IBIT completion is detected by mode transition** (IBIT→OPERATE), not
+  by substate reaching COMPLETE.  The firmware may zero the mistracking
+  bitmask on the transition message, so we OR-accumulate flags throughout.
 
-## Key Design Decisions
+- **Recovery manager classifies failures** into SOFT (auto-retry), HARD
+  (skip UUT), and FATAL (counts toward 3-strike permanent skip).  Only
+  FATAL failures increment `consecutive_failures`.
 
-**Why PLAYBACK before IBIT?**
-Vehicle firmware requires OPERATE → PLAYBACK → IBIT. Direct OPERATE → IBIT is not permitted.
+- **`RR_SITL_MODE=1` env var** enables loopback + udpout for SITL.
+  Must be set before importing `rr_test.execution`.  Production never
+  sets this.
 
-**Why continuous monitor clearing?**
-Monitors can set asynchronously. Clearing once may not be sufficient. Continuous clearing for 5 seconds ensures all are cleared before mode transition.
+## Logs
 
-**Why detect IBIT completion by mode transition?**
-The vehicle may run multiple IBIT cycles. Substate 5 (COMPLETE) may appear multiple times. Only mode transition IBIT → OPERATE confirms true completion.
+```
+logs/<date>/<serial>/events.csv       — one row per test event
+logs/<date>/<serial>/telemetry.csv    — 5 Hz servo data during test
+errors/error_log.jsonl                — persistent error log (rotates at 10 MB)
+```
 
-**Why does the sim never modify production code?**
-`run_sim.py` patches `connect_to_vehicle` at runtime to bypass the loopback IP check and use `udpout`. Production code in `rr_test/vehicle/`, `rr_test/execution/`, `rr_test/hardware/`, and `archive/desktop_gui/ui/` (deprecated) is never changed to accommodate the simulator.
+## Firmware reference
 
-## Safety Features
-
-1. **Relay control**: All relays LOW on startup, shutdown, error, and emergency stop. 5-attempt retry with verification on relay disable.
-2. **Connection monitoring**: Heartbeat timeout detection (3s), DAQ health checks every 60s.
-3. **State management**: Vehicle restored to original state after every test. Monitors cleared before disarm.
-4. **Failure handling**: Up to 3 retries per UUT. Permanently failed UUTs skipped. Emergency stop instantly disables all relays.
-5. **Sleep prevention**: Windows `SetThreadExecutionState` prevents system sleep during long tests.
+All timing constants and thresholds are from the Pandion firmware source
+(`pandion_roadrunner/vehicle/actuation/actuation.c`).  See
+`docs/TEST_FLOW.md` for the complete timing table.

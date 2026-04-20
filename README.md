@@ -91,17 +91,19 @@ archive/            Deprecated PyQt5 desktop GUI (reference only)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup and test commands.
 
+Start here to understand the codebase:
+
+1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system layers, reading order, threading model
+2. [docs/TEST_FLOW.md](docs/TEST_FLOW.md) — step-by-step test sequence with ASCII diagrams
+3. [tests/README.md](tests/README.md) — which test to run when
+4. [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) — verification status
+5. [CHANGELOG.md](CHANGELOG.md) — release history
+
 To run without hardware (simulator mode):
 
 ```
 start.bat --sitl
 ```
-
-## Docs
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
-- [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) — verification status
-- [CHANGELOG.md](CHANGELOG.md) — release history
 
 ## License
 
