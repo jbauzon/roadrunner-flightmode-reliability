@@ -643,8 +643,21 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         """
         Evaluate playback pass/fail.
 
-        Pass criteria (mirrors Pandion IBIT):
-          - No mistracking flags set in actuation_ibit_mon_status
+        The firmware only populates ``actuation_ibit_mon_status`` during
+        IBIT mode (see ``send_actuation_system_status_packet`` in
+        ``vehicle/mavlink/mavlink.c``) — outside IBIT, that field is
+        reset to ``PANDION_RR_IBIT_STATUS_NONE`` each cycle.  So during
+        Playback we can't rely on the firmware bitmask for PASS/FAIL.
+
+        Instead we mirror the firmware's own threshold check ourselves:
+        any surface whose peak command-vs-feedback delta exceeded
+        500 cdeg (= ``IBIT_TVC_SERVO_TRACKING_MAX_DELTA_CDEG`` in
+        ``vehicle/actuation/actuation.c``) is flagged.
+
+        Pass criteria:
+          - Firmware bitmask is 0 (always true in Playback; check
+            kept for defense in depth)
+          - AND all ``max_deltas[surface]`` are <= 500 cdeg
 
         Returns:
             (success: bool, message: str)
@@ -653,34 +666,48 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         self.cb.on_log("PLAYBACK RESULT EVALUATION")
         self.cb.on_log("=" * 60)
 
-        # Log max deltas
-        self.cb.on_log("Max command-feedback deltas:")
-        for surface, delta in max_deltas.items():
-            self.cb.on_log(f"  {surface:25s}: {delta:.1f} cdeg")
+        THRESHOLD_CDEG = 500.0  # matches firmware IBIT_TVC_SERVO_TRACKING_MAX_DELTA_CDEG
 
-        # Evaluate mistracking flags
-        if mistracking_flags == 0:
-            self.cb.on_log("\n✓ PASS — No mistracking flags set")
+        # Log max deltas and identify surfaces exceeding threshold
+        self.cb.on_log("Max command-feedback deltas (threshold: 500 cdeg):")
+        failed_by_delta = []
+        for surface, delta in max_deltas.items():
+            marker = "  FAIL" if delta > THRESHOLD_CDEG else "    ok"
+            self.cb.on_log(f"  {marker}  {surface:25s}: {delta:.1f} cdeg")
+            if delta > THRESHOLD_CDEG:
+                failed_by_delta.append(surface)
+
+        # Evaluate both signals
+        has_fw_flag = mistracking_flags != 0
+        has_delta_fail = bool(failed_by_delta)
+
+        if not has_fw_flag and not has_delta_fail:
+            self.cb.on_log("\n✓ PASS — All surfaces tracked within 500 cdeg threshold")
             self.telemetry_logger.log_test_event(
                 'PLAYBACK_PASS',
                 f'All surfaces tracked correctly — max_deltas={max_deltas}'
             )
             return True, "Playback PASS — all surfaces tracked correctly"
-        else:
-            failed_surfaces = get_failed_surfaces(mistracking_flags)
-            msg = f"Playback FAIL — mistracking on: {', '.join(failed_surfaces)}"
-            self.cb.on_log(f"\n✗ FAIL — {msg}")
-            self.cb.on_log(
-                f"  Mistracking flags: 0x{mistracking_flags:02X}"
-            )
-            for surface in failed_surfaces:
-                self.cb.on_log(f"  ✗ {surface}")
-            self.telemetry_logger.log_test_event(
-                'PLAYBACK_FAIL',
-                f'{msg} — flags=0x{mistracking_flags:02X} '
-                f'max_deltas={max_deltas}'
-            )
-            return False, msg
+
+        # Assemble failure reason
+        parts = []
+        if has_fw_flag:
+            from rr_test.vehicle.constants import get_failed_surfaces
+            fw_failed = get_failed_surfaces(mistracking_flags)
+            parts.append(f"firmware flags: {', '.join(fw_failed)}")
+            self.cb.on_log(f"\n✗ Firmware mistracking flags set: 0x{mistracking_flags:02X}")
+        if has_delta_fail:
+            parts.append(f"delta > 500 cdeg: {', '.join(failed_by_delta)}")
+            self.cb.on_log(f"\n✗ Surfaces exceeding 500 cdeg threshold:")
+            for surface in failed_by_delta:
+                self.cb.on_log(f"    {surface}: {max_deltas[surface]:.1f} cdeg")
+
+        msg = f"Playback FAIL — {'; '.join(parts)}"
+        self.telemetry_logger.log_test_event(
+            'PLAYBACK_FAIL',
+            f'{msg} — fw_flags=0x{mistracking_flags:02X} max_deltas={max_deltas}'
+        )
+        return False, msg
 
     # ----------------------------------------------------------
     # Power cycle helper
