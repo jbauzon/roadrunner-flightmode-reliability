@@ -197,20 +197,20 @@ class UUTPreparation:
         except Exception as e:
             return False, f"State capture failed: {str(e)}"
     
-    def prepare_for_playback(self, power_cycle_fn: Any) -> Tuple[bool, str]:
+    def prepare_for_playback(self) -> Tuple[bool, str]:
         """
         Prepare UUT for flight profile playback.
 
         Sequence:
           1. Set CLASSIC_MODE_EN = 1  (if not already)
           2. Set USE_NEST = 0         (if not already)
-          3. Power cycle via relay    (required for CLASSIC_MODE_EN to take effect)
-          4. Wait for reconnect
-          5. ARM → OPERATE → PLAYBACK (stay in PLAYBACK — do NOT transition to IBIT)
+          3. ARM → OPERATE → PLAYBACK
 
-        Args:
-            power_cycle_fn: Callable() that power-cycles the vehicle via the relay
-                            and waits until it is back online. Should raise on failure.
+        Note: CLASSIC_MODE_EN requires a vehicle reboot to take effect.
+        The test software does not control vehicle input power — the
+        operator must ensure the vehicle has been power-cycled at least
+        once after CLASSIC_MODE_EN was first set.  On subsequent runs
+        the parameter is already persisted in firmware flash.
 
         Returns:
             (success: bool, message: str)
@@ -238,19 +238,7 @@ class UUTPreparation:
             else:
                 self.cb.on_log("✓ USE_NEST already 0, skipping")
 
-            # Step 3: Power cycle (CLASSIC_MODE_EN only takes effect after reboot)
-            self.cb.on_log(
-                "\n→ Power cycling vehicle for CLASSIC_MODE_EN to take effect..."
-            )
-            if self.telemetry_logger:
-                self.telemetry_logger.log_test_event(
-                    'POWER_CYCLE',
-                    'Power cycling vehicle for CLASSIC_MODE_EN to take effect'
-                )
-            power_cycle_fn()
-            self.cb.on_log("  ✓ Power cycle complete, vehicle reconnected")
-
-            # Step 4: ARM
+            # Step 3: ARM
             success, msg = self._arm_with_monitor_management()
             if not success:
                 raise Exception(f"Failed to ARM: {msg}")

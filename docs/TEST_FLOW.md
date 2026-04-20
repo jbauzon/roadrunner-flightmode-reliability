@@ -168,9 +168,8 @@ Same preparation as IBIT (ARM → OPERATE → PLAYBACK), plus:
    │         PLAYBACK PREPARATION                  │
    │                                               │
    │  Set CLASSIC_MODE_EN = 1                      │
-   │  Operator power-cycles vehicle manually       │
-   │  (bench PSU or battery — software prompts)    │
-   │  Re-ARM → OPERATE → PLAYBACK                 │
+   │  Set USE_NEST = 0                             │
+   │  ARM → OPERATE → PLAYBACK                    │
    └──────────────────┬──────────────────────────┘
                       ▼
    ┌──────────────────────────────────────────────┐

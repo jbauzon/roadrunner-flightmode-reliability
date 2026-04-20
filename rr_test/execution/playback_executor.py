@@ -27,12 +27,13 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
     Sequence:
       1. Connect to vehicle
-      2. Set CLASSIC_MODE_EN=1, USE_NEST=0, power cycle
+      2. Set CLASSIC_MODE_EN=1, USE_NEST=0
       3. ARM -> OPERATE -> PLAYBACK
-      4. Stream PANDION_RR_PLAYBACK_COMMAND at 100 Hz from CSV
-      5. Log command vs feedback delta per surface per frame
-      6. Evaluate pass/fail against mistracking flags
-      7. Restore vehicle state (CLASSIC_MODE_EN=0, power cycle)
+      4. Enable load relay
+      5. Stream PANDION_RR_PLAYBACK_COMMAND at 100 Hz from CSV
+      6. Disable load relay
+      7. Evaluate pass/fail (500 cdeg threshold per surface)
+      8. Restore vehicle state (CLASSIC_MODE_EN=0, DISARM)
     """
 
     # Playback type constants
@@ -97,9 +98,7 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             if not prep_ok:
                 raise Exception(prep_msg)
 
-            prep_ok, prep_msg = self.preparation.prepare_for_playback(
-                self._power_cycle
-            )
+            prep_ok, prep_msg = self.preparation.prepare_for_playback()
             if not prep_ok:
                 raise Exception(prep_msg)
 
@@ -711,71 +710,6 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         )
         return False, msg
 
-    # ----------------------------------------------------------
-    # Power cycle helper
-    # ----------------------------------------------------------
-
-    def _power_cycle(self):
-        """
-        Power cycle the vehicle.
-
-        The test software controls LOAD relays, not vehicle input power.
-        The operator must manually power-cycle the vehicle (e.g. cycle
-        the bench power supply or unplug/replug the battery).
-
-        This method:
-          1. Prompts the operator via the log panel
-          2. Waits for the vehicle MAVLink heartbeat to drop and return
-             (confirming the vehicle actually rebooted)
-
-        If the vehicle heartbeat never drops (operator didn't cycle power),
-        we proceed anyway — CLASSIC_MODE_EN may or may not have taken
-        effect depending on the firmware's param persistence behavior.
-        """
-        self.cb.on_log("")
-        self.cb.on_log("=" * 50)
-        self.cb.on_log("  OPERATOR ACTION REQUIRED")
-        self.cb.on_log("  Power-cycle the vehicle now.")
-        self.cb.on_log("  (Cycle bench power supply or unplug/replug battery)")
-        self.cb.on_log("=" * 50)
-        self.cb.on_log("")
-        self.cb.on_log("  Waiting for vehicle to reboot (up to 30s)...")
-
-        # Wait for heartbeat to disappear (vehicle powering off)
-        hb_lost = False
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            hb = self._wait_for_message(MsgType.HEARTBEAT, timeout=2.0)
-            if hb is None:
-                hb_lost = True
-                self.cb.on_log("  Vehicle heartbeat lost — power cycle detected")
-                break
-
-        if not hb_lost:
-            self.cb.on_log(
-                "  ⚠ Vehicle heartbeat never dropped — "
-                "proceeding (operator may not have cycled power)"
-            )
-
-        # Wait for heartbeat to return (vehicle powering back on)
-        self.cb.on_log("  Waiting for vehicle heartbeat after reboot...")
-        timeout = 30.0
-        start = time.time()
-        while time.time() - start < timeout:
-            hb = self._wait_for_message(MsgType.HEARTBEAT, timeout=2.0)
-            if hb:
-                elapsed = time.time() - start
-                self.cb.on_log(
-                    f"  ✓ Heartbeat received after {elapsed:.1f}s"
-                )
-                self.cb.on_log("  ✓ Power cycle complete, vehicle reconnected")
-                return
-
-        raise Exception(
-            f"Vehicle did not respond after power cycle "
-            f"(no heartbeat within {timeout}s)"
-        )
-
     # ── Cleanup ──────────────────────────────────────────────────────────
 
     def _cleanup(self):
@@ -790,8 +724,7 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
                 )
                 self.preparation._set_param('CLASSIC_MODE_EN', 0)
                 self.cb.on_log(
-                    "  ✓ CLASSIC_MODE_EN restored — power cycle vehicle "
-                    "before operational use"
+                    "  ✓ CLASSIC_MODE_EN restored to 0"
                 )
             except Exception as e:
                 self.cb.on_log(
