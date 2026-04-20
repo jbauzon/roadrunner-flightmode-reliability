@@ -161,7 +161,7 @@ def spawn_extra_sims() -> list:
     They share the walkthrough's Python process with their own UDP sockets.
     """
     # Import here so the SITL path is set before we try to use pymavlink
-    from sim.vehicle import PandionVehicleSim
+    from rr_test.sim.vehicle import PandionVehicleSim
 
     sims = []
     for cfg in EXTRA_SIM_CONFIGS:

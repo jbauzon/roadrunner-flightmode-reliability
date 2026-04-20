@@ -51,7 +51,7 @@ import pymavlink.dialects.v10 as _v10
 setattr(_v10, 'pandion_vehicle_roadrunner', _d)
 
 from pymavlink import mavutil
-from sim.vehicle import PandionVehicleSim
+from rr_test.sim.vehicle import PandionVehicleSim
 
 PASS_PORT = 14501
 FAIL_PORT = 14502

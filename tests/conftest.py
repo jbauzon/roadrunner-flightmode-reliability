@@ -15,7 +15,7 @@ instead of the former boilerplate::
 
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, ROOT)
-    from vehicle.connection import UUT
+    from rr_test.vehicle.connection import UUT
 """
 from __future__ import annotations
 

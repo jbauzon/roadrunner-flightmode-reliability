@@ -43,7 +43,7 @@ sys.modules['pymavlink.dialects.v10.pandion_vehicle_roadrunner'] = _d
 import pymavlink.dialects.v10 as _v10
 setattr(_v10, 'pandion_vehicle_roadrunner', _d)
 from pymavlink import mavutil
-from sim.vehicle import PandionVehicleSim
+from rr_test.sim.vehicle import PandionVehicleSim
 
 BASE_PORT = 39800  # Each test gets its own port
 

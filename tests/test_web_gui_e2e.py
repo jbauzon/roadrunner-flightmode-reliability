@@ -74,7 +74,7 @@ def section(name: str) -> None:
 
 def run_sitl_firmware_tests() -> None:
     """Launch SITL sims and verify the Pandion IBIT state machine."""
-    from sim.vehicle import PandionVehicleSim
+    from rr_test.sim.vehicle import PandionVehicleSim
     from pymavlink import mavutil
 
     section("Part 1: SITL Firmware Verification (pymavlink direct)")
