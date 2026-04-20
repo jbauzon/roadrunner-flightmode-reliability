@@ -131,6 +131,10 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             # Enable relay (shared)
             self._enable_relay(label="IBIT test")
             
+            # Start logging telemetry during the active test phase
+            if self.telemetry_logger:
+                self.telemetry_logger.start_telemetry_stream()
+
             # Execute IBIT test
             self.execute_ibit_test()
             
@@ -527,6 +531,10 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
     def _disable_relay_after_ibit(self):
         """Disable the load relay after successful IBIT completion."""
+        # Stop telemetry logging (test phase is over)
+        if self.telemetry_logger:
+            self.telemetry_logger.stop_telemetry_stream()
+
         self.cb.on_log("\n" + "="*60)
         self.cb.on_log("IBIT COMPLETE - DISABLING LOAD RELAY")
         self.cb.on_log("="*60)

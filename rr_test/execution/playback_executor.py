@@ -108,8 +108,16 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             # supply the operator manages).
             self._enable_relay(label="playback test")
 
+            # Start logging telemetry during active streaming
+            if self.telemetry_logger:
+                self.telemetry_logger.start_telemetry_stream()
+
             # Stream profile
             mistracking_flags, max_delta = self._stream_profile(profile)
+
+            # Stop telemetry logging
+            if self.telemetry_logger:
+                self.telemetry_logger.stop_telemetry_stream()
 
             # S-13: Disable relay with failure check
             ok, disable_msg = self._set_line_with_timeout(self.uut.relay_line, False)
