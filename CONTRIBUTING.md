@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest. Here's how to get set up.
+Thanks for your interest.  Here's how to get set up.
 
 ## Development setup
 
@@ -14,18 +14,25 @@ Prerequisites:
 git clone https://github.com/jbauzon/roadrunner-flightmode-reliability.git
 cd roadrunner-flightmode-reliability
 
-python -m venv .venv
-source .venv/bin/activate          # Linux/macOS
-# .venv\Scripts\activate            # Windows
-pip install -e ".[dev,hardware]"   # drop 'hardware' on non-Windows
+# Install the package + dev tools
+pip install --user -e ".[dev,hardware]"   # drop 'hardware' on non-Windows
 
+# Build the web frontend
 cd web && npm install && npm run build && cd ..
+```
+
+If you prefer a virtualenv for isolation:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # or .venv\Scripts\activate on Windows
+pip install -e ".[dev,hardware]"
 ```
 
 ## Run the server
 
 ```bash
-python ws_server.py --sitl        # SITL (no hardware)
+python ws_server.py --sitl         # SITL (no hardware)
 python ws_server.py                # Real hardware
 ```
 

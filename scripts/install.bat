@@ -1,6 +1,6 @@
 @echo off
-REM Fresh-computer installer for Roadrunner Flight Mode IBIT Test System.
-REM Creates a venv, installs Python deps, and builds the web frontend.
+REM One-time installer.  Installs Python deps and builds the web frontend.
+REM No virtualenv — deps go into the user's Python install (pip --user).
 
 setlocal EnableDelayedExpansion
 cd /d "%~dp0\.."
@@ -23,20 +23,9 @@ if errorlevel 1 (
 for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PY_VER=%%v
 echo [OK]    Python %PY_VER% detected
 
-REM --- Create venv --------------------------------------------------------
-if not exist ".venv\Scripts\python.exe" (
-    echo [INFO]  Creating virtual environment .venv ...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo [ERROR] Failed to create virtual environment.
-        pause
-        exit /b 1
-    )
-)
-
-REM --- Install Python deps (verbose: show progress and errors) ------------
+REM --- Install Python deps (user-site, no venv) ---------------------------
 echo [INFO]  Upgrading pip...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
+python -m pip install --user --upgrade pip
 if errorlevel 1 (
     echo [ERROR] Failed to upgrade pip.
     pause
@@ -45,53 +34,50 @@ if errorlevel 1 (
 
 echo [INFO]  Installing Roadrunner test package and dependencies...
 echo         (This needs internet access; first run takes ~1-2 minutes.)
-".venv\Scripts\python.exe" -m pip install -e ".[hardware]"
+python -m pip install --user -e ".[hardware]"
 if errorlevel 1 (
     echo.
-    echo [ERROR] pip install failed.
-    echo         Common causes:
+    echo [ERROR] pip install failed.  Common causes:
     echo         - No internet connection
     echo         - Corporate proxy blocking PyPI
-    echo         - pyproject.toml syntax error
     pause
     exit /b 1
 )
 echo [OK]    Python package installed
 
-REM --- Verify the package actually imports --------------------------------
-".venv\Scripts\python.exe" -c "import rr_test; import pymavlink; import websockets" 2>nul
+REM --- Verify imports -----------------------------------------------------
+python -c "import rr_test, pymavlink, websockets" 2>nul
 if errorlevel 1 (
-    echo [ERROR] Import check failed after install.  Something went wrong.
-    echo         Try running: .venv\Scripts\python.exe -c "import rr_test"
+    echo [ERROR] Import check failed after install.
+    echo         Try:  python -c "import rr_test"
     echo         and fix the error shown.
     pause
     exit /b 1
 )
 echo [OK]    Core imports verified (rr_test, pymavlink, websockets)
 
-REM --- Check NI-DAQmx (optional, for real hardware) -----------------------
-".venv\Scripts\python.exe" -c "import nidaqmx" >nul 2>&1
+REM --- NI-DAQmx (optional) ------------------------------------------------
+python -c "import nidaqmx" >nul 2>&1
 if errorlevel 1 (
     echo [WARN]  NI-DAQmx Python binding not importable.
-    echo         SITL mode works without it: start.bat --sitl
+    echo         SITL mode works without it:  start.bat --sitl
     echo         For real hardware, install NI-DAQmx driver from:
     echo         https://www.ni.com/en-us/support/downloads/drivers/download.ni-daq-mx.html
 ) else (
     echo [OK]    NI-DAQmx Python binding imports
 )
 
-REM --- Check Node.js + build frontend -------------------------------------
+REM --- Build the web frontend ---------------------------------------------
 where node >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Node.js not found on PATH.
     echo         Install Node.js 20 LTS from https://nodejs.org/
-    echo         The web frontend cannot be built without Node.
     pause
     exit /b 1
 )
 
 if not exist "web\dist\index.html" (
-    echo [INFO]  Building web frontend ^(may take 30-60 seconds^)...
+    echo [INFO]  Building web frontend (may take 30-60 seconds)...
     pushd web
     call npm install
     if errorlevel 1 (
@@ -109,13 +95,13 @@ if not exist "web\dist\index.html" (
     )
     popd
 )
-echo [OK]    Web frontend built ^(web\dist\^)
+echo [OK]    Web frontend built (web\dist\)
 
 echo.
 echo ============================================================
 echo   Installation complete.
 echo.
-echo   Run:  start.bat          (production, needs NI-DAQmx)
+echo   Run:  start.bat          (real hardware, needs NI-DAQmx)
 echo   Run:  start.bat --sitl   (simulator, no hardware)
 echo ============================================================
 exit /b 0

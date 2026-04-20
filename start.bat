@@ -2,9 +2,10 @@
 title Roadrunner Flight Test v5.0.0
 cd /d "%~dp0"
 
-REM --- Auto-install on first run or when core files missing -------
-if not exist ".venv\Scripts\python.exe" (
-    echo First run detected - installing...
+REM --- Self-heal: verify deps, auto-install if missing ------------
+python -c "import rr_test, pymavlink, websockets" >nul 2>&1
+if errorlevel 1 (
+    echo Dependencies not installed - running installer...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
@@ -12,15 +13,6 @@ if not exist ".venv\Scripts\python.exe" (
 
 if not exist "web\dist\index.html" (
     echo Web frontend missing - building...
-    call scripts\install.bat
-    if errorlevel 1 exit /b 1
-    echo.
-)
-
-REM --- Verify the venv Python actually has the deps ---------------
-".venv\Scripts\python.exe" -c "import rr_test, pymavlink, websockets" >nul 2>&1
-if errorlevel 1 (
-    echo Dependencies not fully installed - reinstalling...
     call scripts\install.bat
     if errorlevel 1 exit /b 1
     echo.
@@ -35,7 +27,7 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18890" ^| findstr "L
 )
 timeout /t 1 /nobreak >nul
 
-REM --- Parse mode --------------------------------------------------
+REM --- Parse --sitl flag ------------------------------------------
 set SITL_ARG=
 if /I "%~1"=="--sitl" set SITL_ARG=--sitl
 if /I "%~1"=="-s"     set SITL_ARG=--sitl
@@ -57,8 +49,8 @@ echo.
 REM --- Open browser after 4 seconds -------------------------------
 start "" /B cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:18890"
 
-REM --- Run the server directly with the venv Python ---------------
-".venv\Scripts\python.exe" ws_server.py %SITL_ARG%
+REM --- Run server directly on user Python (no venv) ---------------
+python ws_server.py %SITL_ARG%
 set SERVER_EXIT=%ERRORLEVEL%
 
 echo.
