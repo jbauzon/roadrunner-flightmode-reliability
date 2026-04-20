@@ -102,26 +102,27 @@ class TelemetryLogger:
     # ── Telemetry streaming ───────────────────────────────────────────
 
     def start_telemetry_stream(self) -> None:
-        """Open a new telemetry CSV for the current iteration."""
-        path = os.path.join(
-            self._dir,
-            f"telemetry_iter{self.iteration_number:03d}.csv",
-        )
-        self._telem_file = open(path, "w", newline="")
+        """Open (or append to) the telemetry CSV for today."""
+        if self._telem_active:
+            return
+        path = os.path.join(self._dir, "telemetry.csv")
+        write_header = not os.path.isfile(path)
+        self._telem_file = open(path, "a", newline="")
         self._telem_writer = csv.writer(self._telem_file)
-        self._telem_writer.writerow([
-            "Timestamp",
-            "Mode", "Substate", "Regime", "Armed",
-            "L_Elevon_cdeg", "R_Elevon_cdeg",
-            "Dorsal_Rud_cdeg", "Ventral_Rud_cdeg",
-            "L_TVC_Up_cdeg", "L_TVC_Lo_cdeg",
-            "R_TVC_Up_cdeg", "R_TVC_Lo_cdeg",
-            "L_Elev_mA", "R_Elev_mA",
-            "Dors_Rud_mA", "Vent_Rud_mA",
-            "L_TVC_Up_mA", "L_TVC_Lo_mA",
-            "R_TVC_Up_mA", "R_TVC_Lo_mA",
-            "Mistracking_Flags",
-        ])
+        if write_header:
+            self._telem_writer.writerow([
+                "Timestamp", "Iteration",
+                "Mode", "Substate", "Regime", "Armed",
+                "L_Elevon_cdeg", "R_Elevon_cdeg",
+                "Dorsal_Rud_cdeg", "Ventral_Rud_cdeg",
+                "L_TVC_Up_cdeg", "L_TVC_Lo_cdeg",
+                "R_TVC_Up_cdeg", "R_TVC_Lo_cdeg",
+                "L_Elev_mA", "R_Elev_mA",
+                "Dors_Rud_mA", "Vent_Rud_mA",
+                "L_TVC_Up_mA", "L_TVC_Lo_mA",
+                "R_TVC_Up_mA", "R_TVC_Lo_mA",
+                "Mistracking_Flags",
+            ])
         self._telem_active = True
 
     def stop_telemetry_stream(self) -> None:
@@ -155,7 +156,7 @@ class TelemetryLogger:
         flags = getattr(msg, "actuation_ibit_mon_status", 0)
 
         self._telem_writer.writerow([
-            ts, mode, sub, regime, armed,
+            ts, self.iteration_number, mode, sub, regime, armed,
             getattr(msg, "left_elevon_feedback_cdeg", ""),
             getattr(msg, "right_elevon_feedback_cdeg", ""),
             getattr(msg, "dorsal_rudder_feedback_cdeg", ""),
