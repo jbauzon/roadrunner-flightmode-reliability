@@ -90,7 +90,7 @@ Or just re-run `run_vv.bat` — it auto-cleans leftover processes.
 ### "Backend did not start within 20s"
 
 Check `vv_backend.log` in the project root for Python errors.
-Usually means a missing dependency (`pip install -r requirements.txt`).
+Usually means a missing dependency (`pip install -e .`).
 
 ### "Browser window flashes and closes"
 

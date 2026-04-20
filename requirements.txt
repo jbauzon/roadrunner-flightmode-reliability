@@ -1,5 +1,0 @@
-# Dependencies are now declared in pyproject.toml.  This file exists
-# only so that `pip install -r requirements.txt` still does the right
-# thing — it installs the package in editable mode, which resolves all
-# deps from pyproject.toml.
--e .
