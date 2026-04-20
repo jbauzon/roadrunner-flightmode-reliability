@@ -470,11 +470,16 @@ async def run(csv_duration_s: float, watch_secs: int,
             # Look for PASS or FAIL verdict in logs. SIM-001 should PASS
             # because commanded positions (±1500 cdeg) are well within
             # the 500 cdeg tracking threshold on a healthy servo model.
-            got_pass = stream.log_contains("PASS \u2014 No mistracking")
+            # Match both old "No mistracking" and new "within 500 cdeg"
+            # verdict strings since the string is internal UI copy.
+            got_pass = (
+                stream.log_contains("PASS \u2014 All surfaces tracked")
+                or stream.log_contains("PASS \u2014 No mistracking")
+            )
             got_fail = stream.log_contains("Playback FAIL")
             if got_pass:
                 assertion("SIM-001: Playback verdict = PASS",
-                          got_pass, "no mistracking flags")
+                          got_pass, "all surfaces within 500 cdeg")
             elif got_fail:
                 # SIM-002 has mistracking_flags injected, so it can fail
                 assertion("Playback verdict emitted (PASS or FAIL)",

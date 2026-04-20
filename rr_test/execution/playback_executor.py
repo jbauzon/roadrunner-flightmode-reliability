@@ -692,7 +692,6 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
         # Assemble failure reason
         parts = []
         if has_fw_flag:
-            from rr_test.vehicle.constants import get_failed_surfaces
             fw_failed = get_failed_surfaces(mistracking_flags)
             parts.append(f"firmware flags: {', '.join(fw_failed)}")
             self.cb.on_log(f"\n✗ Firmware mistracking flags set: 0x{mistracking_flags:02X}")
