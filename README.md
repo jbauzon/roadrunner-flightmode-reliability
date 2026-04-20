@@ -83,7 +83,7 @@ web/                React + TypeScript frontend
 tests/              Test suite + operator walkthroughs
 scripts/            Install helpers
 profiles/           Reference flight profile CSVs
-docs/               Architecture, V&V report, config reference
+docs/               Architecture, test flow, config reference
 archive/            Deprecated PyQt5 desktop GUI (reference only)
 ```
 
@@ -96,7 +96,6 @@ Start here to understand the codebase:
 1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system layers, reading order, threading model
 2. [docs/TEST_FLOW.md](docs/TEST_FLOW.md) — step-by-step test sequence with ASCII diagrams
 3. [tests/README.md](tests/README.md) — which test to run when
-4. [docs/V_AND_V_REPORT.md](docs/V_AND_V_REPORT.md) — verification status
 5. [CHANGELOG.md](CHANGELOG.md) — release history
 
 To run without hardware (simulator mode):
