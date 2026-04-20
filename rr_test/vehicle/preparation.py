@@ -107,7 +107,7 @@ class UUTPreparation:
             )
         
         self.initial_state = UUTState()
-        self.initial_state.timestamp = time.time()
+        self.initial_state.timestamp = time.monotonic()
         
         try:
             # Query USE_NEST parameter
@@ -250,9 +250,9 @@ class UUTPreparation:
             if self._msg_queues is not None:
                 self._msg_queues[MsgType.ACTUATION_SYS_STATUS].clear()
             operate_timeout = 10.0
-            operate_start = time.time()
+            operate_start = time.monotonic()
             in_operate = False
-            while time.time() - operate_start < operate_timeout:
+            while time.monotonic() - operate_start < operate_timeout:
                 mode_msg = self._wait_for_message(
                     MsgType.ACTUATION_SYS_STATUS, timeout=1.0
                 )
@@ -279,8 +279,8 @@ class UUTPreparation:
                 )
 
             playback_timeout = 10.0
-            playback_start = time.time()
-            while time.time() - playback_start < playback_timeout:
+            playback_start = time.monotonic()
+            while time.monotonic() - playback_start < playback_timeout:
                 mode_msg = self._wait_for_message(
                     MsgType.ACTUATION_SYS_STATUS, timeout=0.5
                 )
@@ -347,8 +347,8 @@ class UUTPreparation:
                 )
 
             timeout = 5.0
-            start = time.time()
-            while time.time() - start < timeout:
+            start = time.monotonic()
+            while time.monotonic() - start < timeout:
                 # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
                 # not standard PARAM_VALUE.  Try custom message first,
                 # then fall back to standard for SITL compatibility.
@@ -517,8 +517,8 @@ class UUTPreparation:
                 'MODE_TRANSITION_WAIT',
                 'Waiting for automatic transition to OPERATE mode'
             )
-        start = time.time()
-        while time.time() - start < timeout:
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=1.0
             )
@@ -584,9 +584,9 @@ class UUTPreparation:
             self.telemetry_logger.log_test_event(
                 event_type, f'Starting continuous monitor clearing {label}'
             )
-        start = time.time()
+        start = time.monotonic()
         clear_count = 0
-        while time.time() - start < duration:
+        while time.monotonic() - start < duration:
             current_set = self._get_current_set_monitors()
             if current_set:
                 clear_count += 1
@@ -663,16 +663,16 @@ class UUTPreparation:
         self.cb.on_log(
             f"  Monitoring mode for up to {timeout:.0f} seconds..."
         )
-        start = time.time()
+        start = time.monotonic()
         last_log_second = -1
-        while time.time() - start < timeout:
+        while time.monotonic() - start < timeout:
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=0.5
             )
             if mode_msg:
                 current_mode = mode_msg.actuation_state
                 if current_mode == target:
-                    elapsed = time.time() - start
+                    elapsed = time.monotonic() - start
                     self.cb.on_log(
                         f"  \u2713 Vehicle entered {target_name} mode "
                         f"after {elapsed:.1f} seconds"
@@ -685,7 +685,7 @@ class UUTPreparation:
                         )
                     return
                 else:
-                    elapsed = time.time() - start
+                    elapsed = time.monotonic() - start
                     current_second = int(elapsed)
                     if current_second % log_interval == 0 and current_second != last_log_second and elapsed > 0:
                         last_log_second = current_second
@@ -1022,10 +1022,10 @@ class UUTPreparation:
         arm_timeout = self.config.get('arm_timeout', 60.0)
         max_iterations = self.config.get('max_arm_iterations', 20)
         
-        start_time = time.time()
+        start_time = time.monotonic()
         iteration = 0
         
-        while iteration < max_iterations and (time.time() - start_time) < arm_timeout:
+        while iteration < max_iterations and (time.monotonic() - start_time) < arm_timeout:
             iteration += 1
             self.cb.on_log(f"\n  Iteration {iteration}/{max_iterations}:")
             
@@ -1190,10 +1190,10 @@ class UUTPreparation:
             
             # Wait for ACK with longer timeout
             timeout = 5.0
-            start_time = time.time()
+            start_time = time.monotonic()
             ack_received = False
             
-            while time.time() - start_time < timeout:
+            while time.monotonic() - start_time < timeout:
                 ack = self._wait_for_message(MsgType.COMMAND_ACK, timeout=0.5)
                 
                 if ack and ack.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
@@ -1394,9 +1394,9 @@ class UUTPreparation:
                 )
 
             timeout = 5.0
-            start_time = time.time()
+            start_time = time.monotonic()
 
-            while time.time() - start_time < timeout:
+            while time.monotonic() - start_time < timeout:
                 # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
                 # not standard PARAM_VALUE.  Try custom first, fall back
                 # to standard for SITL compatibility.
@@ -1472,11 +1472,11 @@ class UUTPreparation:
         Returns:
             bool: True if all monitors clear, False if timeout with monitors remaining
         """
-        start = time.time()
+        start = time.monotonic()
         consecutive_clean = 0
         required_clean_polls = 2  # Require 2 consecutive clean polls to confirm
 
-        while time.time() - start < timeout:
+        while time.monotonic() - start < timeout:
             current_set = self._get_current_set_monitors()
 
             if not current_set:
@@ -1503,7 +1503,7 @@ class UUTPreparation:
 
     def _capture_current_state(self, state_obj: UUTState) -> Tuple[bool, str]:
         """Helper to capture the current state into a state object"""
-        state_obj.timestamp = time.time()
+        state_obj.timestamp = time.monotonic()
 
         try:
             state_obj.use_nest = self._query_use_nest()

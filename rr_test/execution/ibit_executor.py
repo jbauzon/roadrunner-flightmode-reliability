@@ -220,7 +220,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         """Execute IBIT test - wait for COMPLETE state then return to OPERATE."""
         self._start_background_workers()
         self.cb.on_iteration(self.uut.iterations_completed)
-        test_start = time.time()
+        test_start = time.monotonic()
         self.uut.test_start_time = test_start
         self.cb.on_status(
             f"Running IBIT (Iteration {self.uut.iterations_completed})..."
@@ -277,7 +277,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         ibit_timeout = self.config.get('ibit_timeout', DEFAULT_IBIT_TIMEOUT)
         phase_timeout = self.config.get('phase_timeout', DEFAULT_PHASE_TIMEOUT)
 
-        ibit_start_time = time.time()
+        ibit_start_time = time.monotonic()
         last_logged_phase = None
 
         # Initialize mode tracking
@@ -320,7 +320,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         # If saw_ibit is False here, continue to main loop normally
 
         while self.running and time.monotonic() < self.batch_end_time:
-            now = time.time()
+            now = time.monotonic()
             # Check timeouts
             if now - ibit_start_time > ibit_timeout:
                 raise Exception(f"IBIT timeout after {ibit_timeout}s")
@@ -570,10 +570,10 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
         self.cb.on_status("Waiting for OPERATE mode...")
 
         operate_timeout = OPERATE_WAIT_TIMEOUT
-        operate_start = time.time()
+        operate_start = time.monotonic()
         returned_to_operate = False
 
-        while time.time() - operate_start < operate_timeout:
+        while time.monotonic() - operate_start < operate_timeout:
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS,
                 timeout=0.1
@@ -637,7 +637,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
 
     def _log_ibit_summary(self, test_start):
         """Record metrics and log final IBIT summary."""
-        self.uut.test_end_time = time.time()
+        self.uut.test_end_time = time.monotonic()
         test_duration = self.uut.test_end_time - test_start
         self.statistics.record_iteration_time(test_duration)
 
@@ -759,7 +759,7 @@ class UUTTestExecutor(_ExecutorMixin, threading.Thread):
             self.statistics.update_telemetry_rate()
             self.cb.on_statistics(self.statistics)
             if self.uut.test_start_time:
-                self.cb.on_test_duration(time.time() - self.uut.test_start_time)
+                self.cb.on_test_duration(time.monotonic() - self.uut.test_start_time)
     
     def _connection_health_monitor(self) -> None:
         """Monitor GCS connection health and alert on sustained link loss.

@@ -13,6 +13,31 @@ from typing import Any, Optional, Set
 
 from rr_test.vehicle.connection import UUT
 from rr_test.vehicle.constants import TestMode, UUTStatus, AlertSeverity
+
+
+# ── Sleep prevention (P-2) ───────────────────────────────────────────────
+
+def _prevent_sleep(active: bool) -> None:
+    """Prevent (or re-allow) the OS from entering sleep/hibernate.
+
+    On Windows, uses SetThreadExecutionState to keep the system awake
+    while relays may be ON.  On other platforms, this is a no-op —
+    operator must configure power management manually.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        if active:
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+            )
+        else:
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+    except Exception:
+        pass  # Not critical — just a best-effort
 from rr_test.hardware.daq import SimpleDAQController
 from rr_test.execution import UUTTestExecutor, PlaybackTestExecutor
 from rr_test.execution.callbacks import ExecutorCallbacks
@@ -187,11 +212,20 @@ class CommandHandler:
         threading.Thread(target=_bg, daemon=True, name="sitl-launcher").start()
 
     async def _add_uut(self, _ws: ServerConnection, data: dict) -> None:
+        relay = data.get("relay_line", 0)
+        # H-5: Prevent duplicate relay lines (operator wiring error)
+        existing_relays = {u.relay_line for u in self.state.uuts}
+        if relay in existing_relays:
+            self.broadcaster.broadcast("error", {
+                "message": f"Relay line {relay} is already assigned to another UUT",
+            })
+            return
+
         uut = UUT(
             data.get("serial_number", ""),
             data.get("ip_address", ""),
             data.get("port", 0),
-            data.get("relay_line", 0),
+            relay,
         )
         self.state.uuts.append(uut)
         self.broadcaster.broadcast("uut.update", {
@@ -212,6 +246,13 @@ class CommandHandler:
             })
 
     async def _remove_uut(self, _ws: ServerConnection, data: dict) -> None:
+        # O-7/U-3: Block removal during active batch — modifying the UUT
+        # list while _run_batch iterates over it causes IndexError.
+        if self.state.testing_active:
+            self.broadcaster.broadcast("error", {
+                "message": "Cannot remove UUTs while a test is running. Stop the test first.",
+            })
+            return
         idx = data.get("index", -1)
         if 0 <= idx < len(self.state.uuts):
             self.state.uuts.pop(idx)
@@ -238,6 +279,12 @@ class CommandHandler:
         self.state._batch_start_mono = time.monotonic()
         self.state.current_uut_index = -1
 
+        # P-2: Prevent OS sleep during active test.  On Windows,
+        # SetThreadExecutionState keeps the system awake.  On other
+        # platforms, this is a no-op (operator must configure power
+        # management manually).
+        _prevent_sleep(True)
+
         # Playback-mode specific parameters (ignored for IBIT).
         # If the client doesn't send playback_csv, keep whatever was set
         # by a prior cmd.upload_playback_csv so uploaded profiles aren't
@@ -257,6 +304,7 @@ class CommandHandler:
                 ),
             })
             self.state.testing_active = False
+            _prevent_sleep(False)
             self.broadcaster.broadcast("batch.status", self.state._batch_dict())
             return
 
@@ -377,8 +425,11 @@ class CommandHandler:
             self.state.current_test_executor = executor
 
             # Run synchronously on this thread (executor.run() blocks)
+            iteration_success = False
             try:
                 executor.run()
+                # If run() returned without exception, the iteration passed
+                iteration_success = True
             except Exception as e:
                 _log.exception("Executor failed for %s", uut.serial_number)
                 self.broadcaster.broadcast("test.log", {
@@ -387,18 +438,39 @@ class CommandHandler:
                     "timestamp": datetime.now().isoformat(),
                 })
 
-            # Update UUT status and iteration count after executor completes
+            # ── Update UUT pass/fail tracking (U-1 fix) ──────────────
+            if iteration_success:
+                uut.consecutive_failures = 0
+                uut.status = UUTStatus.COMPLETE  # "Complete" = last iteration PASSED
+            else:
+                uut.consecutive_failures = getattr(uut, 'consecutive_failures', 0) + 1
+                if uut.consecutive_failures >= 3:
+                    uut.status = "Failed (3x)"
+                    self.broadcaster.broadcast("test.log", {
+                        "message": (
+                            f"{uut.serial_number}: permanently skipped after "
+                            f"3 consecutive failures"
+                        ),
+                        "level": "error",
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                else:
+                    uut.status = UUTStatus.RETRY
+
+            # Broadcast updated UUT list
             self.broadcaster.broadcast("uut.update", {
                 "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
             })
 
         self.state.testing_active = False
         self.state.ibit_substate = "IDLE"
+        _prevent_sleep(False)  # P-2: allow OS sleep now that batch is done
         self.broadcaster.broadcast("ibit.state", {"substate": "IDLE"})
         self.broadcaster.broadcast("batch.status", self.state._batch_dict())
 
     async def _stop_test(self, _ws: ServerConnection, _data: dict) -> None:
         self.state.testing_active = False
+        _prevent_sleep(False)  # P-2: allow OS sleep
         if self.state.current_test_executor:
             try:
                 self.state.current_test_executor.stop()
@@ -413,6 +485,7 @@ class CommandHandler:
 
     async def _emergency_stop(self, _ws: ServerConnection, _data: dict) -> None:
         self.state.testing_active = False
+        _prevent_sleep(False)  # P-2: allow OS sleep
         # Force all relays off
         try:
             self.state.daq.set_all_low()

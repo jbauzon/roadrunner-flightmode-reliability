@@ -196,11 +196,16 @@ class SimpleDAQController:
         if not self.do_task:
             return False, "DAQ not initialized"
         
-        try:
-            self.do_task.write([False] * self.num_lines)
-            return True, "All outputs set to low"
-        except Exception as e:
-            return False, f"Error: {str(e)}"
+        # H-6: Acquire state lock so a concurrent set_line() can't
+        # overwrite the all-low state with a stale read-modify-write.
+        with self._state_lock:
+            try:
+                all_low = [False] * self.num_lines
+                self.do_task.write(all_low)
+                self._output_states = list(all_low)
+                return True, "All outputs set to low"
+            except Exception as e:
+                return False, f"Error: {str(e)}"
     
     def close(self) -> Tuple[bool, str]:
         """
