@@ -161,15 +161,20 @@ Operator double-clicks start.bat
 
 ## 4. Flight Profile Playback Flow (per UUT)
 
-Same preparation as IBIT (ARM → OPERATE → PLAYBACK), then:
+Same preparation as IBIT (ARM → OPERATE → PLAYBACK), plus:
 
 ```
    ┌──────────────────────────────────────────────┐
-   │         PLAYBACK STREAMING                    │
+   │         PLAYBACK PREPARATION                  │
    │                                               │
    │  Set CLASSIC_MODE_EN = 1                      │
-   │  Power cycle vehicle (relay off 3s, on 2s)    │
+   │  Operator power-cycles vehicle manually       │
+   │  (bench PSU or battery — software prompts)    │
    │  Re-ARM → OPERATE → PLAYBACK                 │
+   └──────────────────┬──────────────────────────┘
+                      ▼
+   ┌──────────────────────────────────────────────┐
+   │  RELAY ON ← load relay enabled               │
    │                                               │
    │  Stream PANDION_RR_PLAYBACK_COMMAND at 100 Hz │
    │  (CSV auto-resampled if recorded at != 100Hz) │

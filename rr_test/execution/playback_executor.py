@@ -103,7 +103,10 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             if not prep_ok:
                 raise Exception(prep_msg)
 
-            # Enable load relay (shared)
+            # Enable load relay before streaming.  The relay applies
+            # electrical load to the actuators during the test — it does
+            # NOT control vehicle input power (that's a separate bench
+            # supply the operator manages).
             self._enable_relay(label="playback test")
 
             # Stream profile
@@ -714,44 +717,63 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
     def _power_cycle(self):
         """
-        Power cycle the vehicle:
-          1. Disable relay (power off)
-          2. Wait 3 s
-          3. Enable relay (power on)
-          4. Wait for MAVLink heartbeat (up to 30 s)
+        Power cycle the vehicle.
+
+        The test software controls LOAD relays, not vehicle input power.
+        The operator must manually power-cycle the vehicle (e.g. cycle
+        the bench power supply or unplug/replug the battery).
+
+        This method:
+          1. Prompts the operator via the log panel
+          2. Waits for the vehicle MAVLink heartbeat to drop and return
+             (confirming the vehicle actually rebooted)
+
+        If the vehicle heartbeat never drops (operator didn't cycle power),
+        we proceed anyway — CLASSIC_MODE_EN may or may not have taken
+        effect depending on the firmware's param persistence behavior.
         """
-        self.cb.on_log("  Disabling relay (power off)...")
-        self.daq.set_line(self.uut.relay_line, False)
-        if self.telemetry_logger:
-            self.telemetry_logger.log_relay_state(self.uut.relay_line, False)
-        time.sleep(3.0)
+        self.cb.on_log("")
+        self.cb.on_log("=" * 50)
+        self.cb.on_log("  OPERATOR ACTION REQUIRED")
+        self.cb.on_log("  Power-cycle the vehicle now.")
+        self.cb.on_log("  (Cycle bench power supply or unplug/replug battery)")
+        self.cb.on_log("=" * 50)
+        self.cb.on_log("")
+        self.cb.on_log("  Waiting for vehicle to reboot (up to 30s)...")
 
-        self.cb.on_log("  Enabling relay (power on)...")
-        ok, msg = self.daq.set_line(self.uut.relay_line, True)
-        if not ok:
-            raise Exception(f"Relay re-enable failed: {msg}")
-        if self.telemetry_logger:
-            self.telemetry_logger.log_relay_state(self.uut.relay_line, True)
-        time.sleep(self.stabilization_delay)
+        # Wait for heartbeat to disappear (vehicle powering off)
+        hb_lost = False
+        deadline = time.time() + 15.0
+        while time.time() < deadline:
+            hb = self._wait_for_message(MsgType.HEARTBEAT, timeout=2.0)
+            if hb is None:
+                hb_lost = True
+                self.cb.on_log("  Vehicle heartbeat lost — power cycle detected")
+                break
 
-        self.cb.on_log("  Waiting for vehicle heartbeat after power cycle...")
+        if not hb_lost:
+            self.cb.on_log(
+                "  ⚠ Vehicle heartbeat never dropped — "
+                "proceeding (operator may not have cycled power)"
+            )
+
+        # Wait for heartbeat to return (vehicle powering back on)
+        self.cb.on_log("  Waiting for vehicle heartbeat after reboot...")
         timeout = 30.0
         start = time.time()
         while time.time() - start < timeout:
-            # S-16: use queue-based _wait_for_message instead of wait_heartbeat
-            # under lock — avoids holding master_lock for up to 2s blocking recv.
             hb = self._wait_for_message(MsgType.HEARTBEAT, timeout=2.0)
             if hb:
+                elapsed = time.time() - start
                 self.cb.on_log(
-                    f"  \u2713 Heartbeat received after "
-                    f"{time.time() - start:.1f}s"
+                    f"  ✓ Heartbeat received after {elapsed:.1f}s"
                 )
-                time.sleep(2.0)  # Allow boot to settle
+                self.cb.on_log("  ✓ Power cycle complete, vehicle reconnected")
                 return
-            time.sleep(0.5)
 
         raise Exception(
-            f"Vehicle did not respond after power cycle within {timeout}s"
+            f"Vehicle did not respond after power cycle "
+            f"(no heartbeat within {timeout}s)"
         )
 
     # ── Cleanup ──────────────────────────────────────────────────────────
