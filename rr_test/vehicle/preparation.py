@@ -64,6 +64,9 @@ class UUTPreparation:
         self.use_nest_cache = None
         self.master_lock = threading.Lock()
         self._msg_queues = msg_queues
+        # O-2: stop-check callback — executor wires this to self.running.
+        # Preparation loops check this and abort early on Stop.
+        self.should_stop: Any = lambda: False
     
     @staticmethod
     def _default_callbacks() -> PreparationCallbacks:
@@ -252,7 +255,7 @@ class UUTPreparation:
             operate_timeout = 10.0
             operate_start = time.monotonic()
             in_operate = False
-            while time.monotonic() - operate_start < operate_timeout:
+            while time.monotonic() - operate_start < operate_timeout and not self.should_stop():
                 mode_msg = self._wait_for_message(
                     MsgType.ACTUATION_SYS_STATUS, timeout=1.0
                 )
@@ -280,7 +283,7 @@ class UUTPreparation:
 
             playback_timeout = 10.0
             playback_start = time.monotonic()
-            while time.monotonic() - playback_start < playback_timeout:
+            while time.monotonic() - playback_start < playback_timeout and not self.should_stop():
                 mode_msg = self._wait_for_message(
                     MsgType.ACTUATION_SYS_STATUS, timeout=0.5
                 )
@@ -348,7 +351,7 @@ class UUTPreparation:
 
             timeout = 5.0
             start = time.monotonic()
-            while time.monotonic() - start < timeout:
+            while time.monotonic() - start < timeout and not self.should_stop():
                 # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
                 # not standard PARAM_VALUE.  Try custom message first,
                 # then fall back to standard for SITL compatibility.
@@ -518,7 +521,7 @@ class UUTPreparation:
                 'Waiting for automatic transition to OPERATE mode'
             )
         start = time.monotonic()
-        while time.monotonic() - start < timeout:
+        while time.monotonic() - start < timeout and not self.should_stop():
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=1.0
             )
@@ -586,7 +589,7 @@ class UUTPreparation:
             )
         start = time.monotonic()
         clear_count = 0
-        while time.monotonic() - start < duration:
+        while time.monotonic() - start < duration and not self.should_stop():
             current_set = self._get_current_set_monitors()
             if current_set:
                 clear_count += 1
@@ -665,7 +668,7 @@ class UUTPreparation:
         )
         start = time.monotonic()
         last_log_second = -1
-        while time.monotonic() - start < timeout:
+        while time.monotonic() - start < timeout and not self.should_stop():
             mode_msg = self._wait_for_message(
                 MsgType.ACTUATION_SYS_STATUS, timeout=0.5
             )
@@ -1025,7 +1028,7 @@ class UUTPreparation:
         start_time = time.monotonic()
         iteration = 0
         
-        while iteration < max_iterations and (time.monotonic() - start_time) < arm_timeout:
+        while iteration < max_iterations and (time.monotonic() - start_time) < arm_timeout and not self.should_stop():
             iteration += 1
             self.cb.on_log(f"\n  Iteration {iteration}/{max_iterations}:")
             
@@ -1193,7 +1196,7 @@ class UUTPreparation:
             start_time = time.monotonic()
             ack_received = False
             
-            while time.monotonic() - start_time < timeout:
+            while time.monotonic() - start_time < timeout and not self.should_stop():
                 ack = self._wait_for_message(MsgType.COMMAND_ACK, timeout=0.5)
                 
                 if ack and ack.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
@@ -1396,7 +1399,7 @@ class UUTPreparation:
             timeout = 5.0
             start_time = time.monotonic()
 
-            while time.monotonic() - start_time < timeout:
+            while time.monotonic() - start_time < timeout and not self.should_stop():
                 # Pandion firmware responds with PANDION_RR_PARAM_VALUE,
                 # not standard PARAM_VALUE.  Try custom first, fall back
                 # to standard for SITL compatibility.
@@ -1476,7 +1479,7 @@ class UUTPreparation:
         consecutive_clean = 0
         required_clean_polls = 2  # Require 2 consecutive clean polls to confirm
 
-        while time.monotonic() - start < timeout:
+        while time.monotonic() - start < timeout and not self.should_stop():
             current_set = self._get_current_set_monitors()
 
             if not current_set:

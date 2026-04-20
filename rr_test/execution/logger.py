@@ -77,11 +77,23 @@ class TelemetryLogger:
 
     def log_test_event(self, event_type: str, description: str = "") -> None:
         """Log a meaningful test event (one row)."""
+        self._ensure_dir()  # FS-2: recreate if deleted mid-test
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._event_writer.writerow([
-            ts, self.iteration_number, event_type, "", description,
-        ])
-        self._event_file.flush()
+        try:
+            self._event_writer.writerow([
+                ts, self.iteration_number, event_type, "", description,
+            ])
+            self._event_file.flush()
+        except OSError:
+            # FS-2: file handle gone (dir deleted) — reopen
+            self._reopen_event_file()
+            try:
+                self._event_writer.writerow([
+                    ts, self.iteration_number, event_type, "", description,
+                ])
+                self._event_file.flush()
+            except OSError:
+                pass  # truly gone — accept data loss for this row
 
     def log_result(self, passed: bool, details: str = "") -> None:
         """Log a PASS/FAIL result."""
@@ -177,6 +189,28 @@ class TelemetryLogger:
         ])
 
     # ── Lifecycle ─────────────────────────────────────────────────────
+
+    def _ensure_dir(self) -> None:
+        """FS-2: Recreate log directory if it was deleted mid-test."""
+        try:
+            os.makedirs(self._dir, exist_ok=True)
+        except OSError:
+            pass
+
+    def _reopen_event_file(self) -> None:
+        """Reopen event CSV after directory recreation."""
+        try:
+            if self._event_file:
+                self._event_file.close()
+        except Exception:
+            pass
+        try:
+            self._ensure_dir()
+            self._event_file = open(self._event_path, "a", newline="")
+            self._event_writer = csv.writer(self._event_file)
+        except OSError:
+            self._event_file = None
+            self._event_writer = None
 
     def close(self) -> None:
         """Flush and close all files."""

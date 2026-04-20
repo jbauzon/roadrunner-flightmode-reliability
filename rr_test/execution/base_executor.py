@@ -155,6 +155,8 @@ class _ExecutorMixin:
             msg_queues=self._msg_queues,
             error_log=self.error_log,
         )
+        # O-2: wire stop-check so preparation loops abort on Stop
+        self.preparation.should_stop = lambda: not self.running
         # Store serial on preparation for error log context
         self.preparation._serial = self.uut.serial_number
         self.preparation._iteration = lambda: self.uut.iterations_completed
@@ -313,7 +315,15 @@ class _ExecutorMixin:
                 )
 
             if attempt < max_attempts:
-                self.cb.on_log(f"  \u2192 Retrying in {retry_delay}s...")
+                # H-3: Try DAQ reconnect on second+ attempt (USB hotplug recovery)
+                if attempt == 2 and hasattr(self.daq, 'reconnect'):
+                    try:
+                        self.cb.on_log("  → Attempting DAQ reconnect...")
+                        self.daq.reconnect()
+                        self.cb.on_log("  ✓ DAQ reconnected")
+                    except Exception as re_err:
+                        self.cb.on_log(f"  ✗ DAQ reconnect failed: {re_err}")
+                self.cb.on_log(f"  → Retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
 
         # All attempts failed

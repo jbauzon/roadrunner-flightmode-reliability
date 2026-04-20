@@ -57,6 +57,9 @@ class CommandHandler:
     def __init__(self, state: AppState, broadcaster: Broadcaster) -> None:
         self.state = state
         self.broadcaster = broadcaster
+        # N-10: mutex for UUT list modifications so two simultaneous
+        # add/edit/remove calls can't corrupt the list.
+        self._uut_lock = threading.Lock()
 
     async def handle(self, ws: ServerConnection, msg: dict) -> None:
         msg_type = msg.get("type", "")
@@ -212,50 +215,44 @@ class CommandHandler:
         threading.Thread(target=_bg, daemon=True, name="sitl-launcher").start()
 
     async def _add_uut(self, _ws: ServerConnection, data: dict) -> None:
-        relay = data.get("relay_line", 0)
-        # H-5: Prevent duplicate relay lines (operator wiring error)
-        existing_relays = {u.relay_line for u in self.state.uuts}
-        if relay in existing_relays:
-            self.broadcaster.broadcast("error", {
-                "message": f"Relay line {relay} is already assigned to another UUT",
-            })
-            return
-
-        uut = UUT(
-            data.get("serial_number", ""),
-            data.get("ip_address", ""),
-            data.get("port", 0),
-            relay,
-        )
-        self.state.uuts.append(uut)
+        with self._uut_lock:
+            relay = data.get("relay_line", 0)
+            serial = (data.get("serial_number", "") or "")[:64]  # O-6: cap length
+            # H-5: Prevent duplicate relay lines
+            if relay in {u.relay_line for u in self.state.uuts}:
+                self.broadcaster.broadcast("error", {
+                    "message": f"Relay line {relay} is already assigned to another UUT",
+                })
+                return
+            uut = UUT(serial, data.get("ip_address", ""), data.get("port", 0), relay)
+            self.state.uuts.append(uut)
         self.broadcaster.broadcast("uut.update", {
             "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
         })
 
     async def _edit_uut(self, _ws: ServerConnection, data: dict) -> None:
-        idx = data.get("index", -1)
-        if 0 <= idx < len(self.state.uuts):
-            self.state.uuts[idx] = UUT(
-                data.get("serial_number", ""),
-                data.get("ip_address", ""),
-                data.get("port", 0),
-                data.get("relay_line", 0),
-            )
-            self.broadcaster.broadcast("uut.update", {
-                "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
-            })
+        with self._uut_lock:
+            idx = data.get("index", -1)
+            if 0 <= idx < len(self.state.uuts):
+                serial = (data.get("serial_number", "") or "")[:64]  # O-6
+                self.state.uuts[idx] = UUT(
+                    serial, data.get("ip_address", ""),
+                    data.get("port", 0), data.get("relay_line", 0),
+                )
+        self.broadcaster.broadcast("uut.update", {
+            "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
+        })
 
     async def _remove_uut(self, _ws: ServerConnection, data: dict) -> None:
-        # O-7/U-3: Block removal during active batch — modifying the UUT
-        # list while _run_batch iterates over it causes IndexError.
         if self.state.testing_active:
             self.broadcaster.broadcast("error", {
                 "message": "Cannot remove UUTs while a test is running. Stop the test first.",
             })
             return
-        idx = data.get("index", -1)
-        if 0 <= idx < len(self.state.uuts):
-            self.state.uuts.pop(idx)
+        with self._uut_lock:
+            idx = data.get("index", -1)
+            if 0 <= idx < len(self.state.uuts):
+                self.state.uuts.pop(idx)
             self.broadcaster.broadcast("uut.update", {
                 "uuts": [self.state._uut_dict(u) for u in self.state.uuts],
             })

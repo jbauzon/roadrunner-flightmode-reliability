@@ -1,8 +1,6 @@
 from __future__ import annotations
-
-"""
-Flight Profile Playback Executor.
-"""
+import math
+import sys
 import time
 import csv
 import threading
@@ -488,10 +486,22 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
 
         self.uut.test_start_time = time.time()
         interval = 1.0 / 100.0  # 100 Hz
+
+        # T-3: On Windows, request 1ms timer resolution so time.sleep(0.01)
+        # actually sleeps ~1ms instead of 15.6ms.  Without this, individual
+        # frame delivery jitters ±15ms (though absolute-time scheduling
+        # prevents cumulative drift).
+        _timer_handle = None
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                winmm = ctypes.windll.winmm
+                winmm.timeBeginPeriod(1)
+                _timer_handle = winmm
+            except Exception:
+                pass
+
         # Absolute-time schedule: frame N's target send time is start + N*interval.
-        # Per-frame relative pacing ("sleep interval - elapsed") can't recover
-        # from any frame that overruns its 10 ms budget, accumulating drift.
-        # Over 32808 frames even 0.75 ms jitter per frame adds 25 s of lag.
         stream_start = time.time()
 
         # Accumulated mistracking flags (OR across all frames)
@@ -635,6 +645,13 @@ class PlaybackTestExecutor(_ExecutorMixin, threading.Thread):
             f"  Streaming stats: {total_elapsed:.1f}s total, "
             f"{actual_hz:.1f} fps (target 100 Hz)"
         )
+
+        # T-3: Restore default timer resolution
+        if _timer_handle:
+            try:
+                _timer_handle.timeEndPeriod(1)
+            except Exception:
+                pass
 
         # Exit PLAYBACK → back to OPERATE
         with self.master_lock:

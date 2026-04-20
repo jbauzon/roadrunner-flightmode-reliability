@@ -178,6 +178,16 @@ class ErrorLogger:
         line = json.dumps(entry, ensure_ascii=False) + '\n'
         with self._lock:
             try:
+                # FS-5: Rotate if file exceeds 10 MB to prevent unbounded growth
+                try:
+                    if os.path.isfile(self._path) and os.path.getsize(self._path) > 10 * 1024 * 1024:
+                        rotated = self._path + '.old'
+                        if os.path.isfile(rotated):
+                            os.unlink(rotated)
+                        os.rename(self._path, rotated)
+                except OSError:
+                    pass
+
                 with open(self._path, 'a', encoding='utf-8') as f:
                     f.write(line)
             except OSError:
